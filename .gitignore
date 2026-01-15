@@ -1,0 +1,38 @@
+# =========================
+# Dataset files (generic)
+# =========================
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.json
+*.parquet
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.zip
+*.tar
+*.gz
+*.7z
+
+# =========================
+# Dataset directories
+# =========================
+data/
+dataset/
+datasets/
+raw_data/
+processed_data/
+training_data/
+validation_data/
+test_data/
+
+# Ignore everything inside data folders but keep README
+data/**
+!data/README.md
+
+datasets/**
+!datasets/README.md
