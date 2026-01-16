@@ -1,7 +1,9 @@
-from pydantic import BaseModel  # pydantic is used for data validation and settings management
+from pydantic import BaseModel
 
 class ChatRequest(BaseModel):
     message: str
 
 class ChatResponse(BaseModel):
     reply: str
+    source: str
+    confidence: float

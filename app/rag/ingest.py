@@ -6,14 +6,18 @@ INGEST MODULE
 This module handles the ingestion of FAQ documents, embedding them using a pre-trained model,
 and storing the embeddings in a FAISS index for efficient retrieval.
 Retriever module uses this index to find relevant FAQ chunks based on user queries.
+Note: The llm module will use citation-style references to refer to these chunks in responses.
 """
 
 FAQ_PATH = "data/faqs.txt"  # Path to the FAQ document
 INDEX_PATH = "data/faiss_index"  # Path to store/load the FAISS index
+CHUNKS_PATH = "data/faqs_chunks.txt"
 
 def ingest_faqs():
     with open(FAQ_PATH, 'r', encoding='utf-8') as f: # read the FAQ file
         text = f.read() # read the entire content
+
+    raw_chunks = [c.strip() for c in text.split("\n\n") if c.strip()]
 
     chunks = []
     # Split the text into chunks based on double newlines
@@ -27,6 +31,14 @@ def ingest_faqs():
     index.add(embeddings) # add embeddings to the index
 
     faiss.write_index(index, INDEX_PATH) # save the index to disk
+
+    # For each chunk so it has a stable identifier (Citation style)
+    with open(CHUNKS_PATH, "w", encoding="utf-8") as f:
+        for chunk in chunks:
+            f.write(chunk + "\n---\n")
+
+    print(f"Ingested {len(chunks)} FAQ chunks.")
+    return chunks
 
 """
 Dictionary for conceptual clarity (tools used in this file):

@@ -39,9 +39,11 @@ class LlamaClient(LLMClient):
                     "role": "system",
                     "content": (
                         "You are a Campus Store assistant. "
-                        "Answer ONLY using the provided context. "
-                        "If the answer is not in the context, say you do not know.\n\n"
-                        f"Context:\n{context}"
+                        "You must answer using ONLY the information in the provided context. "
+                        "Do NOT use prior knowledge. "
+                        "Do NOT infer schedules, dates, or policies. "
+                        "If the answer cannot be found verbatim in the context, reply exactly with: "
+                        "'The information is not available in the FAQ.'\n\n"
                     )
                 },
                 {

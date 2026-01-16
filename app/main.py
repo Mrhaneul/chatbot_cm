@@ -3,6 +3,8 @@ from app.schemas.chat import ChatRequest, ChatResponse
 from app.llm.llama_client import LlamaClient
 from app.rag.retriever import FAQRetriever
 
+CONFIDENCE_THRESHOLD = 0.80
+
 # 1. Create FastAPI app FIRST
 app = FastAPI(title="Campus Store Chatbot (RAG Test Mode)")
 
@@ -14,9 +16,26 @@ retriever = FAQRetriever()
 @app.post("/chat", response_model=ChatResponse)
 def chat(payload: ChatRequest):
     try:
-        context = retriever.retrieve(payload.message)
-        reply = llm.chat_with_context(payload.message, context)
-        return ChatResponse(reply=reply)
+        retrieval = retriever.retrieve(payload.message)
+
+        if retrieval["score"] < CONFIDENCE_THRESHOLD:
+            return ChatResponse(
+                reply="The information is not available in the FAQ.",
+                source=retrieval["source_id"],
+                confidence=round(retrieval["score"], 3)
+            )
+
+        reply = llm.chat_with_context(
+            payload.message,
+            retrieval["context"]
+        )
+
+        return ChatResponse(
+            reply=reply,
+            source=retrieval["source_id"],
+            confidence=round(retrieval["score"], 3)
+        )
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
