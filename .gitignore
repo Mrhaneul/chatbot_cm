@@ -1,38 +1,20 @@
-# =========================
-# Dataset files (generic)
-# =========================
-*.csv
-*.tsv
-*.xlsx
-*.xls
-*.json
-*.parquet
-*.h5
-*.hdf5
-*.npy
-*.npz
-*.pkl
-*.pickle
-*.zip
-*.tar
-*.gz
-*.7z
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 
-# =========================
-# Dataset directories
-# =========================
-data/
-dataset/
-datasets/
-raw_data/
-processed_data/
-training_data/
-validation_data/
-test_data/
+# Virtual environments
+.env
+.venv
+campus-store-bot/
 
-# Ignore everything inside data folders but keep README
-data/**
-!data/README.md
+# OS files
+.DS_Store
+Thumbs.db
 
-datasets/**
-!datasets/README.md
+# Logs
+*.log
+
+# PDFs / exports (optional – decide if you want these tracked)
+*.pdf

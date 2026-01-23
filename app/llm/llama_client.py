@@ -5,58 +5,63 @@ OLLAMA_URL = "http://localhost:11434/api/chat"
 
 class LlamaClient(LLMClient):
 
-    def chat(self, user_message: str) -> str:
-        payload = {
-            "model": "llama3:8b",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a Campus Store assistant. "
-                        "Only answer questions related to store hours, "
-                        "returns, products, and general policies. "
-                        "If you do not know, say you do not know."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": user_message
-                }
-            ],
-            "stream": True
+    def chat(
+        self,
+        message: str,
+        context: str = "",
+        history: list | None = None,
+        system_hint: str = ""
+    ) -> str:
+
+        system_message = {
+            "role": "system",
+            "content": (
+                "You are a Campus Store assistant.\n\n"
+                f"{system_hint}\n\n"
+                "If relevant information is provided in the context, use it to answer accurately.\n"
+                "If required information is missing (such as a course code), ask the user for it.\n"
+                "If no context is provided, respond helpfully and ask clarifying questions.\n"
+                "Do NOT invent policies, dates, or procedures.\n"
+                "Do NOT assume course platforms, policies, or outcomes unless explicitly stated.\n\n"
+                "Use recent conversation history for continuity, but prioritize the current user message.\n\n"
+                "Only reply with 'The information is not available in the FAQ.' if:\n"
+                "- The context contains no relevant information AND\n"
+                "- No reasonable clarifying question can move the conversation forward.\n"
+            )
         }
 
-        response = requests.post(OLLAMA_URL, json=payload)
-        response.raise_for_status()
+        messages = [system_message]
 
-        return response.json()["message"]["content"]
-    
-    def chat_with_context(self, user_message: str, context: str) -> str:
+        # Conversation history (defensive)
+        if history:
+            for msg in history:
+                if "role" in msg and "content" in msg:
+                    messages.append(msg)
+
+        # Reference context (optional)
+        if context:
+            messages.append({
+                "role": "assistant",  # safer than system
+                "content": f"Reference information:\n{context}"
+            })
+
+        # Current user message
+        messages.append({
+            "role": "user",
+            "content": message
+        })
+
         payload = {
             "model": "llama3:8b",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a Campus Store assistant. "
-                        "You must answer using ONLY the information in the provided context. "
-                        "Do NOT use prior knowledge. "
-                        "Do NOT infer schedules, dates, or policies. "
-                        "If the answer cannot be found verbatim in the context, reply exactly with: "
-                        "'The information is not available in the FAQ.'\n\n"
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": user_message
-                }
-            ],
+            "messages": messages,
             "stream": False
         }
 
-        response = requests.post(OLLAMA_URL, json=payload, timeout=180)
+        response = requests.post(
+            OLLAMA_URL,
+            json=payload,
+            timeout=180
+        )
         response.raise_for_status()
 
-        data = response.json()
-        return data["message"]["content"]
-
+        return response.json()["message"]["content"]
