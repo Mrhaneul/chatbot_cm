@@ -100,8 +100,8 @@ def ingest_instructions():
 
     # Categorize chunks by platform
     all_chunks = []
-    cengage_chunks = []
-    mcgraw_chunks = []
+    cengage_data = []
+    mcgraw_data = []
 
     for i, (file_name, text) in enumerate(raw_chunks):
         chunk = f"[SOURCE_{i}] [FILE:{file_name}]\n{text}"
@@ -109,10 +109,23 @@ def ingest_instructions():
         
         # Platform detection (case-insensitive)
         text_lower = text.lower()
-        if "cengage" in text_lower or "mindtap" in text_lower:
-            cengage_chunks.append(chunk)
-        if "mcgraw" in text_lower or "connect" in text_lower:
-            mcgraw_chunks.append(chunk)
+        file_lower = file_name.lower()
+        
+        if "cengage" in text_lower or "mindtap" in text_lower or "cengage" in file_lower:
+            cengage_data.append((file_name, text))
+        if "mcgraw" in text_lower or "connect" in text_lower or "mcgraw" in file_lower:
+            mcgraw_data.append((file_name, text))
+    
+    # Build platform-specific chunks with correct indexing
+    cengage_chunks = [
+        f"[SOURCE_{i}] [FILE:{fname}]\n{txt}"
+        for i, (fname, txt) in enumerate(cengage_data)
+    ]
+    
+    mcgraw_chunks = [
+        f"[SOURCE_{i}] [FILE:{fname}]\n{txt}"
+        for i, (fname, txt) in enumerate(mcgraw_data)
+    ]
 
     # Load embedding model
     model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -172,18 +185,3 @@ if __name__ == "__main__":
     ingest_faqs()
     ingest_instructions()
     print("\n✓ Ingestion complete!")
-
-"""
-Dictionary for conceptual clarity (tools used in this file):
-
-    Faiss (Facebook AI Similarity Search): 
-        A library for efficient similarity search and clustering of dense vectors, 
-        often used for tasks like nearest neighbor search in large datasets.
-            Note: Faiss indexes can be stored on disk and loaded back into memory as needed.
-
-    SentenceTransformer:
-        A Python library that provides an easy way to compute dense vector representations 
-        (embeddings) for sentences and paragraphs using pre-trained transformer models.
-            Note: all-MiniLM-L6-v2 is a specific model within this library known for its balance 
-            between performance and computational efficiency.
-"""

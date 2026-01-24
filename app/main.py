@@ -70,8 +70,39 @@ def cleanup_expired_sessions():
 def detect_intent(message: str) -> str:
     """Detect user intent from message."""
     normalized = message.lower()
+    
+    # Immediate Access keywords
+    ia_keywords = [
+        "immediate access",
+        "opted in",
+        "can't access",
+        "cant access",
+        "cannot access",
+        "unable to access",
+        "trouble accessing",
+        "access issue",
+        "access problem",
+        "not working",
+        "doesn't work",
+        "doesnt work",
+        "won't open",
+        "wont open",
+    ]
+    
+    # Check if any IA keyword is present AND mentions a platform
+    has_ia_keyword = any(keyword in normalized for keyword in ia_keywords)
+    mentions_platform = any(platform in normalized for platform in [
+        "cengage", "mindtap", "mcgraw", "connect", "pearson", 
+        "vitalsource", "bedford", "ebook", "e-book", "etext", "e-text"
+    ])
+    
+    if has_ia_keyword and mentions_platform:
+        return "IA_ACCESS_ISSUE"
+    
+    # Also detect IA_ACCESS_ISSUE if they mention "immediate access" alone
     if "immediate access" in normalized or "opted in" in normalized:
         return "IA_ACCESS_ISSUE"
+    
     return "GENERAL_FAQ"
 
 
@@ -79,6 +110,50 @@ def extract_course_code(message: str):
     """Extract course code like BIO101, PSY200A, etc."""
     match = re.search(r"[A-Z]{2,4}\d{3}[A-Z\-]*", message)
     return match.group(0) if match else None
+
+
+def detect_platform_and_check_ambiguity(message: str) -> tuple[str, bool]:
+    """
+    Returns: (platform, is_ambiguous)
+    """
+    platforms_found = []
+    
+    if "cengage" in message.lower() or "mindtap" in message.lower():
+        platforms_found.append("CENGAGE")
+    if "mcgraw" in message.lower() or "connect" in message.lower():
+        platforms_found.append("MCGRAW_HILL")
+    if "bedford" in message.lower():
+        platforms_found.append("BEDFORD")
+    
+    print(f"🔍 DEBUG: Platforms found = {platforms_found}")
+    
+    # Check for ambiguity
+    if len(platforms_found) > 1:
+        print(f"🔍 DEBUG: AMBIGUOUS - returning (None, True)")
+        return None, True  # Ambiguous
+    elif len(platforms_found) == 1:
+        print(f"🔍 DEBUG: Single platform - returning ({platforms_found[0]}, False)")
+        return platforms_found[0], False  # Clear
+    else:
+        print(f"🔍 DEBUG: No platform - returning (None, False)")
+        return None, False  # No platform mentioned
+
+
+def detect_topic_switch(message: str, stored_intent: str) -> bool:
+    """Detect if user is switching topics."""
+    current_intent = detect_intent(message)
+    
+    # If stored intent was IA but current is FAQ, that's a switch
+    if stored_intent == "IA_ACCESS_ISSUE" and current_intent == "GENERAL_FAQ":
+        return True
+    
+    # If stored intent was IA but current is AMBIGUOUS, that's a switch
+    if stored_intent == "IA_ACCESS_ISSUE" and current_intent == "AMBIGUOUS_PLATFORM":
+        return True
+    
+    # Keywords that indicate explicit topic change
+    topic_switch_keywords = ["actually", "instead", "what about", "by the way", "nevermind"]
+    return any(keyword in message.lower() for keyword in topic_switch_keywords)
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -100,24 +175,75 @@ def chat(payload: ChatRequest):
         platform = None
         course_code = None
         intent = None
+        
+        # ===== EARLY CHECK: Ambiguous Platforms =====
+        platform_temp, is_ambiguous = detect_platform_and_check_ambiguity(message)
+        
+        print(f"🔍 DEBUG: is_ambiguous = {is_ambiguous}")
+        
+        if is_ambiguous:
+            print(f"🔍 DEBUG: ENTERING ambiguity block")
+            # Add to history
+            session["history"].append({
+                "role": "user",
+                "content": message
+            })
+            
+            # Return clarification request immediately
+            reply = (
+                "I notice you mentioned multiple platforms. To give you the most "
+                "accurate troubleshooting steps, could you please clarify which "
+                "platform you're having trouble with? (e.g., McGraw Hill Connect, "
+                "Cengage MindTap, etc.)"
+            )
+            
+            session["history"].append({
+                "role": "assistant",
+                "content": reply
+            })
+            
+            print(f"🔍 DEBUG: RETURNING clarification response")
+            return ChatResponse(
+                reply=reply,
+                source="CLARIFICATION",
+                article_link=None,
+                confidence=0.0
+            )
+        
+        # Use detected platform if found
+        platform = platform_temp
 
         # ===== STATE HANDLING (LLM-FIRST FLOW) =====
         if session["awaiting_course_code"]:
-            # User is providing the course code as a follow-up
-            course_code = extract_course_code(message)  # FIXED: Extract with regex
-            intent = session["stored_intent"]
-            platform = session["stored_platform"]
-
-            # Clear state
-            session["awaiting_course_code"] = False
-            session["stored_intent"] = None
-            session["stored_platform"] = None
+            # Check for topic switch FIRST
+            if detect_topic_switch(message, session["stored_intent"]):
+                # User is changing topics - clear state
+                session["awaiting_course_code"] = False
+                session["stored_intent"] = None
+                session["stored_platform"] = None
+                # Process as new query
+                intent = detect_intent(message)
+                course_code = extract_course_code(message)
+                # Detect platform for new query
+                if "cengage" in message.lower() or "mindtap" in message.lower():
+                    platform = "CENGAGE"
+                elif "mcgraw" in message.lower() or "connect" in message.lower():
+                    platform = "MCGRAW_HILL"
+            else:
+                # Continue with stored intent - user is providing course code
+                course_code = extract_course_code(message)  # FIXED: Extract with regex
+                intent = session["stored_intent"]
+                platform = session["stored_platform"]
+                # Clear state after processing
+                session["awaiting_course_code"] = False
+                session["stored_intent"] = None
+                session["stored_platform"] = None
         else:
             # New request - detect intent and extract course code
             intent = detect_intent(message)
             course_code = extract_course_code(message)
             
-            # Detect platform
+            # Platform was already detected earlier, but verify/update if needed
             if platform is None:
                 if "cengage" in message.lower() or "mindtap" in message.lower():
                     platform = "CENGAGE"
@@ -149,8 +275,12 @@ def chat(payload: ChatRequest):
         context = ""
 
         try:
+            # Skip retrieval for unsupported platforms
+            if intent == "UNSUPPORTED_PLATFORM":
+                retrieval = None
+                context = ""
             # FIXED: Force instructions collection for IA_ACCESS_ISSUE
-            if intent == "IA_ACCESS_ISSUE":
+            elif intent == "IA_ACCESS_ISSUE":
                 # Always use instructions for Immediate Access issues
                 retrieval = retriever.retrieve(
                     message,
@@ -179,12 +309,36 @@ def chat(payload: ChatRequest):
         # ===== LLM CALL (ALWAYS RUNS) =====
         system_hint = ""
 
-        if intent == "IA_ACCESS_ISSUE":
+        if intent == "UNSUPPORTED_PLATFORM":
+            # Extract the platform name from the message
+            platform_mentioned = None
+            unsupported = ["pearson", "mylab", "mastering", "wiley", "sapling"]
+            for p in unsupported:
+                if p in message.lower():
+                    platform_mentioned = p.title()
+                    break
+            
+            platform_text = f"{platform_mentioned} " if platform_mentioned else "this platform "
+            
+            system_hint = (
+                f"The user is asking about {platform_text}which we don't have specific instructions for. "
+                "Respond with EXACTLY this message (you can adjust wording slightly but keep the same meaning):\n\n"
+                f"'I understand you're having trouble accessing {platform_text}materials. "
+                "Unfortunately, I don't have specific troubleshooting instructions for this platform in my knowledge base. "
+                "I recommend contacting the CBU Campus Store directly for assistance with this specific platform. "
+                "They'll be able to provide you with the specific help you need. "
+                "Is there anything else I can help you with regarding textbook policies or other campus store services?'\n\n"
+                "DO NOT mention other platforms like McGraw Hill or Cengage. "
+                "DO NOT ask for course codes. "
+                "DO NOT provide generic troubleshooting steps."
+            )
+        elif intent == "IA_ACCESS_ISSUE":
             system_hint = (
                 "The user is asking about Immediate Access digital course materials. "
                 "Do NOT suggest purchasing or renting physical textbooks unless the user explicitly asks. "
                 "If required information such as course code or platform is missing, ask for it. "
-                "Do NOT assume availability of print textbooks."
+                "Do NOT assume availability of print textbooks. "
+                "Only provide instructions for the specific platform mentioned in the official instructions."
             )
 
         reply = llm.chat(
