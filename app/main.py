@@ -105,6 +105,47 @@ def detect_intent(message: str) -> str:
     
     return "GENERAL_FAQ"
 
+def enhance_query_with_conversation_context(message: str, history: list) -> str:
+    """
+    Enhance query with conversation context to improve RAG retrieval.
+    Specifically handles follow-ups to platform clarification questions.
+    """
+    msg_lower = message.lower().strip()
+    
+    # Check if this is a follow-up (short response that could be clarifying)
+    if len(history) >= 2 and len(msg_lower.split()) <= 3:  # Short answer = likely clarification
+        last_bot_message = ""
+        
+        # Find the last assistant message
+        for msg in reversed(history):
+            if msg.get("role") == "assistant":
+                last_bot_message = msg.get("content", "").lower()
+                break
+        
+        # Pattern 1: McGraw Hill clarification
+        if "mcgraw hill textbook or mcgraw hill connect" in last_bot_message:
+            if "connect" in msg_lower:
+                return "McGraw Hill Connect immediate access platform instructions"
+            elif "textbook" in msg_lower or "etextbook" in msg_lower or "ebook" in msg_lower:
+                return "eTextbook immediate access general instructions VitalSource Blackboard step-by-step"
+        
+        # Pattern 2: Cengage clarification
+        if "cengage textbook or cengage mindtap" in last_bot_message:
+            if "mindtap" in msg_lower or "cnow" in msg_lower:
+                return "Cengage MindTap immediate access platform instructions"
+            elif "textbook" in msg_lower or "etextbook" in msg_lower or "ebook" in msg_lower:
+                return "eTextbook immediate access general instructions VitalSource Blackboard step-by-step"
+        
+        # Pattern 3: Pearson clarification
+        if "pearson textbook or pearson mylab" in last_bot_message:
+            if "mylab" in msg_lower or "mastering" in msg_lower:
+                return "Pearson MyLab Mastering immediate access platform instructions"
+            elif "textbook" in msg_lower or "etextbook" in msg_lower or "ebook" in msg_lower:
+                return "eTextbook immediate access general instructions VitalSource Blackboard step-by-step"
+    
+    # No enhancement needed - return original
+    return message
+
 
 def extract_course_code(message: str):
     """Extract course code like BIO101, PSY200A, etc."""
@@ -281,22 +322,31 @@ def chat(payload: ChatRequest):
                 context = ""
             # FIXED: Force instructions collection for IA_ACCESS_ISSUE
             elif intent == "IA_ACCESS_ISSUE":
+                # ✨ NEW: Enhance query with conversation context
+                enhanced_query = enhance_query_with_conversation_context(message, session["history"])
+                
+                print(f"🔍 [RAG DEBUG] Original query: '{message}'")
+                print(f"🔍 [RAG DEBUG] Enhanced query: '{enhanced_query}'")
+                
                 # Always use instructions for Immediate Access issues
                 retrieval = retriever.retrieve(
-                    message,
+                    enhanced_query,  # ← Changed from 'message' to 'enhanced_query'
                     collection="instructions",
                     platform=platform
                 )
             elif course_code:
+                # ✨ NEW: Enhance query here too
+                enhanced_query = enhance_query_with_conversation_context(message, session["history"])
+                
                 # If they mentioned a course code, probably want instructions
                 retrieval = retriever.retrieve(
-                    message,
+                    enhanced_query,  # ← Changed from 'message' to 'enhanced_query'
                     collection="instructions",
                     platform=platform
                 )
             else:
                 # Let heuristic decide between FAQs and instructions
-                retrieval = retriever.retrieve(message)
+                retrieval = retriever.retrieve(message)  # ← No change here
 
             if retrieval and "context" in retrieval:
                 context = retrieval["context"]
