@@ -16,8 +16,25 @@ INSTRUCTIONS_INDEX_PATH = "data/instructions/faiss_index"
 INSTRUCTIONS_CHUNKS_PATH = "data/instructions/instructions_chunks.txt"
 INSTRUCTIONS_INDEX_CENGAGE_PATH = "data/instructions/faiss_index_cengage"
 INSTRUCTIONS_INDEX_MCGRAW_PATH = "data/instructions/faiss_index_mcgraw"
+INSTRUCTIONS_INDEX_BEDFORD_PATH = "data/instructions/faiss_index_bedford"
+INSTRUCTIONS_INDEX_PEARSON_PATH = "data/instructions/faiss_index_pearson"
+INSTRUCTIONS_INDEX_CLIFTON_PATH = "data/instructions/faiss_index_clifton"
+INSTRUCTIONS_INDEX_MACMILLAN_PATH = "data/instructions/faiss_index_macmillan"
+INSTRUCTIONS_INDEX_SAGE_PATH = "data/instructions/faiss_index_sage"
+INSTRUCTIONS_INDEX_SIMUCASE_PATH = "data/instructions/faiss_index_simucase"
+INSTRUCTIONS_INDEX_WILEY_PATH = "data/instructions/faiss_index_wiley"
+INSTRUCTIONS_INDEX_ZYBOOKS_PATH = "data/instructions/faiss_index_zybooks"
 INSTRUCTIONS_CHUNKS_CENGAGE_PATH = "data/instructions/instructions_chunks_cengage.txt"
 INSTRUCTIONS_CHUNKS_MCGRAW_PATH = "data/instructions/instructions_chunks_mcgraw.txt"
+INSTRUCTIONS_CHUNKS_BEDFORD_PATH = "data/instructions/instructions_chunks_bedford.txt"
+INSTRUCTIONS_CHUNKS_PEARSON_PATH = "data/instructions/instructions_chunks_pearson.txt"
+INSTRUCTIONS_CHUNKS_CLIFTON_PATH = "data/instructions/instructions_chunks_clifton.txt"
+INSTRUCTIONS_CHUNKS_MACMILLAN_PATH = "data/instructions/instructions_chunks_macmillan.txt"
+INSTRUCTIONS_CHUNKS_SAGE_PATH = "data/instructions/instructions_chunks_sage.txt"
+INSTRUCTIONS_CHUNKS_WILEY_PATH = "data/instructions/instructions_chunks_wiley.txt"
+INSTRUCTIONS_CHUNKS_ZYBOOKS_PATH = "data/instructions/instructions_chunks_zybooks.txt"
+INSTRUCTIONS_CHUNKS_SIMUCASE_PATH = "data/instructions/instructions_chunks_simucase.txt"
+
 
 INSTRUCTIONS_KEYWORDS = {
     "how do i",
@@ -71,6 +88,86 @@ class FAQRetriever:
             self.instructions_index_mcgraw = None
             self.instruction_chunks_mcgraw = []
 
+        try:
+            self.instructions_index_bedford = faiss.read_index(INSTRUCTIONS_INDEX_BEDFORD_PATH)
+            with open(INSTRUCTIONS_CHUNKS_BEDFORD_PATH, "r", encoding="utf-8") as f:
+                self.instruction_chunks_bedford = f.read().split("\n---\n")
+            print("✓ Loaded Bedford-specific instruction index")
+        except Exception as e:
+            print(f"⚠ Bedford index not found (will use general index): {e}")
+            self.instructions_index_bedford = None
+            self.instruction_chunks_bedford = []
+
+        try:
+            self.instructions_index_pearson = faiss.read_index(INSTRUCTIONS_INDEX_PEARSON_PATH)
+            with open(INSTRUCTIONS_CHUNKS_PEARSON_PATH, "r", encoding="utf-8") as f:
+                self.instruction_chunks_pearson = f.read().split("\n---\n")
+            print("✓ Loaded Pearson-specific instruction index")
+        except Exception as e:
+            print(f"⚠ Pearson index not found (will use general index): {e}")
+            self.instructions_index_pearson = None
+            self.instruction_chunks_pearson = []
+
+        try:
+            self.instructions_index_clifton = faiss.read_index(INSTRUCTIONS_INDEX_CLIFTON_PATH)
+            with open(INSTRUCTIONS_CHUNKS_CLIFTON_PATH, "r", encoding="utf-8") as f:
+                self.instruction_chunks_clifton = f.read().split("\n---\n")
+            print("✓ Loaded Clifton-specific instruction index")
+        except Exception as e:
+            print(f"⚠ Clifton index not found (will use general index): {e}")
+            self.instructions_index_clifton = None
+            self.instruction_chunks_clifton = []
+
+        try:
+            self.instructions_index_macmillan = faiss.read_index(INSTRUCTIONS_INDEX_MACMILLAN_PATH)
+            with open(INSTRUCTIONS_CHUNKS_MACMILLAN_PATH, "r", encoding="utf-8") as f:
+                self.instruction_chunks_macmillan = f.read().split("\n---\n")
+            print("✓ Loaded MacMillan-specific instruction index")
+        except Exception as e:
+            print(f"⚠ MacMillan index not found (will use general index): {e}")
+            self.instructions_index_macmillan = None
+            self.instruction_chunks_macmillan = []
+
+        try:
+            self.instructions_index_sage = faiss.read_index(INSTRUCTIONS_INDEX_SAGE_PATH)
+            with open(INSTRUCTIONS_CHUNKS_SAGE_PATH, "r", encoding="utf-8") as f:
+                self.instruction_chunks_sage = f.read().split("\n---\n")
+            print("✓ Loaded SAGE-specific instruction index")
+        except Exception as e:
+            print(f"⚠ SAGE index not found (will use general index): {e}")
+            self.instructions_index_sage = None
+            self.instruction_chunks_sage = []
+
+        try:
+            self.instructions_index_simucase = faiss.read_index(INSTRUCTIONS_INDEX_SIMUCASE_PATH)
+            with open(INSTRUCTIONS_CHUNKS_SIMUCASE_PATH, "r", encoding="utf-8") as f:
+                self.instruction_chunks_simucase = f.read().split("\n---\n")
+            print("✓ Loaded SimuCase-specific instruction index")
+        except Exception as e:
+            print(f"⚠ SimuCase index not found (will use general index): {e}")
+            self.instructions_index_simucase = None
+            self.instruction_chunks_simucase = []
+
+        try:
+            self.instructions_index_wiley = faiss.read_index(INSTRUCTIONS_INDEX_WILEY_PATH)
+            with open(INSTRUCTIONS_CHUNKS_WILEY_PATH, "r", encoding="utf-8") as f:
+                self.instruction_chunks_wiley = f.read().split("\n---\n")
+            print("✓ Loaded Wiley-specific instruction index")
+        except Exception as e:
+            print(f"⚠ Wiley index not found (will use general index): {e}")
+            self.instructions_index_wiley = None
+            self.instruction_chunks_wiley = []
+
+        try:
+            self.instructions_index_zybooks = faiss.read_index(INSTRUCTIONS_INDEX_ZYBOOKS_PATH)
+            with open(INSTRUCTIONS_CHUNKS_ZYBOOKS_PATH, "r", encoding="utf-8") as f:
+                self.instruction_chunks_zybooks = f.read().split("\n---\n")
+            print("✓ Loaded Zybooks-specific instruction index")
+        except Exception as e:
+            print(f"⚠ Zybooks index not found (will use general index): {e}")
+            self.instructions_index_zybooks = None
+            self.instruction_chunks_zybooks = []
+
     def _select_collection(self, query: str):
         """Heuristic to choose between FAQs and instructions."""
         normalized = query.lower()
@@ -113,6 +210,38 @@ class FAQRetriever:
                 index = self.instructions_index_mcgraw
                 chunks = self.instruction_chunks_mcgraw
                 source_prefix = "INSTR_MCGRAW"
+            elif platform == "BEDFORD" and self.instructions_index_bedford:
+                index = self.instructions_index_bedford
+                chunks = self.instruction_chunks_bedford
+                source_prefix = "INSTR_BEDFORD"
+            elif platform == "PEARSON" and self.instructions_index_pearson:
+                index = self.instructions_index_pearson
+                chunks = self.instruction_chunks_pearson
+                source_prefix = "INSTR_PEARSON"
+            elif platform == "CLIFTON" and self.instructions_index_clifton:
+                index = self.instructions_index_clifton
+                chunks = self.instruction_chunks_clifton
+                source_prefix = "INSTR_CLIFTON"
+            elif platform == "MACMILLAN" and self.instructions_index_macmillan:
+                index = self.instructions_index_macmillan
+                chunks = self.instruction_chunks_macmillan
+                source_prefix = "INSTR_MACMILLAN"
+            elif platform == "SAGE" and self.instructions_index_sage:
+                index = self.instructions_index_sage
+                chunks = self.instruction_chunks_sage
+                source_prefix = "INSTR_SAGE"
+            elif platform == "SIMUCASE" and self.instructions_index_simucase:
+                index = self.instructions_index_simucase
+                chunks = self.instruction_chunks_simucase
+                source_prefix = "INSTR_SIMUCASE"
+            elif platform == "WILEY" and self.instructions_index_wiley:
+                index = self.instructions_index_wiley
+                chunks = self.instruction_chunks_wiley
+                source_prefix = "INSTR_WILEY"
+            elif platform == "ZYBOOKS" and self.instructions_index_zybooks:
+                index = self.instructions_index_zybooks
+                chunks = self.instruction_chunks_zybooks
+                source_prefix = "INSTR_ZYBOOKS"
             else:
                 # Fallback to general instructions index
                 index = self.instructions_index

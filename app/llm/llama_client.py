@@ -36,9 +36,6 @@ class LlamaClient(LLMClient):
                 "If the instructions mention Blackboard, you MUST tell the user to use Blackboard. "
                 "Do NOT suggest accessing materials directly from publisher websites unless the instructions explicitly say so. "
                 "Do NOT mention platforms or publishers that are not explicitly listed in the instructions above.\n\n"
-                "If the user asks about immediate access for McGraw Hill, ask them if they mean McGraw Hill textbook or McGraw Hill Connect. If it's McGraw Hill textbook, ALWAYS guide them with the Immediate Access eTextbooks Guide. If it's McGraw Hill Connect, guide them with the McGraw Hill Connect Immediate Access Guide.\n\n"
-                "If the user asks about immediate access for Cengage, ask them if they mean Cengage textbook or Cengage MindTap (or Cengage cnowv2). If it's Cengage textbook, ALWAYS guide them with the Immediate Access eTextbooks Guide. If it's Cengage MindTap or cnowv2, guide them with the Cengage MindTap Immediate Access Guide.\n\n"
-                "If the user asks about immediate access for Pearson, ask them if they mean Pearson textbook or Pearson MyLab (or Pearson Mastering). If it's Pearson textbook, ALWAYS guide them with the Immediate Access eTextbooks Guide. If it's Pearson MyLab or Mastering, guide them with the Pearson MyLab Immediate Access Guide.\n\n"
             )
         
         system_content += (
