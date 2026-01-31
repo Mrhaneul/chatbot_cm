@@ -12,28 +12,49 @@ RETRIEVER MODULE (FIXED)
 
 FAQ_INDEX_PATH = "data/faqs/faiss_index"
 FAQ_CHUNKS_PATH = "data/faqs/faqs_chunks.txt"
+
 INSTRUCTIONS_INDEX_PATH = "data/instructions/faiss_index"
 INSTRUCTIONS_CHUNKS_PATH = "data/instructions/instructions_chunks.txt"
+
+# CENGAGE
 INSTRUCTIONS_INDEX_CENGAGE_PATH = "data/instructions/faiss_index_cengage"
-INSTRUCTIONS_INDEX_MCGRAW_PATH = "data/instructions/faiss_index_mcgraw"
-INSTRUCTIONS_INDEX_BEDFORD_PATH = "data/instructions/faiss_index_bedford"
-INSTRUCTIONS_INDEX_PEARSON_PATH = "data/instructions/faiss_index_pearson"
-INSTRUCTIONS_INDEX_CLIFTON_PATH = "data/instructions/faiss_index_clifton"
-INSTRUCTIONS_INDEX_MACMILLAN_PATH = "data/instructions/faiss_index_macmillan"
-INSTRUCTIONS_INDEX_SAGE_PATH = "data/instructions/faiss_index_sage"
-INSTRUCTIONS_INDEX_SIMUCASE_PATH = "data/instructions/faiss_index_simucase"
-INSTRUCTIONS_INDEX_WILEY_PATH = "data/instructions/faiss_index_wiley"
-INSTRUCTIONS_INDEX_ZYBOOKS_PATH = "data/instructions/faiss_index_zybooks"
 INSTRUCTIONS_CHUNKS_CENGAGE_PATH = "data/instructions/instructions_chunks_cengage.txt"
+
+# MCGRAW HILL
+INSTRUCTIONS_INDEX_MCGRAW_PATH = "data/instructions/faiss_index_mcgraw"
 INSTRUCTIONS_CHUNKS_MCGRAW_PATH = "data/instructions/instructions_chunks_mcgraw.txt"
+
+# BEDFORD
+INSTRUCTIONS_INDEX_BEDFORD_PATH = "data/instructions/faiss_index_bedford"
 INSTRUCTIONS_CHUNKS_BEDFORD_PATH = "data/instructions/instructions_chunks_bedford.txt"
+
+# PEARSON
+INSTRUCTIONS_INDEX_PEARSON_PATH = "data/instructions/faiss_index_pearson"
 INSTRUCTIONS_CHUNKS_PEARSON_PATH = "data/instructions/instructions_chunks_pearson.txt"
+
+# CLIFTON
+INSTRUCTIONS_INDEX_CLIFTON_PATH = "data/instructions/faiss_index_clifton"
 INSTRUCTIONS_CHUNKS_CLIFTON_PATH = "data/instructions/instructions_chunks_clifton.txt"
+
+# MACMILLAN
+INSTRUCTIONS_INDEX_MACMILLAN_PATH = "data/instructions/faiss_index_macmillan"
 INSTRUCTIONS_CHUNKS_MACMILLAN_PATH = "data/instructions/instructions_chunks_macmillan.txt"
+
+# SAGE
+INSTRUCTIONS_INDEX_SAGE_PATH = "data/instructions/faiss_index_sage"
 INSTRUCTIONS_CHUNKS_SAGE_PATH = "data/instructions/instructions_chunks_sage.txt"
-INSTRUCTIONS_CHUNKS_WILEY_PATH = "data/instructions/instructions_chunks_wiley.txt"
-INSTRUCTIONS_CHUNKS_ZYBOOKS_PATH = "data/instructions/instructions_chunks_zybooks.txt"
+
+# SIMUCASE
+INSTRUCTIONS_INDEX_SIMUCASE_PATH = "data/instructions/faiss_index_simucase"
 INSTRUCTIONS_CHUNKS_SIMUCASE_PATH = "data/instructions/instructions_chunks_simucase.txt"
+
+# WILEY
+INSTRUCTIONS_INDEX_WILEY_PATH = "data/instructions/faiss_index_wiley"
+INSTRUCTIONS_CHUNKS_WILEY_PATH = "data/instructions/instructions_chunks_wiley.txt"
+
+# ZYBOOKS
+INSTRUCTIONS_INDEX_ZYBOOKS_PATH = "data/instructions/faiss_index_zybooks"
+INSTRUCTIONS_CHUNKS_ZYBOOKS_PATH = "data/instructions/instructions_chunks_zybooks.txt"
 
 
 INSTRUCTIONS_KEYWORDS = {
