@@ -1,3 +1,4 @@
+from email.mime import message
 from fastapi import FastAPI, HTTPException
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.llm.llama_client import LlamaClient
@@ -6,7 +7,9 @@ import re
 from datetime import datetime, timedelta
 from typing import Dict, Any
 import uuid
-import time  # ✨ NEW: For timing
+import time  
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
 """
 MAIN API (FIXED + PERFORMANCE TRACKING)
@@ -23,6 +26,29 @@ SESSION_TIMEOUT = timedelta(hours=1)
 # Create FastAPI app
 app = FastAPI(title="Campus Store Chatbot (Session-Safe + Performance Tracking)")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+)
+
+@app.options("/{full_path:path}")
+async def options_handler(full_path: str):
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "http://localhost:3000",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Allow-Credentials": "true",
+        }
+    )
 # Session storage: session_id -> session_data
 sessions: Dict[str, Dict[str, Any]] = {}
 
@@ -378,6 +404,9 @@ def chat(payload: ChatRequest):
         
         platform = platform_temp
 
+        print(f"🔍 [PLATFORM DEBUG EARLY] platform_temp = {platform_temp}")
+        print(f"🔍 [PLATFORM DEBUG EARLY] platform = {platform}")
+
         # ===== STATE HANDLING =====
         if session.get("awaiting_platform_type", False):
             print(f"🔍 [STATE DEBUG] Processing platform type clarification")
@@ -491,11 +520,22 @@ def chat(payload: ChatRequest):
         retrieval = None
         context = ""
 
+        greeting_keywords = ["hi", "hello", "hey", "good morning", "good afternoon", "good evening", "greetings"]
+        is_greeting = (
+            len(message.split()) <= 3 and  # Short message
+            any(keyword in message.lower() for keyword in greeting_keywords)
+        )
+
         try:
             # ✨ START RETRIEVAL TIMER
             retrieval_start = time.time()
             
-            if intent == "UNSUPPORTED_PLATFORM":
+            if is_greeting:
+                retrieval = None
+                context = ""
+                print("🔍 [RAG DEBUG] Greeting detected - skipping retrieval")
+            # Skip retrieval for unsupported platforms
+            elif intent == "UNSUPPORTED_PLATFORM":
                 retrieval = None
                 context = ""
             elif intent == "IA_ACCESS_ISSUE":

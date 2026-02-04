@@ -3,21 +3,54 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Conda
+.conda/
+*.conda
 
 # Virtual environments
 .env
 .venv
 campus-store-bot/
+.env.local
+.env.*.local
 
 # OS files
 .DS_Store
 Thumbs.db
-
-# Logs
-*.log
+desktop.ini
 
 # PDFs / exports (optional – decide if you want these tracked)
 *.pdf
 
 # Local data / embeddings / indexes
 data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+.DS_Store
+Thumbs.db
+
+# Node.js / Frontend
+ui/node_modules/
+ui/dist/
+ui/.vite/
+ui/.cache/
+
+# Logs
+*.log
+logs/

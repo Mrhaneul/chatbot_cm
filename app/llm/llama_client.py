@@ -113,7 +113,7 @@ class LlamaClient(LLMClient):
                 messages.append({"role": "user", "content": message})
 
                 payload = {
-                    "model": "llama3.2",
+                    "model": "granite4",
                     "messages": messages,
                     "stream": False
                 }
