@@ -98,9 +98,28 @@ def detect_intent(message: str) -> str:
     """Detect user intent from message."""
     normalized = message.lower()
     
-    # Immediate Access keywords
+    # ✨ Check for informational questions FIRST
+    informational_patterns = [
+        "what is",
+        "what's",
+        "what are",
+        "tell me about",
+        "explain",
+        "describe",
+        "can you tell me",
+        "i want to know",
+        "help me understand",
+        "definition of",
+        "define",
+    ]
+    
+    # If it's an informational question, return GENERAL_FAQ immediately
+    if any(pattern in normalized for pattern in informational_patterns):
+        print(f"🔍 [INTENT DEBUG] Informational question detected")
+        return "GENERAL_FAQ"
+    
+    # Immediate Access troubleshooting keywords
     ia_keywords = [
-        "immediate access",
         "opted in",
         "can't access",
         "cant access",
@@ -117,12 +136,12 @@ def detect_intent(message: str) -> str:
         "need access",       
         "need to access",     
         "how do i access",    
-        "how to access", 
-        "access",             
-        "log in",             
-        "log into",           
-        "sign in",           
-        "getting into",
+        "how to access",
+        "access",
+        "help with",          # ✨ NEW
+        "help",               # ✨ NEW (when combined with platform)
+        "having trouble",     # ✨ NEW
+        "trouble with",       # ✨ NEW
     ]
     
     # Check if any IA keyword is present AND mentions a platform
@@ -130,24 +149,16 @@ def detect_intent(message: str) -> str:
     mentions_platform = any(platform in normalized for platform in [
         "cengage", "mindtap", "mcgraw", "connect", "pearson", 
         "vitalsource", "bedford", "ebook", "e-book", "etext", "e-text",
-        "simucase", "sage", "vantage","wiley", "zybooks", "zylabs","clifton", "macmillan"
+        "simucase", "sage", "vantage", "wiley", "zybooks", "clifton", "macmillan"
     ])
 
     print(f"🔍 [INTENT DEBUG] has_ia_keyword={has_ia_keyword}, mentions_platform={mentions_platform}")
-
-    # Special case: Platform name + "access"
-    platform_access_pattern = any(
-        f"{platform} access" in normalized or f"{platform}access" in normalized
-        for platform in ["cengage", "mcgraw", "pearson", "sage", "simucase", "wiley", "bedford", "zybooks", "clifton", "macmillan"]
-    )
-
-    if platform_access_pattern:
-        return "IA_ACCESS_ISSUE"
     
     if has_ia_keyword and mentions_platform:
         return "IA_ACCESS_ISSUE"
     
-    if "immediate access" in normalized or "opted in" in normalized:
+    # Only trigger IA_ACCESS_ISSUE for "immediate access" if combined with troubleshooting keywords
+    if "immediate access" in normalized and has_ia_keyword:
         return "IA_ACCESS_ISSUE"
     
     return "GENERAL_FAQ"
@@ -284,6 +295,17 @@ def is_ambiguous_platform_query(message: str) -> tuple[str | None, bool]:
             return "PEARSON", False
         else:
             return "PEARSON", True
+        
+    # Immediate Access without platform
+    if "immediate access" in msg_lower:
+        # Check if there are any platform mentions
+        has_platform_mention = any(platform in msg_lower for platform in [
+            "cengage", "mindtap", "mcgraw", "connect", "pearson", 
+            "vitalsource", "bedford", "ebook", "e-book", "etext", "e-text",
+            "simucase", "sage", "vantage", "wiley", "zybooks", "clifton", "macmillan"
+        ])
+        if not has_platform_mention:
+            return "IMMEDIATE_ACCESS", True
     
     return None, False
 
@@ -375,6 +397,16 @@ def chat(payload: ChatRequest):
                     "I can help you with Pearson! To give you the most accurate instructions, "
                     "could you please specify: Are you trying to access a **Pearson textbook** "
                     "or **Pearson MyLab/Mastering**?"
+                )
+            elif publisher == "IMMEDIATE_ACCESS":
+                clarification = (
+                    "I can help you with Immediate Access! To give you the most accurate instructions, "
+                    "could you please specify: Which platform do you need help with? For example:\n"
+                    "- McGraw Hill Connect\n"
+                    "- Cengage MindTap\n"
+                    "- Pearson MyLab/Mastering\n"
+                    "- SimuCase\n"
+                    "- Another platform"
                 )
             else:
                 clarification = (
@@ -526,6 +558,14 @@ def chat(payload: ChatRequest):
             any(keyword in message.lower() for keyword in greeting_keywords)
         )
 
+        # Detect vague queries that need clarification
+        is_vague_query = (
+            intent == "IA_ACCESS_ISSUE" and 
+            platform is None and
+            not course_code and
+            len(message.split()) <= 10  # Short, vague message
+        )
+
         try:
             # ✨ START RETRIEVAL TIMER
             retrieval_start = time.time()
@@ -534,6 +574,11 @@ def chat(payload: ChatRequest):
                 retrieval = None
                 context = ""
                 print("🔍 [RAG DEBUG] Greeting detected - skipping retrieval")
+            # ✨ NEW: Skip retrieval for vague queries
+            elif is_vague_query:
+                retrieval = None
+                context = ""
+                print("🔍 [RAG DEBUG] Query too vague - skipping retrieval, will ask for clarification")
             # Skip retrieval for unsupported platforms
             elif intent == "UNSUPPORTED_PLATFORM":
                 retrieval = None
@@ -591,7 +636,18 @@ def chat(payload: ChatRequest):
         # ===== LLM CALL (TIMED) =====
         system_hint = ""
 
-        if intent == "UNSUPPORTED_PLATFORM":
+        # ✨ NEW: Add hint for vague queries
+        if is_vague_query:
+            system_hint = (
+                "The user mentioned they can't access 'Immediate Access' but didn't provide specific details. "
+                "DO NOT provide a generic greeting. "
+                "Ask specific clarifying questions to help them: "
+                "1) Which course or textbook platform are they trying to access? "
+                "   (Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, etc.) "
+                "2) Or are they having trouble with the Immediate Access page in Blackboard? "
+                "Be friendly but direct in asking for this information."
+            )
+        elif intent == "UNSUPPORTED_PLATFORM":
             platform_mentioned = None
             unsupported = ["pearson", "mylab", "mastering", "wiley", "sapling"]
             for p in unsupported:

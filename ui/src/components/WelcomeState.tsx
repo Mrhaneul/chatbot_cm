@@ -8,7 +8,7 @@ interface WelcomeStateProps {
 export function WelcomeState({ onPromptClick }: WelcomeStateProps) {
   const suggestedPrompts = [
     "I can't access my Cengage textbook",
-    "Help with McGraw Hill Connect",
+    "I need help with McGraw Hill Connect",
     "What is Immediate Access?",
     "My Pearson login isn't working",
   ];
