@@ -17,6 +17,24 @@ export interface ChatResponse {
   source: string;
   article_link: string | null;
   confidence: number;
+  recommended_pdfs?: PDFRecommendation[];  // ✨ NEW
+  retrieval_time_ms?: number;
+  llm_time_ms?: number;
+  total_time_ms?: number;
+}
+
+export interface PDFRecommendation {
+  doc_id: string;
+  title: string;
+  description: string;
+  platform: string;
+  public_url: string;
+  filename: string;
+  pages: number;
+  file_size_kb: number;
+  relevance?: string;  // "Best Match", "Related", "Relevant"
+  priority?: string;   // "high", "medium", "low"
+  tags?: string[];
 }
 
 export interface SessionStats {

@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Dict, List, Optional
 
 class ChatRequest(BaseModel):
     message: str
@@ -11,8 +11,9 @@ class ChatResponse(BaseModel):
     article_link: Optional[str] = None
     confidence: float
     
-    # ✨ NEW: Performance metrics
+    # Performance metrics
     response_time_ms: Optional[float] = None
     retrieval_time_ms: Optional[float] = None
     llm_time_ms: Optional[float] = None
     total_time_ms: Optional[float] = None
+    recommended_pdfs: List[Dict] = []

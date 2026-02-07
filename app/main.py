@@ -10,6 +10,7 @@ import uuid
 import time  
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from app.pdf_recommendations import get_recommendations_for_chat
 
 """
 MAIN API (FIXED + PERFORMANCE TRACKING)
@@ -710,6 +711,20 @@ def chat(payload: ChatRequest):
             else None
         )
 
+        # ===== PDF RECOMMENDATIONS =====
+        recommended_pdfs = []
+        try:
+            if intent == "IA_ACCESS_ISSUE" and retrieval and not is_greeting:
+                recommended_pdfs = get_recommendations_for_chat(
+                    retrieval_result=retrieval,
+                    platform=platform,
+                    query=message
+                )
+                print(f"📄 Recommending {len(recommended_pdfs)} PDFs")
+        except Exception as e:
+            print(f"⚠️  PDF recommendation failed: {e}")
+            recommended_pdfs = []
+
         # ✨ PRINT PERFORMANCE METRICS
         print(f"\n⏱️  PERFORMANCE METRICS:")
         print(f"   Retrieval: {retrieval_time_ms:.2f}ms")
@@ -723,7 +738,8 @@ def chat(payload: ChatRequest):
             confidence=confidence,
             retrieval_time_ms=round(retrieval_time_ms, 2),
             llm_time_ms=round(llm_time_ms, 2),
-            total_time_ms=round(total_time_ms, 2)
+            total_time_ms=round(total_time_ms, 2),
+            recommended_pdfs=recommended_pdfs
         )
 
     except Exception as e:

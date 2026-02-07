@@ -84,8 +84,36 @@ export default function App() {
 
       setMessages(prev => [...prev, assistantMessage]);
 
-      // Update PDF recommendations based on response
-      updatePDFRecommendations(content, response);
+      // ✨ UPDATE: Use PDF recommendations from backend
+      // ✨ UPDATE: Use PDF recommendations from backend
+      if (response.recommended_pdfs && response.recommended_pdfs.length > 0) {
+        const formattedPDFs: PDFRecommendation[] = response.recommended_pdfs.map(pdf => {
+          // Normalize relevance to match our type
+          const normalizedRelevance = pdf.relevance?.toLowerCase() || 'relevant';
+          const relevance: 'best' | 'related' | 'relevant' = 
+            normalizedRelevance === 'best match' ? 'best' :
+            normalizedRelevance === 'best' ? 'best' :
+            normalizedRelevance === 'related' ? 'related' : 
+            'relevant';
+          
+          return {
+            id: pdf.doc_id,
+            title: pdf.title,
+            description: pdf.description,
+            platform: pdf.platform.charAt(0).toUpperCase() + pdf.platform.slice(1),
+            relevance,
+            lastUpdated: 'Recently',
+            pageCount: pdf.pages,
+            pdfUrl: pdf.public_url,
+          };
+        });
+        
+        setPdfRecommendations(formattedPDFs);
+        console.log('📄 PDF Recommendations loaded:', formattedPDFs.length);
+      } else {
+        setPdfRecommendations([]);
+      }
+
 
       // Update API status on successful response
       if (apiStatus !== 'connected') {
@@ -99,7 +127,7 @@ export default function App() {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'system',
-        content: '⚠️ Sorry, I\'m having trouble connecting to the server. Please make sure the backend is running on http://localhost:8000 and try again.',
+        content: '⚠️ Sorry, I\'m having trouble connecting to the server. Please try again.',
         timestamp: new Date(),
       };
 

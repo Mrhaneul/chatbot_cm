@@ -54,3 +54,10 @@ ui/.cache/
 # Logs
 *.log
 logs/
+
+# Firebase service account
+firebase-service-account.json
+*.json
+firebase-service-account.json
+*firebase-adminsdk*.json
+serviceAccountKey.json
