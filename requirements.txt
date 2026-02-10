@@ -1,9 +1,9 @@
 fastapi
-uvicorn
-requests
-faiss-cpu
+uvicorn[standard]
+firebase-admin
 sentence-transformers
-torch
-colorama
-pydantic
+faiss-cpu
 numpy
+pydantic
+python-multipart
+requests
