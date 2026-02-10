@@ -1,0 +1,21 @@
+# Don't include in Docker image
+ui/
+pdfs/
+*.pdf
+*.md
+.git/
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.log
+
+# Keep only essential data
+# data/ files will be included selectively
