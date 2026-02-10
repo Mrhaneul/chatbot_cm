@@ -104,6 +104,9 @@ def detect_intent(message: str) -> str:
         "what is",
         "what's",
         "what are",
+        "how does", 
+        "how do",        
+        "how can i",     
         "tell me about",
         "explain",
         "describe",
@@ -270,6 +273,20 @@ def is_ambiguous_platform_query(message: str) -> tuple[str | None, bool]:
     """
     msg_lower = message.lower()
     
+    # ✨ NEW: Check for informational questions FIRST
+    informational_patterns = [
+        "what is",
+        "what's",
+        "tell me about",
+        "explain",
+        "describe",
+        "definition of",
+    ]
+    
+    # If it's an informational question, don't treat as ambiguous
+    if any(pattern in msg_lower for pattern in informational_patterns):
+        return None, False  # Let it proceed to FAQ retrieval
+    
     # McGraw Hill
     if "mcgraw" in msg_lower or "mcgraw hill" in msg_lower:
         if "connect" in msg_lower:
@@ -296,16 +313,26 @@ def is_ambiguous_platform_query(message: str) -> tuple[str | None, bool]:
             return "PEARSON", False
         else:
             return "PEARSON", True
-        
-    # Immediate Access without platform
+    
+    # ✨ UPDATED: Immediate Access without platform
     if "immediate access" in msg_lower:
-        # Check if there are any platform mentions
+        # Check for troubleshooting keywords
+        troubleshooting_keywords = [
+            "can't access", "cannot access", "unable to access",
+            "not working", "doesn't work", "trouble", "issue", "problem"
+        ]
+        
+        has_trouble_keyword = any(keyword in msg_lower for keyword in troubleshooting_keywords)
         has_platform_mention = any(platform in msg_lower for platform in [
             "cengage", "mindtap", "mcgraw", "connect", "pearson", 
             "vitalsource", "bedford", "ebook", "e-book", "etext", "e-text",
             "simucase", "sage", "vantage", "wiley", "zybooks", "clifton", "macmillan"
         ])
-        if not has_platform_mention:
+        
+        # Only trigger clarification if:
+        # 1. They have a troubleshooting issue AND
+        # 2. No platform is mentioned
+        if has_trouble_keyword and not has_platform_mention:
             return "IMMEDIATE_ACCESS", True
     
     return None, False

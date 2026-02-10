@@ -1,5 +1,5 @@
 import React from 'react';
-import cbuLogo1 from 'figma:asset/117d49da1b6dff5d976520b90bf148fdd350b221.png';
+import cbuLogo1 from '../assets/cbulogo1.png';
 
 interface WelcomeStateProps {
   onPromptClick: (prompt: string) => void;

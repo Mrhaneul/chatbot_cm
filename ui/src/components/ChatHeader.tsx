@@ -1,6 +1,6 @@
 import React from 'react';
 import { Wifi, WifiOff } from 'lucide-react';
-import cbuLogo2 from 'figma:asset/3171772f7b3aa5db95557b8d856e5c4223642504.png';
+import cbuLogo2 from '../assets/cbulogo2.png';
 
 interface ChatHeaderProps {
   apiStatus?: 'connected' | 'disconnected' | 'checking';
@@ -13,7 +13,7 @@ export function ChatHeader({ apiStatus = 'checking' }: ChatHeaderProps) {
         <img src={cbuLogo2} alt="CBU logo" className="h-10 w-auto object-contain rounded-md" />
         <div>
           <h1 className="font-semibold text-lg">Lance - Campus Store Assistant</h1>
-          <p className="text-sm text-blue-200">Ask me about Immediate Access & textbook platforms</p>
+          <p className="text-sm text-blue-200">Immediate Access • Textbooks • Digital Support</p>
         </div>
       </div>
 

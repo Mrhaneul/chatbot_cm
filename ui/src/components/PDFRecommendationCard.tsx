@@ -1,15 +1,6 @@
 import React from 'react';
 import { FileText, Download, Calendar, FileStack } from 'lucide-react';
-
-interface PDFRecommendation {
-  id: string;
-  title: string;
-  description: string;
-  platform: string;
-  relevance: 'best' | 'related' | 'relevant';
-  lastUpdated: string;
-  pageCount: number;
-}
+import { PDFRecommendation } from '../types';
 
 interface PDFRecommendationCardProps {
   recommendation: PDFRecommendation;
@@ -17,22 +8,34 @@ interface PDFRecommendationCardProps {
 
 export function PDFRecommendationCard({ recommendation }: PDFRecommendationCardProps) {
   const getRelevanceBadge = () => {
-    const badges = {
-      best: {
+    const badges: Record<string, { text: string; className: string }> = {
+      'Best Match': {
         text: 'Best Match',
         className: 'bg-[#A07400] text-white',
       },
-      related: {
+      'best match': {
+        text: 'Best Match',
+        className: 'bg-[#A07400] text-white',
+      },
+      'Related': {
         text: 'Related',
         className: 'bg-[#165FB3] text-white',
       },
-      relevant: {
+      'related': {
+        text: 'Related',
+        className: 'bg-[#165FB3] text-white',
+      },
+      'Relevant': {
+        text: 'Relevant',
+        className: 'bg-[#5ACBF2] text-[#002554]',
+      },
+      'relevant': {
         text: 'Relevant',
         className: 'bg-[#5ACBF2] text-[#002554]',
       },
     };
 
-    const badge = badges[recommendation.relevance];
+    const badge = badges[recommendation.relevance] || badges['relevant'];
     
     return (
       <span className={`absolute top-3 right-3 px-3 py-1 rounded-full text-xs font-semibold ${badge.className}`}>
@@ -42,13 +45,14 @@ export function PDFRecommendationCard({ recommendation }: PDFRecommendationCardP
   };
 
   const handleViewPDF = () => {
-    // Mock PDF viewing
-    alert(`Opening: ${recommendation.title}`);
+    window.open(recommendation.url, '_blank');
   };
 
   const handleDownloadPDF = () => {
-    // Mock PDF download
-    alert(`Downloading: ${recommendation.title}`);
+    const link = document.createElement('a');
+    link.href = recommendation.url;
+    link.download = recommendation.filename;
+    link.click();
   };
 
   return (
@@ -76,11 +80,11 @@ export function PDFRecommendationCard({ recommendation }: PDFRecommendationCardP
       <div className="flex items-center gap-4 text-xs text-gray-500 mb-4">
         <div className="flex items-center gap-1">
           <Calendar className="w-3.5 h-3.5" />
-          <span>{recommendation.lastUpdated}</span>
+          <span>Recently</span>
         </div>
         <div className="flex items-center gap-1">
           <FileStack className="w-3.5 h-3.5" />
-          <span>{recommendation.pageCount} pages</span>
+          <span>{recommendation.pages} pages</span>
         </div>
       </div>
 

@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 /**
  * API Service for Campus Store Chatbot
  * Connects React UI to FastAPI backend
@@ -23,19 +25,7 @@ export interface ChatResponse {
   total_time_ms?: number;
 }
 
-export interface PDFRecommendation {
-  doc_id: string;
-  title: string;
-  description: string;
-  platform: string;
-  public_url: string;
-  filename: string;
-  pages: number;
-  file_size_kb: number;
-  relevance?: string;  // "Best Match", "Related", "Relevant"
-  priority?: string;   // "high", "medium", "low"
-  tags?: string[];
-}
+import { PDFRecommendation } from '../types';
 
 export interface SessionStats {
   active_sessions: number;

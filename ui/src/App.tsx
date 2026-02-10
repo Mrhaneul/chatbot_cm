@@ -5,26 +5,7 @@ import { ChatMessage } from './components/ChatMessage';
 import { ChatInput } from './components/ChatInput';
 import { PDFSidebar } from './components/PDFSidebar';
 import { sendChatMessage, checkApiHealth } from './services/api';
-
-interface Message {
-  id: string;
-  type: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: Date;
-  confidence?: number;
-  source?: string;
-  articleLink?: string | null;
-}
-
-interface PDFRecommendation {
-  id: string;
-  title: string;
-  description: string;
-  platform: string;
-  relevance: 'best' | 'related' | 'relevant';
-  lastUpdated: string;
-  pageCount: number;
-}
+import { PDFRecommendation, Message } from './types';
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -84,36 +65,27 @@ export default function App() {
 
       setMessages(prev => [...prev, assistantMessage]);
 
-      // ✨ UPDATE: Use PDF recommendations from backend
-      // ✨ UPDATE: Use PDF recommendations from backend
+      // ✨ PDF recommendations from backend
       if (response.recommended_pdfs && response.recommended_pdfs.length > 0) {
-        const formattedPDFs: PDFRecommendation[] = response.recommended_pdfs.map(pdf => {
-          // Normalize relevance to match our type
-          const normalizedRelevance = pdf.relevance?.toLowerCase() || 'relevant';
-          const relevance: 'best' | 'related' | 'relevant' = 
-            normalizedRelevance === 'best match' ? 'best' :
-            normalizedRelevance === 'best' ? 'best' :
-            normalizedRelevance === 'related' ? 'related' : 
-            'relevant';
-          
-          return {
-            id: pdf.doc_id,
-            title: pdf.title,
-            description: pdf.description,
-            platform: pdf.platform.charAt(0).toUpperCase() + pdf.platform.slice(1),
-            relevance,
-            lastUpdated: 'Recently',
-            pageCount: pdf.pages,
-            pdfUrl: pdf.public_url,
-          };
-        });
+        const formattedPDFs: PDFRecommendation[] = response.recommended_pdfs.map(pdf => ({
+          doc_id: pdf.doc_id,
+          title: pdf.title,
+          description: pdf.description,
+          filename: pdf.filename,
+          url: pdf.url,
+          pages: pdf.pages,
+          relevance: pdf.relevance || 'Relevant',
+          platform: pdf.platform.charAt(0).toUpperCase() + pdf.platform.slice(1),
+          file_size_kb: pdf.file_size_kb,
+          tags: pdf.tags || []
+        }));
         
         setPdfRecommendations(formattedPDFs);
         console.log('📄 PDF Recommendations loaded:', formattedPDFs.length);
+        console.log('📄 First PDF URL:', formattedPDFs[0]?.url);
       } else {
         setPdfRecommendations([]);
       }
-
 
       // Update API status on successful response
       if (apiStatus !== 'connected') {
@@ -136,136 +108,6 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const updatePDFRecommendations = (query: string, response: any) => {
-    const lowerQuery = query.toLowerCase();
-    const newRecommendations: PDFRecommendation[] = [];
-
-    // Extract platform from response source
-    const source = response.source || '';
-    const platform = extractPlatformFromSource(source, lowerQuery);
-
-    // Generate PDF recommendations based on detected platform
-    if (platform === 'cengage') {
-      newRecommendations.push({
-        id: '1',
-        title: 'Cengage MindTap Access Guide',
-        description: 'Step-by-step instructions for accessing Cengage MindTap through Immediate Access',
-        platform: 'Cengage',
-        relevance: 'best',
-        lastUpdated: 'Jan 27, 2026',
-        pageCount: 3,
-      });
-      if (lowerQuery.includes('textbook')) {
-        newRecommendations.push({
-          id: '2',
-          title: 'Cengage eTextbook Guide',
-          description: 'How to access your Cengage eTextbook through VitalSource',
-          platform: 'Cengage',
-          relevance: 'related',
-          lastUpdated: 'Jan 27, 2026',
-          pageCount: 2,
-        });
-      }
-    }
-
-    if (platform === 'mcgraw' || platform === 'connect') {
-      newRecommendations.push({
-        id: '3',
-        title: 'McGraw Hill Connect Access',
-        description: 'Complete guide to accessing McGraw Hill Connect through Blackboard',
-        platform: 'McGraw Hill',
-        relevance: 'best',
-        lastUpdated: 'Jan 27, 2026',
-        pageCount: 4,
-      });
-      newRecommendations.push({
-        id: '4',
-        title: 'McGraw Hill Tools Navigation',
-        description: 'How to access materials through the Tools menu',
-        platform: 'McGraw Hill',
-        relevance: 'related',
-        lastUpdated: 'Jan 27, 2026',
-        pageCount: 3,
-      });
-    }
-
-    if (platform === 'pearson') {
-      newRecommendations.push({
-        id: '5',
-        title: 'Pearson MyLab & Mastering',
-        description: 'Guide for accessing Pearson platforms through Immediate Access',
-        platform: 'Pearson',
-        relevance: 'best',
-        lastUpdated: 'Jan 27, 2026',
-        pageCount: 4,
-      });
-    }
-
-    if (platform === 'simucase') {
-      newRecommendations.push({
-        id: '6',
-        title: 'SimuCase Platform Setup',
-        description: 'Complete walkthrough for redeeming your SimuCase access code',
-        platform: 'SimuCase',
-        relevance: 'best',
-        lastUpdated: 'Jan 27, 2026',
-        pageCount: 5,
-      });
-    }
-
-    if (lowerQuery.includes('immediate access')) {
-      newRecommendations.push({
-        id: '7',
-        title: 'Immediate Access Overview',
-        description: 'Complete guide to CBU\'s Immediate Access program',
-        platform: 'General',
-        relevance: 'best',
-        lastUpdated: 'Feb 1, 2026',
-        pageCount: 6,
-      });
-    }
-
-    // Add general troubleshooting if we have specific recommendations
-    if (newRecommendations.length > 0) {
-      newRecommendations.push({
-        id: '99',
-        title: 'Browser & Cookie Troubleshooting',
-        description: 'Common browser issues and how to fix them',
-        platform: 'General',
-        relevance: 'relevant',
-        lastUpdated: 'Jan 27, 2026',
-        pageCount: 2,
-      });
-    }
-
-    setPdfRecommendations(newRecommendations);
-  };
-
-  const extractPlatformFromSource = (source: string, query: string): string => {
-    const sourceLower = source.toLowerCase();
-    const queryLower = query.toLowerCase();
-
-    if (sourceLower.includes('cengage') || queryLower.includes('cengage') || queryLower.includes('mindtap')) {
-      return 'cengage';
-    }
-    if (sourceLower.includes('mcgraw') || queryLower.includes('mcgraw') || queryLower.includes('connect')) {
-      return 'mcgraw';
-    }
-    if (sourceLower.includes('pearson') || queryLower.includes('pearson') || queryLower.includes('mylab')) {
-      return 'pearson';
-    }
-    if (sourceLower.includes('simucase') || queryLower.includes('simucase')) {
-      return 'simucase';
-    }
-    if (sourceLower.includes('bedford') || queryLower.includes('bedford')) {
-      return 'bedford';
-    }
-    if (sourceLower.includes('sage') || queryLower.includes('sage')) {
-      return 'sage';
-    }
-    return 'general';
   };
 
   const handlePromptClick = (prompt: string) => {

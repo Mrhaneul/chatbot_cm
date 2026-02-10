@@ -5,16 +5,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { PDFRecommendationCard } from "./PDFRecommendationCard";
-
-interface PDFRecommendation {
-  id: string;
-  title: string;
-  description: string;
-  platform: string;
-  relevance: "best" | "related" | "relevant";
-  lastUpdated: string;
-  pageCount: number;
-}
+import { PDFRecommendation } from "../types";
 
 interface PDFSidebarProps {
   recommendations: PDFRecommendation[];
@@ -80,7 +71,7 @@ export function PDFSidebar({
             <div className="p-4 space-y-4">
               {recommendations.map((recommendation) => (
                 <PDFRecommendationCard
-                  key={recommendation.id}
+                  key={recommendation.doc_id}
                   recommendation={recommendation}
                 />
               ))}
