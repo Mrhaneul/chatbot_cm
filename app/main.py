@@ -104,9 +104,9 @@ def detect_intent(message: str) -> str:
         "what is",
         "what's",
         "what are",
-        "how does", 
-        "how do",        
-        "how can i",     
+        "how does",
+        "how do",
+        "how can i",
         "tell me about",
         "explain",
         "describe",
@@ -122,7 +122,7 @@ def detect_intent(message: str) -> str:
         print(f"🔍 [INTENT DEBUG] Informational question detected")
         return "GENERAL_FAQ"
     
-    # Immediate Access troubleshooting keywords
+    # Immediate Access AND Textbook troubleshooting keywords
     ia_keywords = [
         "opted in",
         "can't access",
@@ -142,23 +142,28 @@ def detect_intent(message: str) -> str:
         "how do i access",    
         "how to access",
         "access",
-        "help with",          # ✨ NEW
-        "help",               # ✨ NEW (when combined with platform)
-        "having trouble",     # ✨ NEW
-        "trouble with",       # ✨ NEW
+        "help with",
+        "help",
+        "having trouble",
+        "trouble with",
+        "having issues",       # ✨ NEW
+        "issues with",         # ✨ NEW
     ]
     
-    # Check if any IA keyword is present AND mentions a platform
+    # Check if any IA keyword is present AND mentions a platform OR textbook
     has_ia_keyword = any(keyword in normalized for keyword in ia_keywords)
-    mentions_platform = any(platform in normalized for platform in [
+    
+    # ✨ EXPANDED: Include textbook mentions
+    mentions_platform_or_textbook = any(word in normalized for word in [
         "cengage", "mindtap", "mcgraw", "connect", "pearson", 
         "vitalsource", "bedford", "ebook", "e-book", "etext", "e-text",
-        "simucase", "sage", "vantage", "wiley", "zybooks", "clifton", "macmillan"
+        "simucase", "sage", "vantage", "wiley", "zybooks", "clifton", "macmillan",
+        "textbook", "text book", "etextbook", "e-textbook"  # ✨ NEW
     ])
 
-    print(f"🔍 [INTENT DEBUG] has_ia_keyword={has_ia_keyword}, mentions_platform={mentions_platform}")
+    print(f"🔍 [INTENT DEBUG] has_ia_keyword={has_ia_keyword}, mentions_platform_or_textbook={mentions_platform_or_textbook}")
     
-    if has_ia_keyword and mentions_platform:
+    if has_ia_keyword and mentions_platform_or_textbook:
         return "IA_ACCESS_ISSUE"
     
     # Only trigger IA_ACCESS_ISSUE for "immediate access" if combined with troubleshooting keywords
@@ -467,14 +472,48 @@ def chat(payload: ChatRequest):
         print(f"🔍 [PLATFORM DEBUG EARLY] platform_temp = {platform_temp}")
         print(f"🔍 [PLATFORM DEBUG EARLY] platform = {platform}")
 
-        # ===== STATE HANDLING =====
         if session.get("awaiting_platform_type", False):
             print(f"🔍 [STATE DEBUG] Processing platform type clarification")
             
             msg_lower = message.lower()
             publisher = session.get("stored_publisher")
+            original_query = session.get("stored_original_query", "")  # ✨ Get original query
             
-            if "connect" in msg_lower or "mindtap" in msg_lower or "mylab" in msg_lower or "mastering" in msg_lower or "platform" in msg_lower:
+            # ✨ NEW: Handle textbook-specific follow-ups
+            if publisher == "TEXTBOOK_GENERIC":
+                intent = "IA_ACCESS_ISSUE"
+                
+                # Detect platform from response
+                if "bedford" in msg_lower:
+                    platform = "BEDFORD"
+                elif "cengage" in msg_lower or "mindtap" in msg_lower:
+                    platform = "CENGAGE"
+                elif "mcgraw" in msg_lower or "connect" in msg_lower:
+                    platform = "MCGRAW_HILL"
+                elif "pearson" in msg_lower or "mylab" in msg_lower or "mastering" in msg_lower:
+                    platform = "PEARSON"
+                elif "vitalsource" in msg_lower:
+                    platform = "VITALSOURCE"
+                elif "simucase" in msg_lower:
+                    platform = "SIMUCASE"
+                elif "sage" in msg_lower:
+                    platform = "SAGE"
+                elif "wiley" in msg_lower:
+                    platform = "WILEY"
+                elif "zybooks" in msg_lower:
+                    platform = "ZYBOOKS"
+                elif "clifton" in msg_lower:
+                    platform = "CLIFTON"
+                elif "macmillan" in msg_lower:
+                    platform = "MACMILLAN"
+                
+                # ✨ Use original query + platform for better retrieval
+                if platform and original_query:
+                    enhanced_query = f"{original_query} {platform} access instructions"
+                    print(f"🔍 [QUERY DEBUG] Enhanced query: {enhanced_query}")
+                
+            elif "connect" in msg_lower or "mindtap" in msg_lower or "mylab" in msg_lower or "mastering" in msg_lower or "platform" in msg_lower:
+                # Existing logic for Cengage/McGraw/Pearson clarification
                 intent = "IA_ACCESS_ISSUE"
                 if publisher == "MCGRAW_HILL":
                     platform = "MCGRAW_HILL"
@@ -488,51 +527,7 @@ def chat(payload: ChatRequest):
             
             session["awaiting_platform_type"] = False
             session["stored_publisher"] = None
-            course_code = extract_course_code(message)
-
-        elif session.get("awaiting_course_code", False):
-            if detect_topic_switch(message, session["stored_intent"]):
-                session["awaiting_course_code"] = False
-                session["stored_intent"] = None
-                session["stored_platform"] = None
-                platform, _ = detect_platform_and_check_ambiguity(message)
-                intent = detect_intent(message)
-                course_code = extract_course_code(message)
-            else:
-                course_code = extract_course_code(message)
-                intent = session["stored_intent"]
-                platform = session["stored_platform"]
-                session["awaiting_course_code"] = False
-                session["stored_intent"] = None
-                session["stored_platform"] = None
-        else:
-            is_platform_clarification = False
-            if len(session["history"]) >= 2:
-                last_bot_message = ""
-                for msg in reversed(session["history"]):
-                    if msg.get("role") == "assistant":
-                        last_bot_message = msg.get("content", "").lower()
-                        break
-                
-                platform_clarification_patterns = [
-                    "textbook or mcgraw hill connect",
-                    "textbook or cengage mindtap",
-                    "textbook or pearson mylab",
-                    "cengage textbook or cengage mindtap",
-                    "mcgraw hill textbook or mcgraw hill connect",
-                    "pearson textbook or pearson mylab"
-                ]
-                
-                if any(pattern in last_bot_message for pattern in platform_clarification_patterns):
-                    is_platform_clarification = True
-                    intent = "IA_ACCESS_ISSUE"
-                    print(f"🔍 [INTENT DEBUG] Platform clarification detected - preserving IA_ACCESS_ISSUE intent")
-            
-            if not is_platform_clarification:
-                intent = detect_intent(message)
-            
-            print(f"🔍 [INTENT DEBUG] Final intent: {intent}")
-
+            session["stored_original_query"] = None  # ✨ Clear stored query
             course_code = extract_course_code(message)
             
             if platform is None:
@@ -559,6 +554,85 @@ def chat(payload: ChatRequest):
             
             print(f"🔍 [PLATFORM DEBUG] Detected platform: {platform}")
 
+            # ✨ ADD THIS ELIF BLOCK FOR COURSE CODE HANDLING
+        elif session.get("awaiting_course_code", False):
+            if detect_topic_switch(message, session["stored_intent"]):
+                session["awaiting_course_code"] = False
+                session["stored_intent"] = None
+                session["stored_platform"] = None
+                platform, _ = detect_platform_and_check_ambiguity(message)
+                intent = detect_intent(message)
+                course_code = extract_course_code(message)
+            else:
+                course_code = extract_course_code(message)
+                intent = session["stored_intent"]
+                platform = session["stored_platform"]
+                session["awaiting_course_code"] = False
+                session["stored_intent"] = None
+                session["stored_platform"] = None
+        
+        # ✨ ADD THIS ELSE BLOCK FOR NEW QUERIES
+        else:
+            # This handles NEW conversations
+            is_platform_clarification = False
+            if len(session["history"]) >= 2:
+                last_bot_message = ""
+                for msg in reversed(session["history"]):
+                    if msg.get("role") == "assistant":
+                        last_bot_message = msg.get("content", "").lower()
+                        break
+                
+                platform_clarification_patterns = [
+                    "textbook or mcgraw hill connect",
+                    "textbook or cengage mindtap",
+                    "textbook or pearson mylab",
+                    "cengage textbook or cengage mindtap",
+                    "mcgraw hill textbook or mcgraw hill connect",
+                    "pearson textbook or pearson mylab"
+                ]
+                
+                if any(pattern in last_bot_message for pattern in platform_clarification_patterns):
+                    is_platform_clarification = True
+                    intent = "IA_ACCESS_ISSUE"
+                    print(f"🔍 [INTENT DEBUG] Platform clarification detected - preserving IA_ACCESS_ISSUE intent")
+            
+            if not is_platform_clarification:
+                intent = detect_intent(message)  # ✨ THIS IS THE CRITICAL LINE!
+                print(f"🔍 [INTENT DEBUG] Called detect_intent(), result: {intent}")
+            
+            course_code = extract_course_code(message)
+            
+            if platform is None:
+                if "cengage" in message.lower() or "mindtap" in message.lower():
+                    platform = "CENGAGE"
+                elif "mcgraw" in message.lower() or "connect" in message.lower():
+                    platform = "MCGRAW_HILL"
+                elif "simucase" in message.lower():
+                    platform = "SIMUCASE"
+                elif "pearson" in message.lower():
+                    platform = "PEARSON"
+                elif "bedford" in message.lower():
+                    platform = "BEDFORD"
+                elif "wiley" in message.lower():
+                    platform = "WILEY"
+                elif "sage" in message.lower():
+                    platform = "SAGE"
+                elif "macmillan" in message.lower() or "achieve" in message.lower():
+                    platform = "MACMILLAN"
+                elif "zybooks" in message.lower():
+                    platform = "ZYBOOKS"
+                elif "clifton" in message.lower():
+                    platform = "CLIFTON"
+            
+            print(f"🔍 [PLATFORM DEBUG] Detected platform: {platform}")
+
+        # NOW the intent is set!
+        # 1. Intent detection happens somewhere up here
+        print(f"🔍 [INTENT DEBUG] Final intent: {intent}")
+
+        # 2. Platform detection
+        print(f"🔍 [PLATFORM DEBUG] Detected platform: {platform}")
+
         # Check for course code requirement
         if intent == "IA_ACCESS_ISSUE" and not course_code:
             session["awaiting_course_code"] = True
@@ -571,12 +645,35 @@ def chat(payload: ChatRequest):
             else:
                 session["stored_platform"] = None
 
+        is_vague_query = (
+            intent == "IA_ACCESS_ISSUE" and 
+            platform is None and
+            # (not course_code or has_textbook_mention) and
+            len(message.split()) <= 15 and  # ✨ Slightly longer for "textbook for ENG 123"
+            any(word in message.lower() for word in [
+                "immediate access", 
+                "textbook", 
+                "text book", 
+                "etextbook",
+                "e-textbook",
+                "ebook",
+                "e-book"
+            ])
+        )
+        if is_vague_query:
+            session["awaiting_platform_type"] = True
+            session["stored_publisher"] = "TEXTBOOK_GENERIC"
+            session["stored_original_query"] = message
+
+        print(f"🔍 [VAGUE QUERY DEBUG] intent={intent}, platform={platform}")
+        print(f"🔍 [VAGUE QUERY DEBUG] is_vague_query={is_vague_query}")
+
+        # 5. Then add to history
         session["history"].append({
             "role": "user",
             "content": message
         })
 
-        # ===== RAG RETRIEVAL (TIMED) =====
         retrieval = None
         context = ""
 
@@ -584,14 +681,6 @@ def chat(payload: ChatRequest):
         is_greeting = (
             len(message.split()) <= 3 and  # Short message
             any(keyword in message.lower() for keyword in greeting_keywords)
-        )
-
-        # Detect vague queries that need clarification
-        is_vague_query = (
-            intent == "IA_ACCESS_ISSUE" and 
-            platform is None and
-            not course_code and
-            len(message.split()) <= 10  # Short, vague message
         )
 
         try:
@@ -664,17 +753,32 @@ def chat(payload: ChatRequest):
         # ===== LLM CALL (TIMED) =====
         system_hint = ""
 
-        # ✨ NEW: Add hint for vague queries
+        # ✨ UPDATED: Add hint for vague queries with textbook/IA detection
         if is_vague_query:
-            system_hint = (
-                "The user mentioned they can't access 'Immediate Access' but didn't provide specific details. "
-                "DO NOT provide a generic greeting. "
-                "Ask specific clarifying questions to help them: "
-                "1) Which course or textbook platform are they trying to access? "
-                "   (Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, etc.) "
-                "2) Or are they having trouble with the Immediate Access page in Blackboard? "
-                "Be friendly but direct in asking for this information."
-            )
+            # Check what type of vague query it is
+            msg_lower = message.lower()
+            
+            if any(word in msg_lower for word in ["textbook", "text book", "etextbook", "e-textbook", "ebook", "e-book"]):
+                system_hint = (
+                    "The user mentioned they're having trouble with their textbook but didn't specify which platform or publisher. "
+                    "DO NOT provide a generic greeting. "
+                    "DO NOT provide troubleshooting steps yet. "
+                    "Ask them which platform or publisher their textbook uses. Be specific with examples: "
+                    "Cengage, McGraw Hill, Pearson, VitalSource, Bedford, Sage, SimuCase, etc. "
+                    "Keep your question friendly and helpful."
+                )
+            else:
+                # Immediate Access specific
+                system_hint = (
+                    "The user mentioned they can't access 'Immediate Access' but didn't provide specific details. "
+                    "DO NOT provide a generic greeting. "
+                    "Ask specific clarifying questions to help them: "
+                    "1) Which course or textbook platform are they trying to access? "
+                    "   (Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, etc.) "
+                    "2) Or are they having trouble with the Immediate Access page in Blackboard? "
+                    "Be friendly but direct in asking for this information."
+                )
+
         elif intent == "UNSUPPORTED_PLATFORM":
             platform_mentioned = None
             unsupported = ["pearson", "mylab", "mastering", "wiley", "sapling"]
@@ -697,6 +801,7 @@ def chat(payload: ChatRequest):
                 "DO NOT ask for course codes. "
                 "DO NOT provide generic troubleshooting steps."
             )
+
         elif intent == "IA_ACCESS_ISSUE":
             system_hint = (
                 "The user is asking about Immediate Access digital course materials. "
