@@ -11,6 +11,9 @@ import time
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from app.pdf_recommendations import get_recommendations_for_chat
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 
 """
 MAIN API (FIXED + PERFORMANCE TRACKING)
@@ -24,14 +27,25 @@ CONFIDENCE_THRESHOLD = 0.1
 MAX_HISTORY_TURNS = 6
 SESSION_TIMEOUT = timedelta(hours=1)
 
-# Create FastAPI app
+# Create FastAPI app FIRST
 app = FastAPI(title="Campus Store Chatbot (Session-Safe + Performance Tracking)")
+
+# THEN define and add middleware
+class NgrokMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["ngrok-skip-browser-warning"] = "true"
+        return response
+
+app.add_middleware(NgrokMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "https://lance-cbu.web.app",
+        "https://lance-cbu.firebaseapp.com",
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],

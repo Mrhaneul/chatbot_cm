@@ -8,6 +8,20 @@
 // API Configuration
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+// Add ngrok header when using ngrok URL
+const getHeaders = () => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  // Add ngrok bypass header when using ngrok URL
+  if (API_BASE_URL.includes('ngrok')) {
+    headers['ngrok-skip-browser-warning'] = 'true';
+  }
+
+  return headers;
+};
+
 // Type Definitions
 export interface ChatRequest {
   message: string;
@@ -16,10 +30,10 @@ export interface ChatRequest {
 
 export interface ChatResponse {
   reply: string;
-  source: string;
+  source: string; 
   article_link: string | null;
   confidence: number;
-  recommended_pdfs?: PDFRecommendation[];  // ✨ NEW
+  recommended_pdfs?: PDFRecommendation[];
   retrieval_time_ms?: number;
   llm_time_ms?: number;
   total_time_ms?: number;
@@ -48,9 +62,7 @@ export async function sendChatMessage(
   try {
     const response = await fetch(`${API_BASE_URL}/chat`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getHeaders(),  // ← Uses ngrok header when needed
       body: JSON.stringify({
         message,
         session_id: sessionId,
@@ -74,7 +86,9 @@ export async function sendChatMessage(
  */
 export async function getSessionStats(): Promise<SessionStats> {
   try {
-    const response = await fetch(`${API_BASE_URL}/sessions/stats`);
+    const response = await fetch(`${API_BASE_URL}/sessions/stats`, {
+      headers: getHeaders(),  // ← Uses ngrok header when needed
+    });
     
     if (!response.ok) {
       throw new Error(`API Error: ${response.status}`);
@@ -94,6 +108,7 @@ export async function clearSession(sessionId: string): Promise<void> {
   try {
     const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}`, {
       method: 'DELETE',
+      headers: getHeaders(),  // ← Uses ngrok header when needed
     });
 
     if (!response.ok) {
@@ -110,7 +125,9 @@ export async function clearSession(sessionId: string): Promise<void> {
  */
 export async function checkApiHealth(): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE_URL}/sessions/stats`);
+    const response = await fetch(`${API_BASE_URL}/sessions/stats`, {
+      headers: getHeaders(),  // ← Uses ngrok header when needed
+    });
     return response.ok;
   } catch (error) {
     console.error('API health check failed:', error);

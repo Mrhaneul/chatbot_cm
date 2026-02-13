@@ -1,5 +1,5 @@
 import React from 'react';
-import lanceAvatar from 'figma:asset/e652a3d023b7ebc5964535b039cbdac6622507bd.png';
+import lanceAvatar from 'figma:asset/lance.png';
 
 interface Message {
   id: string;
