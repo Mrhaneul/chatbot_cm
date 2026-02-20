@@ -1,0 +1,136 @@
+users,round,question_id,question_text,expected_keywords,expect_rag,ok,status_code,error,client_total_ms,source,confidence,retrieval_time_ms,llm_time_ms,total_time_ms,quality_score,keyword_score,rag_hit,quality_pass
+5,1,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,4979.3,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,44.62,4498.22,4544.84,1.0,1.0,True,True
+5,1,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,9009.53,INSTR_GENERAL_SOURCE_14,0.5888500213623047,40.62,8947.95,8996.57,1.0,1.0,True,True
+5,1,immediate_access,What is Immediate Access?,immediate access,True,True,200,,12632.63,FAQ_SOURCE_2,0.5658763647079468,43.62,12566.1,12616.72,1.0,1.0,True,True
+5,1,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,15974.73,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,42.62,15880.16,15931.78,1.0,1.0,True,True
+5,1,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,17005.48,FAQ_SOURCE_3,0.7836408615112305,37.63,16946.98,16991.6,0.8,0.6667,True,True
+5,2,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,6674.01,INSTR_GENERAL_SOURCE_14,0.5888500213623047,23.0,6642.94,6667.94,1.0,1.0,True,True
+5,2,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,7926.81,FAQ_SOURCE_3,0.7836408615112305,34.0,7879.3,7920.3,0.8,0.6667,True,True
+5,2,immediate_access,What is Immediate Access?,immediate access,True,True,200,,11538.58,FAQ_SOURCE_2,0.5658763647079468,38.07,11482.28,11532.34,1.0,1.0,True,True
+5,2,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,13946.48,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,36.07,13857.13,13907.2,1.0,1.0,True,True
+5,2,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,16173.48,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,42.07,16092.69,16142.75,1.0,1.0,True,True
+5,3,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,3479.05,FAQ_SOURCE_3,0.7836408615112305,27.6,3443.37,3472.99,0.8,0.6667,True,True
+5,3,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,5812.45,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,39.61,5742.52,5784.16,1.0,1.0,True,True
+5,3,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,8155.34,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,38.6,8080.57,8123.19,1.0,1.0,True,True
+5,3,immediate_access,What is Immediate Access?,immediate access,True,True,200,,11746.22,FAQ_SOURCE_2,0.5658763647079468,36.6,11691.62,11740.25,1.0,1.0,True,True
+5,3,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,16206.17,INSTR_GENERAL_SOURCE_14,0.5888500213623047,37.6,16149.75,16200.37,1.0,1.0,True,True
+6,1,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,6369.07,INSTR_GENERAL_SOURCE_14,0.5888500213623047,46.0,6309.07,6363.07,1.0,1.0,True,True
+6,1,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,8683.52,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,35.0,8623.98,8659.98,1.0,1.0,True,True
+6,1,immediate_access,What is Immediate Access?,immediate access,True,True,200,,12273.55,FAQ_SOURCE_2,0.5658763647079468,48.0,12209.82,12265.82,1.0,1.0,True,True
+6,1,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,14591.84,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,44.0,14495.43,14541.43,1.0,1.0,True,True
+6,1,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,15818.36,FAQ_SOURCE_3,0.7836408615112305,37.02,15770.21,15813.23,0.8,0.6667,True,True
+6,1,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,19150.42,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,48.0,19064.37,19123.37,1.0,1.0,True,True
+6,2,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,5286.13,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,51.0,5186.71,5245.26,1.0,1.0,True,True
+6,2,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,9716.09,INSTR_GENERAL_SOURCE_14,0.5888500213623047,45.0,9650.89,9708.45,1.0,1.0,True,True
+6,2,immediate_access,What is Immediate Access?,immediate access,True,True,200,,13332.71,FAQ_SOURCE_2,0.5658763647079468,28.55,13294.3,13325.86,1.0,1.0,True,True
+6,2,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,14581.1,FAQ_SOURCE_3,0.7836408615112305,43.0,14523.69,14574.24,0.8,0.6667,True,True
+6,2,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,16899.83,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,50.0,16808.49,16868.05,1.0,1.0,True,True
+6,2,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,18127.19,FAQ_SOURCE_3,0.7836408615112305,49.0,18061.36,18120.91,0.8,0.6667,True,True
+6,3,immediate_access,What is Immediate Access?,immediate access,True,True,200,,5879.3,FAQ_SOURCE_2,0.5658763647079468,36.55,5833.18,5871.73,1.0,1.0,True,True
+6,3,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,9218.46,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,51.13,9122.51,9181.64,1.0,1.0,True,True
+6,3,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,10440.76,FAQ_SOURCE_3,0.7836408615112305,48.13,10377.27,10433.4,0.8,0.6667,True,True
+6,3,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,12776.68,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,51.14,12686.2,12742.33,1.0,1.0,True,True
+6,3,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,17209.36,INSTR_GENERAL_SOURCE_14,0.5888500213623047,50.14,17146.92,17202.06,1.0,1.0,True,True
+6,3,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,20549.38,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,51.14,20456.98,20513.11,1.0,1.0,True,True
+7,1,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,3514.29,FAQ_SOURCE_3,0.7836408615112305,51.59,3455.04,3508.63,0.8,0.6667,True,True
+7,1,immediate_access,What is Immediate Access?,immediate access,True,True,200,,7133.87,FAQ_SOURCE_2,0.5658763647079468,51.6,7072.76,7126.35,1.0,1.0,True,True
+7,1,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,9456.58,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,50.58,9378.9,9429.48,1.0,1.0,True,True
+7,1,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,13902.29,INSTR_GENERAL_SOURCE_14,0.5888500213623047,59.58,13825.02,13892.61,1.0,1.0,True,True
+7,1,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,16303.11,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,63.58,16199.94,16270.52,1.0,1.0,True,True
+7,1,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,17533.87,FAQ_SOURCE_3,0.7836408615112305,61.15,17451.44,17525.59,0.8,0.6667,True,True
+7,1,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,19855.83,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,55.58,19755.18,19824.76,1.0,1.0,True,True
+7,2,immediate_access,What is Immediate Access?,immediate access,True,True,200,,5878.89,FAQ_SOURCE_2,0.5658763647079468,38.56,5829.15,5870.71,1.0,1.0,True,True
+7,2,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,7131.99,FAQ_SOURCE_3,0.7836408615112305,57.56,7058.12,7123.69,0.8,0.6667,True,True
+7,2,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,10565.96,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,64.56,10364.82,10436.39,1.0,1.0,True,True
+7,2,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,12474.55,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,61.56,12375.76,12442.32,1.0,1.0,True,True
+7,2,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,14727.01,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,60.56,14620.0,14689.56,1.0,1.0,True,True
+7,2,immediate_access,What is Immediate Access?,immediate access,True,True,200,,18315.16,FAQ_SOURCE_2,0.5658763647079468,51.57,18249.03,18307.59,1.0,1.0,True,True
+7,2,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,22787.33,INSTR_GENERAL_SOURCE_14,0.5888500213623047,57.56,22708.32,22778.88,1.0,1.0,True,True
+7,3,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,3504.93,FAQ_SOURCE_3,0.7836408615112305,32.81,3458.93,3496.73,0.8,0.6667,True,True
+7,3,immediate_access,What is Immediate Access?,immediate access,True,True,200,,7146.05,FAQ_SOURCE_2,0.5658763647079468,49.34,7080.93,7139.27,1.0,1.0,True,True
+7,3,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,9480.87,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,62.34,9371.44,9444.79,1.0,1.0,True,True
+7,3,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,13920.82,INSTR_GENERAL_SOURCE_14,0.5888500213623047,54.35,13847.9,13912.25,1.0,1.0,True,True
+7,3,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,18056.57,INSTR_GENERAL_SOURCE_14,0.5888500213623047,58.34,17976.65,18047.0,1.0,1.0,True,True
+7,3,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,20358.7,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,53.13,20245.66,20319.0,1.0,1.0,True,True
+7,3,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,22598.89,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,62.34,22490.25,22564.59,1.0,1.0,True,True
+8,1,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,4297.04,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,33.56,4238.02,4272.59,1.0,1.0,True,True
+8,1,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,6606.78,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,64.57,6496.24,6570.81,1.0,1.0,True,True
+8,1,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,7833.68,FAQ_SOURCE_3,0.7836408615112305,49.57,7770.18,7828.74,0.8,0.6667,True,True
+8,1,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,8529.75,FAQ_SOURCE_3,0.7836408615112305,65.58,8443.39,8521.97,0.8,0.6667,True,True
+8,1,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,10875.69,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,59.56,10759.98,10829.54,1.0,1.0,True,True
+8,1,immediate_access,What is Immediate Access?,immediate access,True,True,200,,14471.14,FAQ_SOURCE_2,0.5658763647079468,63.57,14380.91,14463.48,1.0,1.0,True,True
+8,1,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,18936.6,INSTR_GENERAL_SOURCE_14,0.5888500213623047,63.57,18843.76,18928.32,1.0,1.0,True,True
+8,1,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,21360.4,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,73.57,21143.74,21225.31,1.0,1.0,True,True
+8,2,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,3468.89,FAQ_SOURCE_3,0.7836408615112305,33.85,3421.85,3460.71,0.8,0.6667,True,True
+8,2,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,7920.59,INSTR_GENERAL_SOURCE_14,0.5888500213623047,41.85,7862.94,7912.78,1.0,1.0,True,True
+8,2,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,10334.37,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,69.41,10214.07,10294.48,1.0,1.0,True,True
+8,2,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,12586.26,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,65.41,12469.34,12542.75,1.0,1.0,True,True
+8,2,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,14601.74,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,68.41,14487.89,14566.3,1.0,1.0,True,True
+8,2,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,19041.22,INSTR_GENERAL_SOURCE_14,0.5888500213623047,62.4,18955.38,19029.78,1.0,1.0,True,True
+8,2,immediate_access,What is Immediate Access?,immediate access,True,True,200,,22669.96,FAQ_SOURCE_2,0.5658763647079468,60.83,22582.09,22659.5,1.0,1.0,True,True
+8,2,immediate_access,What is Immediate Access?,immediate access,True,True,200,,26001.06,FAQ_SOURCE_2,0.5658763647079468,63.4,25915.04,25989.45,1.0,1.0,True,True
+8,3,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,3488.35,FAQ_SOURCE_3,0.7836408615112305,32.09,3443.43,3480.52,0.8,0.6667,True,True
+8,3,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,7941.26,INSTR_GENERAL_SOURCE_14,0.5888500213623047,63.66,7857.55,7933.21,1.0,1.0,True,True
+8,3,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,9187.83,FAQ_SOURCE_3,0.7836408615112305,53.09,9116.91,9179.01,0.8,0.6667,True,True
+8,3,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,12528.42,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,70.66,12409.24,12488.9,1.0,1.0,True,True
+8,3,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,14773.36,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,65.66,14647.64,14727.3,1.0,1.0,True,True
+8,3,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,17002.1,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,67.66,16887.33,16966.99,1.0,1.0,True,True
+8,3,immediate_access,What is Immediate Access?,immediate access,True,True,200,,20594.78,FAQ_SOURCE_2,0.5658763647079468,67.66,20505.92,20583.58,1.0,1.0,True,True
+8,3,immediate_access,What is Immediate Access?,immediate access,True,True,200,,23902.82,FAQ_SOURCE_2,0.5658763647079468,63.66,23815.01,23893.67,1.0,1.0,True,True
+9,1,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,4588.26,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,26.7,4529.8,4558.51,1.0,1.0,True,True
+9,1,immediate_access,What is Immediate Access?,immediate access,True,True,200,,8182.87,FAQ_SOURCE_2,0.5658763647079468,66.56,8087.76,8177.03,1.0,1.0,True,True
+9,1,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,11518.98,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,75.56,11401.38,11488.65,1.0,1.0,True,True
+9,1,immediate_access,What is Immediate Access?,immediate access,True,True,200,,15102.13,FAQ_SOURCE_2,0.5658763647079468,68.56,15009.15,15092.71,1.0,1.0,True,True
+9,1,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,16361.16,FAQ_SOURCE_3,0.7836408615112305,52.05,16291.65,16356.4,0.8,0.6667,True,True
+9,1,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,17059.84,FAQ_SOURCE_3,0.7836408615112305,66.56,16964.54,17050.11,0.8,0.6667,True,True
+9,1,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,19439.39,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,70.56,19264.76,19356.02,1.0,1.0,True,True
+9,1,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,23832.05,INSTR_GENERAL_SOURCE_14,0.5888500213623047,68.56,23744.38,23824.64,1.0,1.0,True,True
+9,1,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,26133.75,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,67.56,26003.25,26091.81,1.0,1.0,True,True
+9,2,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,4371.06,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,49.0,4288.81,4341.81,1.0,1.0,True,True
+9,2,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,6622.41,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,79.57,6505.14,6588.71,1.0,1.0,True,True
+9,2,immediate_access,What is Immediate Access?,immediate access,True,True,200,,10219.96,FAQ_SOURCE_2,0.5658763647079468,72.57,10129.7,10208.27,1.0,1.0,True,True
+9,2,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,11476.2,FAQ_SOURCE_3,0.7836408615112305,71.57,11368.08,11466.65,0.8,0.6667,True,True
+9,2,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,14811.91,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,80.57,14675.27,14776.84,1.0,1.0,True,True
+9,2,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,19267.94,INSTR_GENERAL_SOURCE_14,0.5888500213623047,73.57,19177.31,19255.88,1.0,1.0,True,True
+9,2,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,23394.3,INSTR_GENERAL_SOURCE_14,0.5888500213623047,74.57,23281.63,23383.2,1.0,1.0,True,True
+9,2,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,24642.95,FAQ_SOURCE_3,0.7836408615112305,79.57,24543.2,24632.77,0.8,0.6667,True,True
+9,2,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,26964.2,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,76.57,26827.18,26928.75,1.0,1.0,True,True
+9,3,immediate_access,What is Immediate Access?,immediate access,True,True,200,,5889.16,FAQ_SOURCE_2,0.5658763647079468,38.09,5838.18,5879.27,1.0,1.0,True,True
+9,3,immediate_access,What is Immediate Access?,immediate access,True,True,200,,9198.08,FAQ_SOURCE_2,0.5658763647079468,53.15,9128.34,9188.49,1.0,1.0,True,True
+9,3,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,11531.46,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,69.67,11414.68,11492.35,1.0,1.0,True,True
+9,3,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,12762.25,FAQ_SOURCE_3,0.7836408615112305,69.57,12659.51,12750.17,0.8,0.6667,True,True
+9,3,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,13464.93,FAQ_SOURCE_3,0.7836408615112305,70.66,13372.83,13456.5,0.8,0.6667,True,True
+9,3,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,17920.57,INSTR_GENERAL_SOURCE_14,0.5888500213623047,73.58,17821.22,17909.89,1.0,1.0,True,True
+9,3,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,20253.09,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,80.66,20118.42,20209.08,1.0,1.0,True,True
+9,3,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,22492.19,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,74.58,22362.95,22454.61,1.0,1.0,True,True
+9,3,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,26930.74,INSTR_GENERAL_SOURCE_14,0.5888500213623047,69.58,26832.3,26920.97,1.0,1.0,True,True
+10,1,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,4535.45,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,38.57,4456.45,4501.02,1.0,1.0,True,True
+10,1,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,5759.56,FAQ_SOURCE_3,0.7836408615112305,37.57,5709.56,5754.13,0.8,0.6667,True,True
+10,1,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,8085.37,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,63.57,7977.08,8046.66,1.0,1.0,True,True
+10,1,immediate_access,What is Immediate Access?,immediate access,True,True,200,,11667.48,FAQ_SOURCE_2,0.5658763647079468,71.12,11574.51,11662.62,1.0,1.0,True,True
+10,1,immediate_access,What is Immediate Access?,immediate access,True,True,200,,14959.96,FAQ_SOURCE_2,0.5658763647079468,75.11,14860.01,14951.12,1.0,1.0,True,True
+10,1,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,17283.68,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,80.11,17149.87,17247.98,1.0,1.0,True,True
+10,1,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,19620.5,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,82.11,19491.74,19589.85,1.0,1.0,True,True
+10,1,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,20850.92,FAQ_SOURCE_3,0.7836408615112305,67.54,20747.88,20844.99,0.8,0.6667,True,True
+10,1,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,25304.19,INSTR_GENERAL_SOURCE_14,0.5888500213623047,73.54,25201.41,25296.52,1.0,1.0,True,True
+10,1,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,29432.41,INSTR_GENERAL_SOURCE_14,0.5888500213623047,71.54,29326.96,29426.07,1.0,1.0,True,True
+10,2,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,3487.77,FAQ_SOURCE_3,0.7836408615112305,32.05,3441.1,3478.15,0.8,0.6667,True,True
+10,2,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,7936.7,INSTR_GENERAL_SOURCE_14,0.5888500213623047,81.12,7834.92,7925.04,1.0,1.0,True,True
+10,2,immediate_access,What is Immediate Access?,immediate access,True,True,200,,11550.52,FAQ_SOURCE_2,0.5658763647079468,69.56,11460.3,11538.86,1.0,1.0,True,True
+10,2,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,13911.68,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,87.12,13772.27,13871.39,1.0,1.0,True,True
+10,2,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,18348.2,INSTR_GENERAL_SOURCE_14,0.5888500213623047,84.12,18241.25,18337.37,1.0,1.0,True,True
+10,2,immediate_access,What is Immediate Access?,immediate access,True,True,200,,21960.58,FAQ_SOURCE_2,0.5658763647079468,77.12,21848.01,21948.13,1.0,1.0,True,True
+10,2,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,23451.06,FAQ_SOURCE_3,0.7836408615112305,77.12,23341.02,23440.14,0.8,0.6667,True,True
+10,2,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,25777.03,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,86.12,25639.59,25741.71,1.0,1.0,True,True
+10,2,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,28069.58,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,89.12,27936.73,28035.84,1.0,1.0,True,True
+10,2,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,30318.91,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,87.12,30178.66,30278.78,1.0,1.0,True,True
+10,3,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,3510.01,FAQ_SOURCE_3,0.7836408615112305,43.56,3452.0,3499.56,0.8,0.6667,True,True
+10,3,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,7976.52,INSTR_GENERAL_SOURCE_14,0.5888500213623047,80.66,7876.38,7967.04,1.0,1.0,True,True
+10,3,immediate_access,What is Immediate Access?,immediate access,True,True,200,,11596.99,FAQ_SOURCE_2,0.5658763647079468,60.56,11519.39,11586.95,1.0,1.0,True,True
+10,3,return_policy,What are the return policies for textbooks?,return|policy|textbook,True,True,200,,12847.2,FAQ_SOURCE_3,0.7836408615112305,78.66,12746.74,12836.4,0.8,0.6667,True,True
+10,3,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,16212.87,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,89.66,16074.3,16172.97,1.0,1.0,True,True
+10,3,pearson_access,How do I access Pearson MyLab?,pearson|mylab,True,True,200,,20643.48,INSTR_GENERAL_SOURCE_14,0.5888500213623047,84.1,20534.11,20631.77,1.0,1.0,True,True
+10,3,immediate_access,What is Immediate Access?,immediate access,True,True,200,,24263.63,FAQ_SOURCE_2,0.5658763647079468,82.1,24154.5,24253.16,1.0,1.0,True,True
+10,3,mcgraw_access,I can't access McGraw Hill Connect,mcgraw|connect|access,True,True,200,,27611.97,INSTR_MCGRAW_SOURCE_3,0.6593915224075317,77.1,27475.92,27572.58,1.0,1.0,True,True
+10,3,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,29851.96,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,77.1,29714.26,29812.92,1.0,1.0,True,True
+10,3,mindtap_access,I can't access to Cengage MindTap,cengage|mindtap|access,True,True,200,,31880.97,INSTR_CENGAGE_SOURCE_0,0.6484835147857666,81.1,31743.58,31844.24,1.0,1.0,True,True
