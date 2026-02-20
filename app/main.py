@@ -10,7 +10,12 @@ import uuid
 import time  
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-from app.pdf_recommendations import get_recommendations_for_chat
+try:
+    from app.pdf_recommendations import get_recommendations_for_chat
+except Exception:
+    # Fallback stub when PDF recommendation module is unavailable (e.g., missing firebase_admin)
+    def get_recommendations_for_chat(*args, **kwargs):
+        return []
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -201,27 +206,88 @@ def enhance_query_with_conversation_context(message: str, history: list) -> str:
                 last_bot_message = msg.get("content", "").lower()
                 break
         
+        # ===== HANDLE "I DON'T KNOW" RESPONSES =====
+        doesnt_know_phrases = [
+            "i don't know", "i dont know", "not sure", "unsure",
+            "no idea", "i'm not sure", "im not sure", "don't know",
+            "idk", "not certain", "i have no idea", "i'm unsure",
+            "i do not know", "no clue"
+        ]
+        user_doesnt_know = any(phrase in msg_lower for phrase in doesnt_know_phrases)
+
+        # If student doesn't know ebook vs courseware → escalate to email
+        if user_doesnt_know and any(keyword in last_bot_message for keyword in [
+            "standalone ebook", "stand-alone ebook", "courseware",
+            "homework assignments", "publisher's platform"
+        ]):
+            return "ESCALATE_TO_EMAIL"
+
+        # If student doesn't know textbook vs platform → ask ebook vs courseware
+        if user_doesnt_know and any(keyword in last_bot_message for keyword in [
+            "mcgraw hill textbook or mcgraw hill connect",
+            "cengage textbook or cengage mindtap",
+            "pearson textbook or pearson mylab",
+            "textbook or", "mindtap or", "mylab or"
+        ]):
+            return "ASK_EBOOK_OR_COURSEWARE"
+
         # McGraw Hill clarification
         if "mcgraw hill textbook or mcgraw hill connect" in last_bot_message:
             if "connect" in msg_lower:
                 return "McGraw Hill Connect immediate access platform instructions"
             elif "textbook" in msg_lower or "etextbook" in msg_lower or "ebook" in msg_lower:
                 return "eTextbook immediate access general instructions VitalSource Blackboard step-by-step"
-        
+            elif "ebook" in msg_lower or "standalone" in msg_lower or "stand-alone" in msg_lower:
+                return "eTextbook immediate access general instructions VitalSource Blackboard step-by-step"
+            elif "courseware" in msg_lower or "homework" in msg_lower or "assignment" in msg_lower:
+                return "McGraw Hill Connect immediate access platform instructions"
+
         # Cengage clarification
         if "cengage textbook or cengage mindtap" in last_bot_message:
             if "mindtap" in msg_lower or "cnow" in msg_lower:
                 return "Cengage MindTap immediate access platform instructions"
             elif "textbook" in msg_lower or "etextbook" in msg_lower or "ebook" in msg_lower:
                 return "eTextbook immediate access general instructions VitalSource Blackboard step-by-step"
-        
+            elif "ebook" in msg_lower or "standalone" in msg_lower or "stand-alone" in msg_lower:
+                return "eTextbook immediate access general instructions VitalSource Blackboard step-by-step"
+            elif "courseware" in msg_lower or "homework" in msg_lower or "assignment" in msg_lower:
+                return "Cengage MindTap immediate access platform instructions"
+
         # Pearson clarification
         if "pearson textbook or pearson mylab" in last_bot_message:
             if "mylab" in msg_lower or "mastering" in msg_lower:
                 return "Pearson MyLab Mastering immediate access platform instructions"
             elif "textbook" in msg_lower or "etextbook" in msg_lower or "ebook" in msg_lower:
                 return "eTextbook immediate access general instructions VitalSource Blackboard step-by-step"
-    
+            elif "ebook" in msg_lower or "standalone" in msg_lower or "stand-alone" in msg_lower:
+                return "eTextbook immediate access general instructions VitalSource Blackboard step-by-step"
+            elif "courseware" in msg_lower or "homework" in msg_lower or "assignment" in msg_lower:
+                return "Pearson MyLab Mastering immediate access platform instructions"
+
+        # ===== ASK EBOOK VS COURSEWARE =====
+        if any(keyword in last_bot_message for keyword in [
+            "standalone ebook", "stand-alone ebook", "courseware",
+            "homework assignments", "publisher's platform"
+        ]):
+            if any(keyword in msg_lower for keyword in [
+                "ebook", "standalone", "stand-alone", "just reading", "read", "book"
+            ]):
+                return "eTextbook immediate access general instructions VitalSource Blackboard step-by-step"
+            elif any(keyword in msg_lower for keyword in [
+                "courseware", "homework", "assignment", "quiz", "platform", "connect",
+                "mindtap", "mylab", "mastering"
+            ]):
+                # Return platform-specific courseware instructions
+                for msg in reversed(history):
+                    if msg.get("role") == "user":
+                        prev = msg.get("content", "").lower()
+                        if "mcgraw" in prev or "connect" in prev:
+                            return "McGraw Hill Connect immediate access platform instructions"
+                        elif "cengage" in prev or "mindtap" in prev:
+                            return "Cengage MindTap immediate access platform instructions"
+                        elif "pearson" in prev or "mylab" in prev:
+                            return "Pearson MyLab Mastering immediate access platform instructions"
+
     return message
 
 
@@ -372,9 +438,14 @@ def chat(payload: ChatRequest):
         
         session_id = payload.session_id or str(uuid.uuid4())
         session = get_or_create_session(session_id)
-        
+
+        # Reset clarification flags for a fresh user query unless we are already awaiting clarification
+        if not session.get("awaiting_platform_type", False):
+            session["stored_publisher"] = None
+            session["stored_original_query"] = None
+
         message = payload.message.strip()
-        
+
         # Initialize variables
         platform = None
         course_code = None
@@ -651,33 +722,46 @@ def chat(payload: ChatRequest):
         if intent == "IA_ACCESS_ISSUE" and not course_code:
             session["awaiting_course_code"] = True
             session["stored_intent"] = "IA_ACCESS_ISSUE"
-            
-            if "cengage" in message.lower() or "mindtap" in message.lower():
-                session["stored_platform"] = "CENGAGE"
-            elif "mcgraw" in message.lower() or "connect" in message.lower():
-                session["stored_platform"] = "MCGRAW_HILL"
-            else:
-                session["stored_platform"] = None
+            session["stored_platform"] = platform
 
         is_vague_query = (
-            intent == "IA_ACCESS_ISSUE" and 
+            intent == "IA_ACCESS_ISSUE" and
             platform is None and
-            # (not course_code or has_textbook_mention) and
-            len(message.split()) <= 15 and  # ✨ Slightly longer for "textbook for ENG 123"
+            len(message.split()) <= 20 and  # allow slightly longer queries
             any(word in message.lower() for word in [
-                "immediate access", 
-                "textbook", 
-                "text book", 
+                "immediate access",
+                "textbook",
+                "text book",
                 "etextbook",
                 "e-textbook",
                 "ebook",
-                "e-book"
+                "e-book",
+                "access to my textbook",
+                "access to textbook",
             ])
         )
         if is_vague_query:
+            clarification = (
+                "I can help you with textbook access! To give you the most accurate instructions, "
+                "could you please specify which platform or publisher your textbook uses? "
+                "Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, "
+                "Sage, SimuCase, etc."
+            )
             session["awaiting_platform_type"] = True
             session["stored_publisher"] = "TEXTBOOK_GENERIC"
             session["stored_original_query"] = message
+
+
+            total_time = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=clarification,
+                source="CLARIFICATION_NEEDED",
+                article_link=None,
+                confidence=0.0,
+                total_time_ms=round(total_time, 2),
+                retrieval_time_ms=0,
+                llm_time_ms=0
+            )
 
         print(f"🔍 [VAGUE QUERY DEBUG] intent={intent}, platform={platform}")
         print(f"🔍 [VAGUE QUERY DEBUG] is_vague_query={is_vague_query}")

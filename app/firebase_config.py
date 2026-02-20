@@ -20,7 +20,7 @@ def initialize_firebase():
     
     if not os.path.exists(cred_path):
         raise FileNotFoundError(
-            f"❌ Firebase service account key not found!\n"
+            f" Firebase service account key not found!\n"
             f"Expected location: {cred_path}\n"
             f"Download from: Firebase Console → Project Settings → Service Accounts → Generate new private key"
         )
@@ -37,12 +37,12 @@ def initialize_firebase():
         db = firestore.client()
         bucket = storage.bucket()
         
-        print("✅ Firebase initialized successfully")
-        print(f"   📦 Project: lance-cbu")
-        print(f"   💾 Storage bucket: lance-cbu.firebasestorage.app")
+        print("Firebase initialized successfully")
+        print(f"   Project: lance-cbu")
+        print("   Storage bucket: lance-cbu.firebasestorage.app")
         
     except Exception as e:
-        print(f"❌ Firebase initialization failed: {e}")
+        print(f"Firebase initialization failed: {e}")
         raise
 
 def get_firestore_client():
@@ -61,5 +61,5 @@ def get_storage_bucket():
 try:
     initialize_firebase()
 except Exception as e:
-    print(f"⚠️  Warning: Firebase not initialized on import: {e}")
+    print(f"  Warning: Firebase not initialized on import: {e}")
     print("    Call initialize_firebase() manually when needed")

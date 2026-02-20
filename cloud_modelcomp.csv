@@ -1,0 +1,8 @@
+Model,Retrieval_ms,LLM_ms,Total_ms,Quality,Quality_score,Tokens_per_sec
+gpt-oss:20b-cloud,19.31,2049.11,2068.42,Relevant,64.85,4.39
+gpt-oss:120b-cloud,8.0,10301.22,10309.22,Relevant,64.85,54.85
+qwen3.5:cloud,8.52,2065.98,2074.5,Relevant,64.85,4.36
+deepseek-v3.2:cloud,8.51,2067.88,2076.39,Relevant,64.85,4.35
+glm-4.7:cloud,8.37,2057.09,2065.46,Relevant,64.85,4.38
+kimi-k2.5:cloud,8.75,2047.06,2055.81,Relevant,64.85,4.4
+minimax-m2.5:cloud,9.08,2051.13,2060.21,Relevant,64.85,4.39

@@ -105,6 +105,7 @@ FAQ: "Immediate Access is California Baptist University's program..."
 - You MUST skip any greeting
 - Start with: "Here's how to..." 
 - Provide the step-by-step instructions from the documentation
+- If the user can't access to a textbook and provides the course code, ask which platform is the user using (e.g. Cengage MindTap).
 """
             else:
                 system_content += """
@@ -140,12 +141,18 @@ Now respond:
             messages.append({"role": "user", "content": message})
 
             payload = {
-                "model": "llama3.2",
+                # "model": "gpt-oss:120b-cloud",
+                'model': "llama3.2",
                 "messages": messages,
-                "stream": False
-            }
+                "stream": False,
+                # Only for qwen
+                "options": {
+                    "temperature": 0.1,
+                    "num_predict": 1024
+                }
+            }       
 
-            response = requests.post(OLLAMA_URL, json=payload, timeout=180)
+            response = requests.post(OLLAMA_URL, json=payload, timeout=(5, 60))
             response.raise_for_status()
 
             return response.json()["message"]["content"]

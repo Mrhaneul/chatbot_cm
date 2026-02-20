@@ -93,9 +93,9 @@ class FAQRetriever:
             self.instructions_index_cengage = faiss.read_index(INSTRUCTIONS_INDEX_CENGAGE_PATH)
             with open(INSTRUCTIONS_CHUNKS_CENGAGE_PATH, "r", encoding="utf-8") as f:
                 self.instruction_chunks_cengage = f.read().split("\n---\n")
-            print("✓ Loaded Cengage-specific instruction index")
+            print("[OK] Loaded Cengage-specific instruction index")
         except Exception as e:
-            print(f"⚠ Cengage index not found (will use general index): {e}")
+            print(f"[WARN] Cengage index not found (will use general index): {e}")
             self.instructions_index_cengage = None
             self.instruction_chunks_cengage = []
         
@@ -103,9 +103,9 @@ class FAQRetriever:
             self.instructions_index_mcgraw = faiss.read_index(INSTRUCTIONS_INDEX_MCGRAW_PATH)
             with open(INSTRUCTIONS_CHUNKS_MCGRAW_PATH, "r", encoding="utf-8") as f:
                 self.instruction_chunks_mcgraw = f.read().split("\n---\n")
-            print("✓ Loaded McGraw Hill-specific instruction index")
+            print("[OK] Loaded McGraw Hill-specific instruction index")
         except Exception as e:
-            print(f"⚠ McGraw Hill index not found (will use general index): {e}")
+            print(f"[WARN] McGraw Hill index not found (will use general index): {e}")
             self.instructions_index_mcgraw = None
             self.instruction_chunks_mcgraw = []
 
@@ -113,9 +113,9 @@ class FAQRetriever:
             self.instructions_index_bedford = faiss.read_index(INSTRUCTIONS_INDEX_BEDFORD_PATH)
             with open(INSTRUCTIONS_CHUNKS_BEDFORD_PATH, "r", encoding="utf-8") as f:
                 self.instruction_chunks_bedford = f.read().split("\n---\n")
-            print("✓ Loaded Bedford-specific instruction index")
+            print("[OK] Loaded Bedford-specific instruction index")
         except Exception as e:
-            print(f"⚠ Bedford index not found (will use general index): {e}")
+            print(f"[WARN] Bedford index not found (will use general index): {e}")
             self.instructions_index_bedford = None
             self.instruction_chunks_bedford = []
 
@@ -123,9 +123,9 @@ class FAQRetriever:
             self.instructions_index_pearson = faiss.read_index(INSTRUCTIONS_INDEX_PEARSON_PATH)
             with open(INSTRUCTIONS_CHUNKS_PEARSON_PATH, "r", encoding="utf-8") as f:
                 self.instruction_chunks_pearson = f.read().split("\n---\n")
-            print("✓ Loaded Pearson-specific instruction index")
+            print("[OK] Loaded Pearson-specific instruction index")
         except Exception as e:
-            print(f"⚠ Pearson index not found (will use general index): {e}")
+            print(f"[WARN] Pearson index not found (will use general index): {e}")
             self.instructions_index_pearson = None
             self.instruction_chunks_pearson = []
 
@@ -133,9 +133,9 @@ class FAQRetriever:
             self.instructions_index_clifton = faiss.read_index(INSTRUCTIONS_INDEX_CLIFTON_PATH)
             with open(INSTRUCTIONS_CHUNKS_CLIFTON_PATH, "r", encoding="utf-8") as f:
                 self.instruction_chunks_clifton = f.read().split("\n---\n")
-            print("✓ Loaded Clifton-specific instruction index")
+            print("[OK] Loaded Clifton-specific instruction index")
         except Exception as e:
-            print(f"⚠ Clifton index not found (will use general index): {e}")
+            print(f"[WARN] Clifton index not found (will use general index): {e}")
             self.instructions_index_clifton = None
             self.instruction_chunks_clifton = []
 
@@ -143,9 +143,9 @@ class FAQRetriever:
             self.instructions_index_macmillan = faiss.read_index(INSTRUCTIONS_INDEX_MACMILLAN_PATH)
             with open(INSTRUCTIONS_CHUNKS_MACMILLAN_PATH, "r", encoding="utf-8") as f:
                 self.instruction_chunks_macmillan = f.read().split("\n---\n")
-            print("✓ Loaded MacMillan-specific instruction index")
+            print("[OK] Loaded MacMillan-specific instruction index")
         except Exception as e:
-            print(f"⚠ MacMillan index not found (will use general index): {e}")
+            print(f"[WARN] MacMillan index not found (will use general index): {e}")
             self.instructions_index_macmillan = None
             self.instruction_chunks_macmillan = []
 
@@ -153,9 +153,9 @@ class FAQRetriever:
             self.instructions_index_sage = faiss.read_index(INSTRUCTIONS_INDEX_SAGE_PATH)
             with open(INSTRUCTIONS_CHUNKS_SAGE_PATH, "r", encoding="utf-8") as f:
                 self.instruction_chunks_sage = f.read().split("\n---\n")
-            print("✓ Loaded SAGE-specific instruction index")
+            print("[OK] Loaded SAGE-specific instruction index")
         except Exception as e:
-            print(f"⚠ SAGE index not found (will use general index): {e}")
+            print(f"[WARN] SAGE index not found (will use general index): {e}")
             self.instructions_index_sage = None
             self.instruction_chunks_sage = []
 
@@ -163,9 +163,9 @@ class FAQRetriever:
             self.instructions_index_simucase = faiss.read_index(INSTRUCTIONS_INDEX_SIMUCASE_PATH)
             with open(INSTRUCTIONS_CHUNKS_SIMUCASE_PATH, "r", encoding="utf-8") as f:
                 self.instruction_chunks_simucase = f.read().split("\n---\n")
-            print("✓ Loaded SimuCase-specific instruction index")
+            print("[OK] Loaded SimuCase-specific instruction index")
         except Exception as e:
-            print(f"⚠ SimuCase index not found (will use general index): {e}")
+            print(f"[WARN] SimuCase index not found (will use general index): {e}")
             self.instructions_index_simucase = None
             self.instruction_chunks_simucase = []
 
@@ -173,9 +173,9 @@ class FAQRetriever:
             self.instructions_index_wiley = faiss.read_index(INSTRUCTIONS_INDEX_WILEY_PATH)
             with open(INSTRUCTIONS_CHUNKS_WILEY_PATH, "r", encoding="utf-8") as f:
                 self.instruction_chunks_wiley = f.read().split("\n---\n")
-            print("✓ Loaded Wiley-specific instruction index")
+            print("[OK] Loaded Wiley-specific instruction index")
         except Exception as e:
-            print(f"⚠ Wiley index not found (will use general index): {e}")
+            print(f"[WARN] Wiley index not found (will use general index): {e}")
             self.instructions_index_wiley = None
             self.instruction_chunks_wiley = []
 
@@ -183,9 +183,9 @@ class FAQRetriever:
             self.instructions_index_zybooks = faiss.read_index(INSTRUCTIONS_INDEX_ZYBOOKS_PATH)
             with open(INSTRUCTIONS_CHUNKS_ZYBOOKS_PATH, "r", encoding="utf-8") as f:
                 self.instruction_chunks_zybooks = f.read().split("\n---\n")
-            print("✓ Loaded Zybooks-specific instruction index")
+            print("[OK] Loaded Zybooks-specific instruction index")
         except Exception as e:
-            print(f"⚠ Zybooks index not found (will use general index): {e}")
+            print(f"[WARN] Zybooks index not found (will use general index): {e}")
             self.instructions_index_zybooks = None
             self.instruction_chunks_zybooks = []
 
