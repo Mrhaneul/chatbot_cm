@@ -1,0 +1,12 @@
+category,option,upfront_cost_usd,monthly_cost_usd_est,vendor_dependency,data_privacy,maintainability_non_engineer,performance_fit_sub5s,scalability_10000_users,notes,recommendation_rank
+Hosting,Cloud GPU VM (AWS/GCP/Azure/DO),0,"256-1200+",High,Medium,Medium,High,High,"Fastest to launch; recurring cost and provider lock-in risk",3
+Hosting,Hybrid (Firebase frontend + cloud backend GPU),0,"260-1200+",High,Medium,Medium,High,High,"Practical interim path; backend still API/cloud dependent",2
+Hosting,On-prem primary + Firebase frontend,"4000-12000","50-250",Low,High,High,High,High,"Best long-term balance for privacy/control/cost",1
+Hosting,On-prem primary + cloud DR standby,"4000-12000","100-400",Medium,High,Medium-High,High,High,"Best resilience; slightly more complexity",1
+LLM Strategy,Qwen2.5-7B-Instruct (primary),0,0,Low,High,High,High,High,"Apache-2.0; strong RAG behavior and community support",1
+LLM Strategy,Phi-4-mini-instruct (fallback),0,0,Low,High,High,High,High,"MIT; very fast fallback for peak load/degraded mode",1
+LLM Strategy,Mistral-7B-Instruct-v0.3,0,0,Low,High,High,High,High,"Apache-2.0; mature and reliable",2
+LLM Strategy,Llama 3.1/3.3,0,0,Low,High,Medium,Medium-High,High,"Strong quality but custom license terms",3
+LLM Strategy,Gemma 2,0,0,Low,High,Medium,Medium-High,High,"Good model; terms acceptance/gating adds policy overhead",4
+Risk Control,No-code KB admin workflow,"500-3000 dev time",0,Low,High,High,Medium,High,"Upload -> chunk/embed -> validate -> publish without coding",1
+Risk Control,Monitoring + alerting stack (Uptime Kuma + metrics),"0-1000 setup","0-100",Low,High,High,Indirect,High,"Health checks, p95 latency, disk/GPU alerts",1

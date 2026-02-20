@@ -1,0 +1,11 @@
+Model,Time,Quality
+anpigon/qwen2.5-7b-instruct-kowiki:latest,32.10s,Relevant
+mistral:7b,60.72s,Relevant
+nemotron-3-nano:30b-cloud,2.71s,Relevant
+qwen3-next:80b-cloud,6.11s,Relevant
+glm-5:cloud,16.11s,Relevant
+gpt-oss:120b-cloud,4.73s,Relevant
+granite4:latest,51.65s,Relevant
+llama3:8b,36.46s,Relevant
+llama3.2:latest,10.48s,Relevant
+,,

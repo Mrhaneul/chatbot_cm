@@ -1,0 +1,5 @@
+hardware_option,example_configuration,one_time_cost_usd_est,monthly_power_cost_usd_est,ops_complexity,latency_expectation,throughput_peak_readiness,maintenance_non_engineer,fit_for_lance
+On-prem GPU workstation,"RTX 4090/RTX 6000 Ada class + 64-128GB RAM + NVMe","4000-12000","25-120",Medium,High,High,Medium-High,High
+Mac Studio (Apple Silicon),"M4 Max or M3 Ultra + unified memory","1999-6000","15-70",Low-Medium,Medium-High,Medium-High,High,Medium-High
+CPU-only server,"High-core CPU + 128GB RAM","2500-7000","30-110",Low,Low-Medium,Low,High,Low
+Cloud GPU VM (reference),"L4/T4/RTX class rented instance",0,"256-1200+",Medium,High,High,Medium,Medium

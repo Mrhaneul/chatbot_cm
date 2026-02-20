@@ -1,0 +1,8 @@
+model,parameter_size,license,running_cost,rag_instruction_following,hardware_profile,cpu_speed_expectation,gpu_speed_expectation,commercial_use_notes,community_support,overall_fit
+Qwen2.5-7B-Instruct,7B,Apache-2.0,Low,High,"Single modern GPU; quantization friendly",Medium,High,"Commercial use generally straightforward under Apache-2.0",High,High
+Phi-4-mini-instruct,3.8B,MIT,Low,Medium-High,"Runs on modest hardware; great fallback",Medium-High,High,"Commercial use generally straightforward under MIT",High,High
+Mistral-7B-Instruct-v0.3,7B,Apache-2.0,Low,High,"Single modern GPU recommended",Medium,High,"Commercial use generally straightforward under Apache-2.0",High,High
+Llama 3.1 8B,8B,Meta custom community license,Low,High,"Single modern GPU recommended",Medium,Medium-High,"Check Meta license obligations before enterprise rollout",Very High,Medium-High
+Llama 3.3 70B,70B,Meta custom community license,Medium-High,Very High,"Requires high VRAM/multi-GPU class setup",Low,Medium,"Excellent quality; heavier ops and licensing review",Very High,Medium
+Gemma 2 9B,9B,Gemma terms,Low,High,"Single modern GPU recommended",Medium,Medium-High,"Check Google Gemma terms/policy gating",High,Medium-High
+DeepSeek-R1-Distill-Qwen-7B,7B,Open-weight (model-card specific),Low,Medium,"Single modern GPU recommended",Medium,Medium-High,"Powerful reasoning but may be verbose for support bot flows",High,Medium
