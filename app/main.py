@@ -3,6 +3,8 @@ from fastapi import FastAPI, HTTPException
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.llm.llama_client import LlamaClient
 from app.rag.retriever import FAQRetriever
+import asyncio
+import os
 import re
 from datetime import datetime, timedelta
 from typing import Dict, Any
@@ -31,6 +33,7 @@ MAIN API (FIXED + PERFORMANCE TRACKING)
 CONFIDENCE_THRESHOLD = 0.1
 MAX_HISTORY_TURNS = 6
 SESSION_TIMEOUT = timedelta(hours=1)
+MAX_CONCURRENT_LLM_REQUESTS = int(os.getenv("MAX_CONCURRENT_LLM_REQUESTS", "2"))
 
 # Create FastAPI app FIRST
 app = FastAPI(title="Campus Store Chatbot (Session-Safe + Performance Tracking)")
@@ -75,6 +78,108 @@ sessions: Dict[str, Dict[str, Any]] = {}
 # Initialize services
 llm = LlamaClient()
 retriever = FAQRetriever()
+llm_semaphore = asyncio.Semaphore(MAX_CONCURRENT_LLM_REQUESTS)
+chat_request_queue: asyncio.Queue[str] = asyncio.Queue()
+chat_jobs: Dict[str, Dict[str, Any]] = {}
+chat_workers: list[asyncio.Task] = []
+
+
+async def retrieve_async(query: str, collection: str = "auto", platform: str = None):
+    """Run sync FAISS retrieval in a worker thread to avoid blocking the event loop."""
+    return await asyncio.to_thread(
+        retriever.retrieve,
+        query,
+        1,
+        collection,
+        platform
+    )
+
+
+async def call_llm_with_semaphore(
+    message: str,
+    context: str,
+    history: list,
+    system_hint: str
+) -> tuple[str, float]:
+    """
+    Queue LLM requests behind a semaphore so concurrent users do not over-saturate the GPU.
+    Returns (reply, queue_wait_ms).
+    """
+    queued_at = time.time()
+    async with llm_semaphore:
+        queue_wait_ms = (time.time() - queued_at) * 1000
+        reply = await asyncio.to_thread(
+            llm.chat,
+            message,
+            context,
+            history,
+            system_hint
+        )
+        return reply, queue_wait_ms
+
+
+def get_queue_position(request_id: str) -> int:
+    """
+    Return 1-based queue position for queued requests, 0 otherwise.
+    """
+    try:
+        queue_items = list(chat_request_queue._queue)  # noqa: SLF001 - internal deque is reliable for read-only status
+        if request_id in queue_items:
+            return queue_items.index(request_id) + 1
+    except Exception:
+        return 0
+    return 0
+
+
+async def chat_queue_worker(worker_id: int):
+    """
+    Background worker that processes queued chat requests.
+    """
+    print(f"[QUEUE] Worker {worker_id} started")
+    while True:
+        request_id = await chat_request_queue.get()
+        job = chat_jobs.get(request_id)
+        if not job:
+            chat_request_queue.task_done()
+            continue
+
+        try:
+            job["status"] = "running"
+            job["started_at"] = datetime.now().isoformat()
+            result = await process_chat_request(job["payload"])
+            job["status"] = "done"
+            job["result"] = result.model_dump()
+            job["completed_at"] = datetime.now().isoformat()
+        except Exception as e:
+            job["status"] = "error"
+            job["error"] = str(e)
+            job["completed_at"] = datetime.now().isoformat()
+        finally:
+            chat_request_queue.task_done()
+
+
+@app.on_event("startup")
+async def start_chat_queue_workers():
+    """
+    Start queue workers once on app startup.
+    """
+    if chat_workers:
+        return
+    for i in range(MAX_CONCURRENT_LLM_REQUESTS):
+        task = asyncio.create_task(chat_queue_worker(i + 1))
+        chat_workers.append(task)
+
+
+@app.on_event("shutdown")
+async def stop_chat_queue_workers():
+    """
+    Cancel queue workers on shutdown.
+    """
+    for task in chat_workers:
+        task.cancel()
+    if chat_workers:
+        await asyncio.gather(*chat_workers, return_exceptions=True)
+    chat_workers.clear()
 
 
 def get_or_create_session(session_id: str) -> Dict[str, Any]:
@@ -423,8 +528,7 @@ def is_ambiguous_platform_query(message: str) -> tuple[str | None, bool]:
     return None, False
 
 
-@app.post("/chat", response_model=ChatResponse)
-def chat(payload: ChatRequest):
+async def process_chat_request(payload: ChatRequest) -> ChatResponse:
     """
     Main chat endpoint with session management and performance tracking.
     """
@@ -805,20 +909,20 @@ def chat(payload: ChatRequest):
                 print(f"🔍 [RAG DEBUG] Enhanced query: '{enhanced_query}'")
                 print(f"🔍 [RAG DEBUG] Platform: {platform}")
                 
-                retrieval = retriever.retrieve(
+                retrieval = await retrieve_async(
                     enhanced_query,
                     collection="instructions",
                     platform=platform
                 )
             elif course_code:
                 enhanced_query = enhance_query_with_conversation_context(message, session["history"])
-                retrieval = retriever.retrieve(
+                retrieval = await retrieve_async(
                     enhanced_query,
                     collection="instructions",
                     platform=platform
                 )
             else:
-                retrieval = retriever.retrieve(message)
+                retrieval = await retrieve_async(message)
 
             if retrieval and "context" in retrieval:
                 context = retrieval["context"]
@@ -829,7 +933,7 @@ def chat(payload: ChatRequest):
         except AttributeError as e:
             print(f"⚠️  Platform-specific index not found ({e}), falling back to general index")
             try:
-                retrieval = retriever.retrieve(
+                retrieval = await retrieve_async(
                     enhanced_query if 'enhanced_query' in locals() else message,
                     collection="instructions",
                     platform=None
@@ -912,7 +1016,7 @@ def chat(payload: ChatRequest):
         # ✨ START LLM TIMER
         llm_start = time.time()
         
-        reply = llm.chat(
+        reply, llm_queue_wait_ms = await call_llm_with_semaphore(
             message=message,
             context=context,
             history=session["history"][-MAX_HISTORY_TURNS:],
@@ -957,6 +1061,7 @@ def chat(payload: ChatRequest):
 
         # ✨ PRINT PERFORMANCE METRICS
         print(f"\n⏱️  PERFORMANCE METRICS:")
+        print(f"   LLM Queue Wait: {llm_queue_wait_ms:.2f}ms")
         print(f"   Retrieval: {retrieval_time_ms:.2f}ms")
         print(f"   LLM: {llm_time_ms:.2f}ms")
         print(f"   Total: {total_time_ms:.2f}ms\n")
@@ -974,6 +1079,69 @@ def chat(payload: ChatRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(payload: ChatRequest):
+    """
+    Backward-compatible synchronous endpoint.
+    """
+    return await process_chat_request(payload)
+
+
+@app.post("/chat/submit", status_code=202)
+async def chat_submit(payload: ChatRequest):
+    """
+    Queue-first endpoint:
+    - returns immediately with request_id
+    - client polls /chat/status/{request_id}
+    """
+    request_id = str(uuid.uuid4())
+    enqueued_at = datetime.now().isoformat()
+    chat_jobs[request_id] = {
+        "request_id": request_id,
+        "status": "queued",
+        "payload": payload,
+        "result": None,
+        "error": None,
+        "enqueued_at": enqueued_at,
+        "started_at": None,
+        "completed_at": None,
+    }
+    await chat_request_queue.put(request_id)
+
+    return {
+        "request_id": request_id,
+        "status": "queued",
+        "queue_position": get_queue_position(request_id),
+        "enqueued_at": enqueued_at,
+    }
+
+
+@app.get("/chat/status/{request_id}")
+async def chat_status(request_id: str):
+    """
+    Poll status endpoint for queued chat requests.
+    """
+    job = chat_jobs.get(request_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="request_id not found")
+
+    status = job["status"]
+    response = {
+        "request_id": request_id,
+        "status": status,
+        "queue_position": get_queue_position(request_id) if status == "queued" else 0,
+        "enqueued_at": job["enqueued_at"],
+        "started_at": job["started_at"],
+        "completed_at": job["completed_at"],
+        "error": job["error"],
+    }
+
+    if status == "done":
+        response["result"] = job["result"]
+
+    return response
 
 
 @app.get("/sessions/stats")

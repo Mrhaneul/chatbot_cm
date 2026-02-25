@@ -1,0 +1,28 @@
+services:
+  lance-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lance-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Controls how many LLM requests run concurrently (see asyncio.Semaphore)
+      - MAX_CONCURRENT_LLM_REQUESTS=2
+      # Ollama is running on the HOST machine (not inside Docker),
+      # so we point to the host's IP instead of localhost.
+      - OLLAMA_BASE_URL=http://host-gateway:11434
+    extra_hosts:
+      # Allows the container to reach Ollama on the host machine
+      - "host-gateway:host-gateway"
+    volumes:
+      # Mount Firebase service account at runtime (never bake secrets into image)
+      - ./app/firebase-service-account.json:/app/app/firebase-service-account.json:ro
+    restart: unless-stopped
+    # Resource limits — adjust based on available RAM
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G

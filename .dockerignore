@@ -1,21 +1,45 @@
-# Don't include in Docker image
+# UI — built separately, deployed to Firebase
 ui/
+
+# PDFs — served from Firebase Storage, not needed in backend container
 pdfs/
 *.pdf
+
+# Sensitive files — mounted at runtime via docker-compose volume, never baked in
+# app/firebase-service-account.json  <-- intentionally NOT ignored here so the
+#                                         build can copy app/ safely; the compose
+#                                         file mounts the real one as read-only.
+
+# Research and docs — not needed at runtime
+research/
 *.md
+*.csv
+*.pptx
+*.ps1
+
+# Git
 .git/
 .gitignore
+
+# Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
 *.so
 *.egg
 *.egg-info/
 dist/
 build/
+
+# Logs
 *.log
 
-# Keep only essential data
-# data/ files will be included selectively
+# Env files — injected via docker-compose environment block
+.env
+.env.*
+
+# Misc
+resp*.txt
+rdp.*
+chatbot_review.*
