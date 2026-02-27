@@ -4,6 +4,7 @@ Maps FAISS retrieval results to PDF documents stored in Firestore
 """
 
 from app.firebase_config import db
+from app.platform_registry import load_registry, canonical_platform_key
 from typing import List, Dict, Optional
 import re
 
@@ -36,6 +37,9 @@ TXT_TO_PDF_MAP = {
     
     # SimuCase
     "ia_simucase_access.txt": "simucase_access",
+
+    # InQuizitive
+    "ia_inquizitive_access.txt": "inquizitive_access",
     
     # Stukent
     "ia_stukent_access.txt": "stukent_access",
@@ -68,6 +72,7 @@ PLATFORM_PRIORITY = {
     "bedford": 2,
     "sage": 2,
     "simucase": 2,
+    "inquizitive": 2,
     "clifton": 2,
     "zybooks": 2,
     "stukent": 2,
@@ -75,6 +80,29 @@ PLATFORM_PRIORITY = {
     "dccodes": 2,
     "general": 3  # Cookies, troubleshooting
 }
+
+PLATFORM_NORMALIZATION = {
+    "mcgraw_hill": "mcgraw",
+    "mcgrawhill": "mcgraw",
+    "inquizitive": "inquizitive",
+    "inquisitive": "inquizitive",
+}
+
+# Merge dynamic registry entries (added by add_instruction.py)
+_registry = load_registry()
+for _filename, _doc_id in _registry.get("txt_to_pdf_map", {}).items():
+    if isinstance(_filename, str) and isinstance(_doc_id, str) and _filename and _doc_id:
+        TXT_TO_PDF_MAP[_filename] = _doc_id
+
+for _src, _dst in _registry.get("platform_normalization", {}).items():
+    if isinstance(_src, str) and isinstance(_dst, str) and _src and _dst:
+        PLATFORM_NORMALIZATION[canonical_platform_key(_src)] = canonical_platform_key(_dst)
+
+for _platform, _priority in _registry.get("platform_priority", {}).items():
+    try:
+        PLATFORM_PRIORITY[canonical_platform_key(_platform)] = int(_priority)
+    except Exception:
+        pass
 
 
 def extract_source_filename(retrieval_context: str) -> Optional[str]:
@@ -98,10 +126,10 @@ def get_pdf_from_firestore(doc_id: str) -> Optional[Dict]:
             data = doc.to_dict()
             return {
                 "doc_id": doc_id,
-                "title": data.get("title", ""),
+                "title": data.get("title") or data.get("display_name", ""),
                 "description": data.get("description", ""),
                 "filename": data.get("filename", ""),
-                "public_url": data.get("public_url", ""),
+                "public_url": data.get("public_url") or data.get("pdf_url", ""),
                 "pages": data.get("pages", 0),
                 "platform": data.get("platform", ""),
                 "issue_type": data.get("issue_type", ""),
@@ -121,20 +149,28 @@ def get_related_pdfs_by_platform(platform: str, limit: int = 3) -> List[Dict]:
     Used as fallback or for additional recommendations.
     """
     try:
+        normalized_platform = platform.lower()
         docs = db.collection('pdf_documents')\
-            .where('platform', '==', platform.lower())\
+            .where('platform', '==', normalized_platform)\
             .limit(limit)\
             .get()
+
+        # Fallback for deployments storing instruction metadata in a different collection.
+        if not docs:
+            docs = db.collection('instructions')\
+                .where('platform', '==', normalized_platform)\
+                .limit(limit)\
+                .get()
         
         pdfs = []
         for doc in docs:
             data = doc.to_dict()
             pdfs.append({
                 "doc_id": doc.id,
-                "title": data.get("title", ""),
+                "title": data.get("title") or data.get("display_name", ""),
                 "description": data.get("description", ""),
                 "filename": data.get("filename", ""),
-                "public_url": data.get("public_url", ""),
+                "public_url": data.get("public_url") or data.get("pdf_url", ""),
                 "pages": data.get("pages", 0),
                 "platform": data.get("platform", ""),
                 "issue_type": data.get("issue_type", ""),
@@ -201,9 +237,12 @@ def get_pdf_recommendations(
     # ===== SECONDARY RECOMMENDATIONS (platform-specific) =====
     if platform and len(recommendations) < max_recommendations:
         # Normalize platform name
-        platform_normalized = platform.lower().replace("_", "")
-        if platform_normalized == "mcgrawhill":
-            platform_normalized = "mcgraw"
+        platform_normalized = platform.lower().strip()
+        platform_normalized = PLATFORM_NORMALIZATION.get(
+            platform_normalized,
+            platform_normalized.replace("_", "")
+        )
+        platform_normalized = PLATFORM_NORMALIZATION.get(platform_normalized, platform_normalized)
         
         related_pdfs = get_related_pdfs_by_platform(
             platform_normalized,

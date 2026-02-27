@@ -25,6 +25,7 @@ import re
 import argparse
 from datetime import datetime, timezone
 from pathlib import Path
+from app.platform_registry import load_registry, save_registry, canonical_platform_key
 
 # ── Path setup ───────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).parent
@@ -62,6 +63,11 @@ def parse_args():
     parser.add_argument("pdf_path",   help="Path to the PDF file")
     parser.add_argument("platform",   help="Platform key (e.g. cengage, pearson)")
     parser.add_argument("issue_type", help="Issue type key (e.g. access, login)")
+    parser.add_argument(
+        "--aliases",
+        default="",
+        help="Comma-separated aliases for platform detection (e.g. \"inquizitive,inquisitive,norton\")",
+    )
     return parser.parse_args()
 
 
@@ -171,11 +177,14 @@ def upload_to_firebase(pdf_path: Path, platform: str, issue_type: str,
         print("  Skipping Firebase upload.")
         return ""
 
-    # Read storage bucket from service account
+    # Read storage bucket — try firebase_config.py first, then prompt user
     import json
     sa_data = json.loads(SERVICE_ACCOUNT.read_text())
     project_id = sa_data.get("project_id", "")
-    storage_bucket = f"{project_id}.appspot.com"
+
+    # Hardcoded bucket name from app/firebase_config.py
+    storage_bucket = "lance-cbu.firebasestorage.app"
+    print(f"  Using storage bucket: {storage_bucket}")
 
     # Initialize Firebase (only once)
     if not firebase_admin._apps:
@@ -254,13 +263,49 @@ def print_checklist(txt_path: Path, pdf_url: str, platform: str, issue_type: str
     print("────────────────────────────────────────────────────────────\n")
 
 
+def update_dynamic_registry(platform: str, issue_type: str, platform_display: str, aliases: list[str]):
+    """
+    Persist platform detection + PDF recommendation mappings used at runtime.
+    """
+    registry = load_registry()
+
+    platform_key = canonical_platform_key(platform)
+    issue_key = canonical_platform_key(issue_type)
+    txt_filename = f"ia_{platform_key}_{issue_key}.txt"
+    doc_id = f"ia_{platform_key}_{issue_key}"
+
+    existing_aliases = registry.get("platform_aliases", {}).get(platform_key, [])
+    normalized_aliases = set()
+    for alias in existing_aliases:
+        if isinstance(alias, str) and alias.strip():
+            normalized_aliases.add(alias.strip().lower())
+
+    # Always include canonical platform aliases
+    normalized_aliases.add(platform_key)
+    normalized_aliases.add(platform_key.replace("_", " "))
+    for alias in aliases:
+        if alias.strip():
+            normalized_aliases.add(alias.strip().lower())
+            normalized_aliases.add(canonical_platform_key(alias).replace("_", " "))
+
+    registry.setdefault("platform_aliases", {})[platform_key] = sorted(normalized_aliases)
+    registry.setdefault("platform_display_names", {})[platform_key] = platform_display
+    registry.setdefault("platform_normalization", {})[platform_key] = platform_key
+    registry.setdefault("platform_priority", {}).setdefault(platform_key, 2)
+    registry.setdefault("txt_to_pdf_map", {})[txt_filename] = doc_id
+
+    save_registry(registry)
+    print(f"  ✅ Dynamic registry updated for platform '{platform_key}'")
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     args = parse_args()
 
     pdf_path   = Path(args.pdf_path).resolve()
-    platform   = args.platform.lower().strip()
-    issue_type = args.issue_type.lower().strip()
+    platform   = canonical_platform_key(args.platform)
+    issue_type = canonical_platform_key(args.issue_type)
+    aliases    = [a.strip().lower() for a in args.aliases.split(",") if a.strip()]
 
     # Validate
     if not pdf_path.exists():
@@ -279,20 +324,20 @@ def main():
     print(f"{'='*60}\n")
 
     # Step 2: Extract
-    print("[1/4] Extracting text from PDF...")
+    print("[1/5] Extracting text from PDF...")
     raw_text = extract_pdf_text(pdf_path)
     print(f"  Extracted {len(raw_text)} characters across the document.")
 
     # Step 3: Clean
-    print("\n[2/4] Cleaning text...")
+    print("\n[2/5] Cleaning text...")
     clean = clean_text(raw_text)
 
     # Step 4: Write txt
-    print("\n[3/4] Writing instruction file...")
+    print("\n[3/5] Writing instruction file...")
     txt_path = write_txt_file(clean, platform, issue_type, platform_display, issue_display)
 
     # Step 5: Firebase upload
-    print("\n[4/4] Uploading to Firebase...")
+    print("\n[4/5] Uploading to Firebase...")
     pdf_url = upload_to_firebase(pdf_path, platform, issue_type, platform_display, issue_display)
 
     # Step 6: Rebuild index
@@ -300,7 +345,11 @@ def main():
     if rebuild == "y":
         rebuild_index()
 
-    # Step 7: Checklist
+    # Step 7: update runtime registry (platform detection + pdf mapping)
+    print("\n[5/5] Updating runtime platform/pdf registry...")
+    update_dynamic_registry(platform, issue_type, platform_display, aliases)
+
+    # Final checklist
     print_checklist(txt_path, pdf_url, platform, issue_type)
 
 

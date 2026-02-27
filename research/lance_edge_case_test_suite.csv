@@ -1,0 +1,440 @@
+test_id,precondition,student_message,test_type,expected_intent,expected_platform,expected_source_prefix,expects_clarification,expects_no_retrieval,notes,response,response_notes
+TC001,,Hi,greeting,GENERAL_FAQ,,LLM_ONLY,No,Yes,Should return greeting and skip retrieval,"Hi! I'm Lance, your Campus Store AI Assistant. I can help with Immediate Access, textbook policies, and troubleshooting. What can I help you with today?",PASS | source=LLM_ONLY expected_prefix=LLM_ONLY OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
+TC002,,Hello there can you help?,greeting_with_extra,GENERAL_FAQ,,LLM_ONLY,No,No,Greeting-like but low-confidence FAQ now intentionally routes to clarification (LLM_ONLY).,"I want to make sure I give you accurate Campus Store information. Could you clarify your question in terms of Immediate Access, textbook access, returns, or course-material policies?",PASS | source=LLM_ONLY expected_prefix=LLM_ONLY OK; confidence=0.082
+TC003,,What is Immediate Access?,faq_info,GENERAL_FAQ,,FAQ_SOURCE_,No,No,Should return FAQ style answer,"Immediate Access is California Baptist University's program that provides day-one access to digital course materials through your student account.
+
+**How It Works:**
+- Get instant access to digital textbooks and courseware on the first day of class
+- Materials are automatically available through Blackboard
+- Charges are billed directly to your student account
+- You have 14 days to opt out if you prefer to purchase materials separately
+
+**Key Benefits:**
+- No waiting for materials to arrive
+- No upfront payment needed
+- Convenient access through Blackboard
+- Often more affordable than traditional textbooks
+
+**Supported Platforms:**
+Immediate Access works with major publishers including:
+- Cengage (MindTap, Cengage Unlimited)
+- McGraw Hill (Connect, ALEKS)
+- Pearson (MyLab, Mastering)
+- Bedford, Sage, VitalSource, and more
+
+**Billing & Payment:**
+- Charges appear on your student account statement
+- Can be paid alongside tuition and fees
+- Payment plans available through student accounts
+
+**Opting Out:**
+- 14-day opt-out period from the start of the semester
+- Opt out through the Immediate Access page in Blackboard
+- After opting out, you must purchase materials separately
+
+**Getting Help:**
+If you're having trouble accessing your materials, please specify which platform you need help with (e.g., ""I can't access Cengage MindTap"" or ""Help with McGraw Hill Connect"").",PASS | source=FAQ_SOURCE_2 expected_prefix=FAQ_SOURCE_ OK; confidence=0.566
+TC004,,How do I opt out of Immediate Access?,faq_policy,GENERAL_FAQ,,FAQ_SOURCE_,No,No,Policy/FAQ retrieval path,"Some courses use external publisher platforms. In these cases, textbook access is provided through links inside the Blackboard course rather than directly through the Immediate Access page.
+
+If you are opted in but cannot access your textbook, additional course-specific information may be required to guide you correctly.",PASS | source=FAQ_SOURCE_0 expected_prefix=FAQ_SOURCE_ OK; confidence=0.426
+TC005,,I can't access my textbook.,vague_access,IA_ACCESS_ISSUE,,CLARIFICATION_NEEDED,Yes,Yes,Should ask for platform/publisher,"I can help you with textbook access! To give you the most accurate instructions, could you please specify which platform or publisher your textbook uses? Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, Sage, SimuCase, etc.",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
+TC006,,I need help with my textbook in EGR120.,vague_access_with_course,IA_ACCESS_ISSUE,,CLARIFICATION_NEEDED,Yes,Yes,Should ask for platform despite course code mention,"I can help you with textbook access! To give you the most accurate instructions, could you please specify which platform or publisher your textbook uses? Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, Sage, SimuCase, etc.",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
+TC007,After TC005 or TC006 clarification prompt,I don't know,low_info_clarification_reply,IA_ACCESS_ISSUE,,CLARIFICATION_NEEDED,Yes,Yes,Should guide user to find platform in Blackboard and keep clarification state,"No worries! You can usually find the platform name on your Blackboard course page under the Immediate Access tab. It will say something like ""Cengage MindTap,"" ""McGraw Hill Connect,"" or ""Pearson MyLab."" Once you find it, let me know and I can walk you through the steps. You can also visit the CBU Campus Store for in-person help.",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
+TC008,After TC005 or TC006 clarification prompt,Not sure which platform.,low_info_clarification_reply,IA_ACCESS_ISSUE,,CLARIFICATION_NEEDED,Yes,Yes,Should not run retrieval when platform still unknown,"No worries! You can usually find the platform name on your Blackboard course page under the Immediate Access tab. It will say something like ""Cengage MindTap,"" ""McGraw Hill Connect,"" or ""Pearson MyLab."" Once you find it, let me know and I can walk you through the steps. You can also visit the CBU Campus Store for in-person help.",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
+TC009,,I can't access Cengage,publisher_ambiguous,CENGAGE,CENGAGE,CLARIFICATION_NEEDED,Yes,Yes,Should ask textbook vs MindTap,"I can help you with Cengage! To give you the most accurate instructions, could you please specify: Are you trying to access a **Cengage textbook** or **Cengage MindTap** (also called cnowv2)?",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
+TC010,,I can't access McGraw Hill,publisher_ambiguous,MCGRAW_HILL,MCGRAW_HILL,CLARIFICATION_NEEDED,Yes,Yes,Should ask textbook vs Connect,"I can help you with McGraw Hill! To give you the most accurate instructions, could you please specify: Are you trying to access a **McGraw Hill textbook** or **McGraw Hill Connect**?",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
+TC011,,I can't access Pearson,publisher_ambiguous,PEARSON,PEARSON,CLARIFICATION_NEEDED,Yes,Yes,Should ask textbook vs MyLab/Mastering,"I can help you with Pearson! To give you the most accurate instructions, could you please specify: Are you trying to access a **Pearson textbook** or **Pearson MyLab/Mastering**?",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
+TC012,,I can't access Cengage MindTap,platform_specific,IA_ACCESS_ISSUE,CENGAGE,INSTR_CENGAGE_SOURCE_,No,No,Should retrieve Cengage steps,"Here's how to access Cengage MindTap:
+
+PROBLEM:
+Student is opted into Immediate Access but cannot access Cengage MindTap textbook or assignments.
+
+APPLIES TO:
+Courses using Cengage MindTap.
+
+BLACKBOARD LOCATION:
+Course Materials tab
+
+STEP-BY-STEP RESOLUTION:
+1. Log in to Blackboard.
+2. Open the correct course.
+3. Click on the â€œCourse Materialsâ€ tab in the left menu.
+4. Click the MindTap registration or access link.
+5. Open the appropriate week folder.
+6. Select the MindTap chapter or assignment link.
+7. Log in or create a Cengage account using your CBU email address.
+
+LOGIN REQUIREMENTS:
+- Use your full CBU email address (firstname.lastname@calbaptist.edu).
+- Do NOT use your ID#@calbaptist.edu email.
+
+EXPECTED RESULT:
+After logging in, the MindTap eText and assignments should be accessible.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.",PASS | source=INSTR_CENGAGE_SOURCE_0 expected_prefix=INSTR_CENGAGE_SOURCE_ OK; confidence=0.669
+TC013,,I can't access McGraw Hill Connect,platform_specific,IA_ACCESS_ISSUE,MCGRAW_HILL,INSTR_MCGRAW_SOURCE_,No,No,Should retrieve McGraw steps,"Here's how to access McGraw Hill Connect:
+
+PROBLEM:
+Student cannot access their McGraw Hill Connect eTextbook or courseware through the Tools menu in Blackboard.
+
+APPLIES TO:
+Courses using McGraw Hill Connect digital content accessed via the Tools tab (commonly used in Business courses such as BUS 212 Economics, Life and Society).
+
+BLACKBOARD LOCATION:
+Tools tab (left side pane)
+
+STEP-BY-STEP RESOLUTION:
+1. Log into Blackboard.
+2. Go to your course page.
+3. Click ""Tools"" on the left-hand side menu.
+4. Click the link titled ""McGraw Hill Connect LTIA Basic Link.""
+5. You will be taken to the McGraw Hill Connect course page.
+6. Access your materials:
+- For eTextbook: Click on the book image under ""Read"" in the Course materials section.
+- For Assignments: Click on the weekly folders (Week 1, Week 2, etc.) to view assignments.
+
+NAVIGATION INSIDE MCGRAW HILL CONNECT:
+- Instructor information and messaging options are at the top left.
+- Course materials section shows the textbook and loose leaf purchase options.
+- Read section displays your eTextbook - click to open.
+- Assignments section shows weekly folders with your coursework.
+- You can download the mobile app to read offline.
+
+EXPECTED RESULT:
+After clicking the McGraw Hill Connect LTIA Basic Link, you should have access to both the eTextbook and weekly assignments.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.",PASS | source=INSTR_MCGRAW_SOURCE_3 expected_prefix=INSTR_MCGRAW_SOURCE_ OK; confidence=0.658
+TC014,,How do I access Pearson MyLab?,platform_specific,IA_ACCESS_ISSUE,PEARSON,INSTR_PEARSON_SOURCE_,No,No,May fall back to INSTR_GENERAL_SOURCE_ if pearson index/chunk mismatch,"Here's how to access Pearson MyLab/Mastering:
+
+PROBLEM:
+Student is opted into Immediate Access but cannot access their Pearson MyLab or Modified Mastering textbook and assignments.
+
+APPLIES TO:
+Courses using Pearson MyLab or Modified Mastering digital content.
+
+BLACKBOARD LOCATION:
+Immediate Access tab (left side pane)
+
+STEP-BY-STEP RESOLUTION:
+1. Log onto Blackboard.
+2. Select the course that uses Pearson MyLab or Mastering.
+3. Click ""Immediate Access"" from the left side menu.
+4. Click ""Immediate Access"" again from the center of the page.
+5. Click the ""Launch Courseware"" button.
+6. Click ""Continue"" on the Legal Policies page to accept the terms.
+7. Click ""Open MyLab & Mastering"" to access the Pearson platform.
+8. If you are new to Pearson, click ""Create account"" to register.
+9. Fill in your account information:
+- First name and Last name
+- Email (use your CBU email)
+- Username
+- Password
+- Country
+- Role (select Student)
+10. Agree to the Terms of Use and Privacy notice.
+11. Click ""Create account"" to complete registration.
+
+LOGIN REQUIREMENTS:
+- Use your official CBU email address: firstname.lastname@calbaptist.edu
+- Do NOT use your ID#@calbaptist.edu email.
+
+EXPECTED RESULT:
+After registration, you will see a confirmation page showing:
+1. ""You're done!"" message
+2. Your course information and Professor's name
+3. A ""Go to My Courses"" button to access your materials
+
+You will also receive a registration confirmation email. Your Pearson account will be linked to your Blackboard account for future access.
+
+IF ISSUE PERSISTS:
+Use the ""Forgot your Pearson username or password?"" link on the login page, or visit the Help & Support section in Pearson. You can also contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.",PASS | source=INSTR_PEARSON_SOURCE_0 expected_prefix=INSTR_PEARSON_SOURCE_ OK; confidence=0.588
+TC015,,I need help with InQuizitive,platform_specific_alias,IA_ACCESS_ISSUE,INQUIZITIVE,INSTR_INQUIZITIVE_SOURCE_,No,No,Fallback to INSTR_GENERAL_SOURCE_ acceptable if dedicated index not built,"Here's how to access InQuizitive:
+
+How To Access the Little Seagull & InQuizitive
+1. On your Blackboard course page, click -> Immediate Access on the left-hand side panel.
+a. Then click -> Immediate Access on the right-hand side.
+2. Click -> Launch Courseware.
+a. A new pop-up tab should appear. If no new tab appears, ensure that you
+have enabled Third-Party cookies and disabled Pop-up blockers.
+In the new tab, you will be pathed to the Norton platform.
+3. Read/Accept the Terms of use and Privacy Policy and click -> Continue.
+Following the How to Use InQuizitive tutorial, you should be pathed to the Little Seagull
+Handbook home page, where youâ€™ll be able to access your eTextbook and InQuizitive
+assignments.",PASS | source=INSTR_INQUIZITIVE_SOURCE_0 expected_prefix=INSTR_INQUIZITIVE_SOURCE_ OK; confidence=0.206
+TC016,,I need help with inquisitive and Norton,platform_specific_alias,IA_ACCESS_ISSUE,INQUIZITIVE,INSTR_INQUIZITIVE_SOURCE_,No,No,Alias coverage check,"Here's how to access InQuizitive:
+
+How To Access the Little Seagull & InQuizitive
+1. On your Blackboard course page, click -> Immediate Access on the left-hand side panel.
+a. Then click -> Immediate Access on the right-hand side.
+2. Click -> Launch Courseware.
+a. A new pop-up tab should appear. If no new tab appears, ensure that you
+have enabled Third-Party cookies and disabled Pop-up blockers.
+In the new tab, you will be pathed to the Norton platform.
+3. Read/Accept the Terms of use and Privacy Policy and click -> Continue.
+Following the How to Use InQuizitive tutorial, you should be pathed to the Little Seagull
+Handbook home page, where youâ€™ll be able to access your eTextbook and InQuizitive
+assignments.",PASS | source=INSTR_INQUIZITIVE_SOURCE_0 expected_prefix=INSTR_INQUIZITIVE_SOURCE_ OK; confidence=0.593
+TC017,,I need help with Simucace,platform_misspelling_alias,IA_ACCESS_ISSUE,SIMUCASE,INSTR_SIMUCASE_SOURCE_,No,No,Checks simucase misspelling alias,"Here's how to access SimuCase:
+
+PROBLEM:
+Student is opted into Immediate Access but cannot access their SimuCase simulation platform or needs help redeeming their access code.
+
+APPLIES TO:
+Courses using the SimuCase simulation platform (commonly used in Social Work courses such as SWK 335 Substance Use Disorders, Treatment, Recovery).
+
+BLACKBOARD LOCATION:
+Immediate Access tab (left side pane)
+
+STEP-BY-STEP RESOLUTION:
+1. Log into Blackboard.
+2. Select the course that uses SimuCase.
+3. Click ""Immediate Access"" from the left-hand side pane.
+4. Click ""Immediate Access"" again from the center of the page.
+5. Click ""Reveal Access Code"" to display your unique SimuCase code.
+6. Copy the access code that appears.
+7. Copy the publisher's URL appearing under ""More Info"" (https://www.simucase.com/members/register/simucase).
+8. Open a new browser tab and paste the URL to navigate to the SimuCase registration page.
+9. On the SimuCase website, click ""Accept All"" on the Privacy Choices popup.
+10. Fill in your account information:
+- First Name and Last Name
+- Primary Email Address (use your CBU email)
+- Secondary Email Address (optional personal email)
+- Create Password
+- Area of Focus (e.g., Social Work)
+- Select ""Yes"" for educational institution affiliation
+- University: California Baptist University
+- Role: Undergraduate Student
+- Graduation Date
+11. Click ""Continue"" to proceed to the Payment page.
+12. On the Payment page, navigate back to your Blackboard page.
+13. Click ""Copy"" to copy the unique access code from Blackboard.
+14. Return to the SimuCase page and paste your code in the ""Promo Code"" field.
+15. Click ""Apply"" to redeem your access code.
+
+IMPORTANT NOTES:
+- Your access code functions as a Promo Code on the SimuCase payment page.
+- The code covers your membership cost through Immediate Access.
+- Do not select a paid membership option - use your Promo Code instead.
+
+EXPECTED RESULT:
+After applying your promo code, you should have full access to the SimuCase simulation materials for your course.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.",PASS | source=INSTR_SIMUCASE_SOURCE_0 expected_prefix=INSTR_SIMUCASE_SOURCE_ OK; confidence=0.595
+TC018,,I need help with Zybook,platform_misspelling_alias,IA_ACCESS_ISSUE,ZYBOOKS,INSTR_ZYBOOKS_SOURCE_,No,No,Checks singular zybook alias,"Here's how to access zyBooks:
+
+PROBLEM:
+Student is opted into Immediate Access but cannot access their Zybooks textbook or needs help finding their access code.
+
+APPLIES TO:
+Courses using Zybooks digital textbooks (commonly used in EGR courses such as Intro to Computer Programming in Python).
+
+BLACKBOARD LOCATION:
+Immediate Access tab (left side pane)
+
+STEP-BY-STEP RESOLUTION:
+1. Log onto Blackboard.
+2. Select the course in which you are enrolled that uses Zybooks.
+3. Click ""Immediate Access"" from the left side pane.
+4. Click ""Immediate Access"" once more from the center of the page.
+5. Click the ""Reveal Access Code"" button.
+6. Click ""Copy"" to copy the access code displayed in the field.
+7. Navigate to the Zybooks URL provided on the page (example: https://learn.zybooks.com/zybook/CALBAPTISTEGR120CorsoSpring2026).
+8. Paste your unique access code on the Zybooks website to activate your content.
+
+EXPECTED RESULT:
+After entering the access code on the Zybooks website, you will have full access to the Zybooks content for your course.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.",PASS | source=INSTR_ZYBOOKS_SOURCE_0 expected_prefix=INSTR_ZYBOOKS_SOURCE_ OK; confidence=0.568
+TC019,,I need help with Cengage and McGraw,multi_platform_ambiguous,IA_ACCESS_ISSUE,,CLARIFICATION,Yes,Yes,Should detect multiple platforms and request clarification,"I notice you mentioned multiple platforms. To give you the most accurate troubleshooting steps, could you please clarify which platform you're having trouble with? (e.g., McGraw Hill Connect, Cengage MindTap, etc.)",PASS | source=CLARIFICATION expected_prefix=CLARIFICATION OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
+TC020,After previous turn about another platform,Actually it's Cengage not McGraw,topic_switch,IA_ACCESS_ISSUE,CENGAGE,INSTR_CENGAGE_SOURCE_,No,No,Should switch platform and not stay on stale previous platform,"Here's how to access Cengage MindTap:
+
+PROBLEM:
+Student is opted into Immediate Access but cannot access Cengage MindTap textbook or assignments.
+
+APPLIES TO:
+Courses using Cengage MindTap.
+
+BLACKBOARD LOCATION:
+Course Materials tab
+
+STEP-BY-STEP RESOLUTION:
+1. Log in to Blackboard.
+2. Open the correct course.
+3. Click on the â€œCourse Materialsâ€ tab in the left menu.
+4. Click the MindTap registration or access link.
+5. Open the appropriate week folder.
+6. Select the MindTap chapter or assignment link.
+7. Log in or create a Cengage account using your CBU email address.
+
+LOGIN REQUIREMENTS:
+- Use your full CBU email address (firstname.lastname@calbaptist.edu).
+- Do NOT use your ID#@calbaptist.edu email.
+
+EXPECTED RESULT:
+After logging in, the MindTap eText and assignments should be accessible.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.",PASS | source=INSTR_CENGAGE_SOURCE_0 expected_prefix=INSTR_CENGAGE_SOURCE_ OK; confidence=0.263
+TC021,After bot asks for course code,BIO123,course_code_followup,IA_ACCESS_ISSUE,,CLARIFICATION_NEEDED,Yes,Yes,Should ask which platform/publisher is used (not course code) before giving steps.,"I still need the platform name to give the correct steps. Please share which one you see in Blackboard Immediate Access (for example: Cengage MindTap, McGraw Hill Connect, or Pearson MyLab).",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
+TC022,After bot asks for platform or textbook,It's MindTap,short_followup_platform,IA_ACCESS_ISSUE,CENGAGE,INSTR_CENGAGE_SOURCE_,No,No,Short answer should still route correctly,"Here's how to access Cengage MindTap:
+
+PROBLEM:
+Student is opted into Immediate Access but cannot access Cengage MindTap textbook or assignments.
+
+APPLIES TO:
+Courses using Cengage MindTap.
+
+BLACKBOARD LOCATION:
+Course Materials tab
+
+STEP-BY-STEP RESOLUTION:
+1. Log in to Blackboard.
+2. Open the correct course.
+3. Click on the â€œCourse Materialsâ€ tab in the left menu.
+4. Click the MindTap registration or access link.
+5. Open the appropriate week folder.
+6. Select the MindTap chapter or assignment link.
+7. Log in or create a Cengage account using your CBU email address.
+
+LOGIN REQUIREMENTS:
+- Use your full CBU email address (firstname.lastname@calbaptist.edu).
+- Do NOT use your ID#@calbaptist.edu email.
+
+EXPECTED RESULT:
+After logging in, the MindTap eText and assignments should be accessible.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.",PASS | source=INSTR_CENGAGE_SOURCE_0 expected_prefix=INSTR_CENGAGE_SOURCE_ OK; confidence=0.284
+TC023,After bot asks textbook vs platform,Textbook not platform,clarification_branch,IA_ACCESS_ISSUE,,INSTR_GENERAL_SOURCE_,No,No,Should route to ebook/general textbook instructions,"Here's how to access your Cengage textbook:
+
+1. Log into Blackboard.
+2. Select the course that uses Cengage.
+3. Click ""Tools"" from the left side pane.
+4. Select ""Cengage"" from the Tools menu.
+5. Choose your textbook title and click on it.
+6. You should be able to access your textbook online.
+
+If you're still having trouble, you can try running diagnostics on your Cengage connection or contact MacMillan Technical Support for assistance.",PASS | source=INSTR_GENERAL_SOURCE_10 expected_prefix=INSTR_GENERAL_SOURCE_ OK; confidence=0.470
+TC024,After bot asks textbook vs platform,Courseware not ebook,clarification_branch,IA_ACCESS_ISSUE,,INSTR_,No,No,Should route to platform courseware instructions if prior platform known,"Here's how to access Cengage MindTap:
+
+PROBLEM:
+Student is opted into Immediate Access but cannot access Cengage MindTap textbook or assignments.
+
+APPLIES TO:
+Courses using Cengage MindTap.
+
+BLACKBOARD LOCATION:
+Course Materials tab
+
+STEP-BY-STEP RESOLUTION:
+1. Log in to Blackboard.
+2. Open the correct course.
+3. Click on the â€œCourse Materialsâ€ tab in the left menu.
+4. Click the MindTap registration or access link.
+5. Open the appropriate week folder.
+6. Select the MindTap chapter or assignment link.
+7. Log in or create a Cengage account using your CBU email address.
+
+LOGIN REQUIREMENTS:
+- Use your full CBU email address (firstname.lastname@calbaptist.edu).
+- Do NOT use your ID#@calbaptist.edu email.
+
+EXPECTED RESULT:
+After logging in, the MindTap eText and assignments should be accessible.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.",PASS | source=INSTR_CENGAGE_SOURCE_0 expected_prefix=INSTR_ OK; confidence=0.376
+TC025,,I can't access WileyPlus,platform_specific,IA_ACCESS_ISSUE,WILEY,INSTR_WILEY_SOURCE_,No,No,Should retrieve Wiley instructions,"Here's how to access WileyPlus:
+
+PROBLEM:
+Student cannot access their WileyPlus courseware, e-textbook, or assignments.
+
+APPLIES TO:
+Courses using WileyPlus digital courseware (commonly used in Math courses such as MAT 342).
+
+BLACKBOARD LOCATION:
+Tools tab (left side pane)
+
+STEP-BY-STEP RESOLUTION:
+1. Log onto Blackboard.
+2. Select your course that uses WileyPlus.
+3. Click ""Tools"" from the left side menu.
+4. Find and click on ""Wiley Course Resources"" from the Tools list.
+5. You will be presented with two options:
+- Option 1: Click ""Login to an Existing Account"" if you already have a WileyPlus account.
+- Option 2: Create a new account by filling in the registration form.
+6. If creating a new account, enter:
+- First Name
+- Last Name
+- Email Address (use your CBU email)
+- Confirm Email Address
+- Department (select your department)
+7. Check the consent boxes for Terms of Use and Privacy Policy.
+8. Click ""Submit"" to create your account.
+9. A 4-digit verification code will be emailed to you.
+10. Enter the 4-digit code when prompted to verify your account.
+
+NAVIGATION INSIDE WILEYPLUS:
+After logging in, you will see the Course Resources page with:
+- Key Resources: Click ""Launch"" on the WileyPLUS eTextbook tile to access your textbook.
+- Course-Wide Resources: General course materials.
+- Chapter folders: Access content organized by chapter (e.g., Ch 1: First-Order ODEs, Ch 2: Second-Order Linear ODEs, etc.).
+
+EXPECTED RESULT:
+After entering the verification code, you will have access to your WileyPlus e-textbook and course resources organized by chapter.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.",PASS | source=INSTR_WILEY_SOURCE_0 expected_prefix=INSTR_WILEY_SOURCE_ OK; confidence=0.694
+TC026,,I can't access Stukent,platform_specific,IA_ACCESS_ISSUE,STUKENT,INSTR_GENERAL_SOURCE_,No,No,No dedicated STUKENT index expected; general instructions fallback acceptable,"Here's how to access Stukent:
+
+PROBLEM:
+Student cannot access their Stukent courseware, simulations (Simternship), or assignments in Blackboard.
+
+APPLIES TO:
+Courses using Stukent digital courseware and simulations (commonly used in Communication courses such as COM 440 Digital Trends in Communication).
+
+BLACKBOARD LOCATION:
+Tools tab OR Weekly Activities tab (left side pane)
+
+METHOD 1 - VIA TOOLS TAB:
+1. Log onto Blackboard and go to your course page.
+2. Click ""Tools"" on the left-hand sidebar.
+3. Find and click the ""Stukent"" tool in the Tools list.
+4. A new pop-up will appear. Click ""Open Stukent.""
+5. You will be taken to the Stukent ""My Courses"" page.
+6. Find your course (it will show ""LMS Connected"" if properly linked).
+7. Click ""Launch Simternship"" to access simulations OR click ""Launch Courseware"" to access course content.
+
+METHOD 2 - VIA WEEKLY ACTIVITIES TAB:
+1. Log onto Blackboard and go to your course page.
+2. Click ""Weekly Activities"" on the left-hand side menu.
+3. Click on the week folder you want to access (e.g., ""WEEK 1"").
+4. Under each week, you will see Stukent links for specific assignments/quizzes.
+5. Click on the assignment link (e.g., ""Chapter 1 Quiz"").
+6. A Stukent page will appear. Click ""Launch Chapter 1 Quiz"" (or the relevant assignment button).
+
+STUKENT CONTENT TYPES:
+- Simternship: Interactive simulations for hands-on practice (e.g., SEO Simternship).
+- Courseware: Course content, readings, and skill-based materials (e.g., SEO: Strategy & Skills).
+- Quizzes: Chapter-based assessments.
+
+EXPECTED RESULT:
+After following these steps, you should have access to your Stukent simulations, courseware, and quizzes. Since this material is provided through Immediate Access, no additional payment or access code should be required.
+
+IF ISSUE PERSISTS:
+Contact the Immediate Access Support Team at ImmediateAccess@calbaptist.edu for assistance.",PASS | source=INSTR_GENERAL_SOURCE_18 expected_prefix=INSTR_GENERAL_SOURCE_ OK; confidence=0.618
+TC027,,I can't access Canvas textbook,unsupported_platform,IA_ACCESS_ISSUE,,CLARIFICATION_NEEDED,Yes,Yes,Should ask for supported IA platform and avoid random retrieval,"I can help you with textbook access! To give you the most accurate instructions, could you please specify which platform or publisher your textbook uses? Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, Sage, SimuCase, etc.",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
+TC028,,What are the return policies for textbooks?,faq_policy,GENERAL_FAQ,,FAQ_SOURCE_,No,No,Should retrieve textbook returns FAQ,"[FAQ_3]
+3. What is the return policy for Fall 2025 semester textbooks?
+For textbooks purchased for Fall 2025 semester courses:
+- Returns and exchanges are accepted without penalty until September 12, 2025.
+- Returns are accepted with a 25% restocking fee from September 13, 2025 through September 19, 2025.
+- All textbook sales are final after September 19, 2025.",PASS | source=FAQ_SOURCE_3 expected_prefix=FAQ_SOURCE_ OK; confidence=0.804
+TC029,,Can I return textbooks in person?,faq_policy,GENERAL_FAQ,,FAQ_SOURCE_,No,No,Should retrieve in-person return FAQ,"[FAQ_2]
+2. Can I return textbooks in person at the CBU Campus Store?
+Yes. Textbook purchases may be returned in person at the CBU Campus Store, subject to the return conditions and deadlines outlined below.",PASS | source=FAQ_SOURCE_3 expected_prefix=FAQ_SOURCE_ OK; confidence=0.684
+TC030,,Can you help me with parking permits?,out_of_scope,GENERAL_FAQ,,LLM_ONLY,No,No,Should politely decline or redirect to campus resources,"I can help with Campus Store topics like Immediate Access, textbook access, returns, and related policies. For parking permits, please check the appropriate CBU parking/transportation office resources.",PASS | source=LLM_ONLY expected_prefix=LLM_ONLY OK; confidence=0.000

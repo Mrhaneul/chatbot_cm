@@ -16,6 +16,7 @@ FAQ_INDEX_PATH = "data/faqs/faiss_index"
 FAQ_CHUNKS_PATH = "data/faqs/faqs_chunks.txt"
 INSTRUCTIONS_INDEX_PATH = "data/instructions/faiss_index"
 INSTRUCTIONS_CHUNKS_PATH = "data/instructions/instructions_chunks.txt"
+CHUNK_SEPARATOR = "\n<<<CHUNK_SEPARATOR>>>\n"
 
 
 def _ingest_directory(source_dir: str, index_path: str, chunks_path: str, label: str):
@@ -98,7 +99,7 @@ def _ingest_directory(source_dir: str, index_path: str, chunks_path: str, label:
     # Save chunks to disk
     with open(chunks_path, "w", encoding="utf-8") as f:
         for chunk in chunks:
-            f.write(chunk + "\n---\n")
+            f.write(chunk + CHUNK_SEPARATOR)
 
     print(f"✓ Ingested {len(chunks)} {label} chunks.\n")
     return chunks
@@ -165,7 +166,8 @@ def ingest_instructions():
         'bedford': [],
         'clifton': [],
         'simucase': [],
-        'zybooks': []
+        'zybooks': [],
+        'inquizitive': [],
     }
 
     for i, (file_name, text) in enumerate(raw_chunks):
@@ -197,6 +199,18 @@ def ingest_instructions():
             platform_data['simucase'].append(chunk)
         if "zybook" in text_lower or "zybook" in file_lower:
             platform_data['zybooks'].append(chunk)
+        if (
+            "inquizitive" in text_lower
+            or "inquisitive" in text_lower
+            or "little seagull" in text_lower
+            or "norton" in text_lower
+            or "seagull handbook" in text_lower
+            or "inquizitive" in file_lower
+            or "inquisitive" in file_lower
+            or "norton" in file_lower
+            or "seagull" in file_lower
+        ):
+            platform_data['inquizitive'].append(chunk)
 
     # Load embedding model
     model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -214,7 +228,7 @@ def ingest_instructions():
     
     with open(INSTRUCTIONS_CHUNKS_PATH, "w", encoding="utf-8") as f:
         for chunk in all_chunks:
-            f.write(chunk + "\n---\n")
+            f.write(chunk + CHUNK_SEPARATOR)
     print(f"  ✓ Saved general instructions index")
 
     # === Build platform-specific indices ===
@@ -240,7 +254,7 @@ def ingest_instructions():
                 
                 with open(chunks_path, "w", encoding="utf-8") as f:
                     for chunk in chunks:
-                        f.write(chunk + "\n---\n")
+                        f.write(chunk + CHUNK_SEPARATOR)
                 
                 print(f"  ✓ Saved {platform_name}-specific index")
                 platform_summary[platform_name] = len(chunks)

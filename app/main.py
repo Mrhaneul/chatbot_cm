@@ -3,6 +3,7 @@ from fastapi import FastAPI, HTTPException
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.llm.llama_client import LlamaClient
 from app.rag.retriever import FAQRetriever
+from app.platform_registry import load_registry, internal_platform_key, canonical_platform_key
 import asyncio
 import os
 import re
@@ -31,6 +32,7 @@ MAIN API (FIXED + PERFORMANCE TRACKING)
 """
 
 CONFIDENCE_THRESHOLD = 0.1
+FAQ_DIRECT_MIN_CONFIDENCE = float(os.getenv("FAQ_DIRECT_MIN_CONFIDENCE", "0.2"))
 MAX_HISTORY_TURNS = 6
 SESSION_TIMEOUT = timedelta(hours=1)
 MAX_CONCURRENT_LLM_REQUESTS = int(os.getenv("MAX_CONCURRENT_LLM_REQUESTS", "2"))
@@ -82,6 +84,113 @@ llm_semaphore = asyncio.Semaphore(MAX_CONCURRENT_LLM_REQUESTS)
 chat_request_queue: asyncio.Queue[str] = asyncio.Queue()
 chat_jobs: Dict[str, Dict[str, Any]] = {}
 chat_workers: list[asyncio.Task] = []
+
+PLATFORM_ALIASES: Dict[str, list[str]] = {
+    "CENGAGE": ["cengage", "mindtap", "cnow", "cnowv2"],
+    "MCGRAW_HILL": ["mcgraw", "mcgraw hill", "connect", "aleks"],
+    "PEARSON": ["pearson", "mylab", "mastering"],
+    "WILEY": ["wiley", "wileyplus"],
+    "MACMILLAN": ["macmillan", "achieve"],
+    "SAGE": ["sage", "vantage"],
+    "BEDFORD": ["bedford", "bookshelf"],
+    "CLIFTON": ["clifton", "cliftonstrengths", "strengthsquest"],
+    "SIMUCASE": ["simucase", "simucace"],
+    "ZYBOOKS": ["zybooks", "zybook"],
+    "STUKENT": ["stukent"],
+    "VITALSOURCE": ["vitalsource"],
+    "INQUIZITIVE": [
+        "inquizitive",
+        "inquizitve",
+        "inquiztive",
+        "inquisitive",
+        "little seagull",
+        "norton",
+        "seagull handbook",
+    ],
+}
+
+PLATFORM_DISPLAY_NAMES: Dict[str, str] = {
+    "CENGAGE": "Cengage MindTap",
+    "MCGRAW_HILL": "McGraw Hill Connect",
+    "PEARSON": "Pearson MyLab/Mastering",
+    "WILEY": "WileyPlus",
+    "MACMILLAN": "Macmillan Achieve",
+    "SAGE": "Sage Vantage",
+    "BEDFORD": "Bedford Bookshelf",
+    "CLIFTON": "CliftonStrengths",
+    "SIMUCASE": "SimuCase",
+    "ZYBOOKS": "zyBooks",
+    "STUKENT": "Stukent",
+    "VITALSOURCE": "VitalSource",
+    "INQUIZITIVE": "InQuizitive",
+}
+
+# Merge dynamic registry entries (added by add_instruction.py)
+_registry = load_registry()
+for _platform_key, _aliases in _registry.get("platform_aliases", {}).items():
+    _internal_key = internal_platform_key(_platform_key)
+    existing_aliases = set(PLATFORM_ALIASES.get(_internal_key, []))
+    for _alias in _aliases:
+        if isinstance(_alias, str) and _alias.strip():
+            existing_aliases.add(_alias.strip().lower())
+    # Ensure canonical key itself is always an alias.
+    existing_aliases.add(canonical_platform_key(_platform_key).replace("_", " "))
+    existing_aliases.add(canonical_platform_key(_platform_key))
+    PLATFORM_ALIASES[_internal_key] = sorted(existing_aliases)
+
+for _platform_key, _display in _registry.get("platform_display_names", {}).items():
+    _internal_key = internal_platform_key(_platform_key)
+    if isinstance(_display, str) and _display.strip():
+        PLATFORM_DISPLAY_NAMES[_internal_key] = _display.strip()
+
+
+def detect_platforms_from_text(text: str) -> list[str]:
+    """
+    Return all matching platform keys from message text.
+    """
+    normalized = text.lower()
+    matches: list[str] = []
+    for platform_key, aliases in PLATFORM_ALIASES.items():
+        if any(alias in normalized for alias in aliases):
+            matches.append(platform_key)
+    return matches
+
+
+def detect_platform_from_text(text: str) -> str | None:
+    """
+    Return the first matched platform key, or None.
+    """
+    matches = detect_platforms_from_text(text)
+    return matches[0] if matches else None
+
+
+def resolve_platform_correction(text: str) -> str | None:
+    """
+    Resolve explicit correction statements like:
+      - "Cengage not McGraw"
+      - "Cengage instead of McGraw"
+    Returns the intended platform key when identifiable.
+    """
+    msg_lower = text.lower()
+    platforms_found = detect_platforms_from_text(text)
+    for primary in platforms_found:
+        primary_aliases = PLATFORM_ALIASES.get(primary, [])
+        for other in platforms_found:
+            if other == primary:
+                continue
+            other_aliases = PLATFORM_ALIASES.get(other, [])
+            primary_hit = next((a for a in primary_aliases if a in msg_lower), None)
+            other_hit = next((a for a in other_aliases if a in msg_lower), None)
+            if not primary_hit or not other_hit:
+                continue
+            patterns = [
+                rf"\b{re.escape(primary_hit)}\b\s+not\s+\b{re.escape(other_hit)}\b",
+                rf"\b{re.escape(primary_hit)}\b\s+instead of\s+\b{re.escape(other_hit)}\b",
+                rf"\bnot\s+\b{re.escape(other_hit)}\b.*\b{re.escape(primary_hit)}\b",
+            ]
+            if any(re.search(p, msg_lower) for p in patterns):
+                return primary
+    return None
 
 
 async def retrieve_async(query: str, collection: str = "auto", platform: str = None):
@@ -241,11 +350,6 @@ def detect_intent(message: str) -> str:
         "define",
     ]
     
-    # If it's an informational question, return GENERAL_FAQ immediately
-    if any(pattern in normalized for pattern in informational_patterns):
-        print(f"🔍 [INTENT DEBUG] Informational question detected")
-        return "GENERAL_FAQ"
-    
     # Immediate Access AND Textbook troubleshooting keywords
     ia_keywords = [
         "opted in",
@@ -277,18 +381,30 @@ def detect_intent(message: str) -> str:
     # Check if any IA keyword is present AND mentions a platform OR textbook
     has_ia_keyword = any(keyword in normalized for keyword in ia_keywords)
     
-    # ✨ EXPANDED: Include textbook mentions
-    mentions_platform_or_textbook = any(word in normalized for word in [
-        "cengage", "mindtap", "mcgraw", "connect", "pearson", 
-        "vitalsource", "bedford", "ebook", "e-book", "etext", "e-text",
-        "simucase", "sage", "vantage", "wiley", "zybooks", "clifton", "macmillan",
-        "textbook", "text book", "etextbook", "e-textbook"  # ✨ NEW
-    ])
+    # Platform mentions include aliases from PLATFORM_ALIASES plus textbook synonyms.
+    mentions_platform_or_textbook = (
+        detect_platform_from_text(normalized) is not None
+        or any(word in normalized for word in [
+            "ebook", "e-book", "etext", "e-text", "textbook", "text book", "etextbook", "e-textbook"
+        ])
+    )
 
     print(f"🔍 [INTENT DEBUG] has_ia_keyword={has_ia_keyword}, mentions_platform_or_textbook={mentions_platform_or_textbook}")
     
     if has_ia_keyword and mentions_platform_or_textbook:
         return "IA_ACCESS_ISSUE"
+
+    # Platform correction messages like "Actually it's Cengage not McGraw"
+    # should stay in access/troubleshooting flow.
+    if detect_platform_from_text(normalized) and any(
+        word in normalized for word in ["actually", "instead of", "not "]
+    ):
+        return "IA_ACCESS_ISSUE"
+
+    # Treat informational questions as GENERAL_FAQ only when they are not IA/platform access issues.
+    if any(pattern in normalized for pattern in informational_patterns):
+        print(f"🔍 [INTENT DEBUG] Informational question detected")
+        return "GENERAL_FAQ"
     
     # Only trigger IA_ACCESS_ISSUE for "immediate access" if combined with troubleshooting keywords
     if "immediate access" in normalized and has_ia_keyword:
@@ -402,34 +518,168 @@ def extract_course_code(message: str):
     return match.group(0) if match else None
 
 
+def extract_faq_answer(context: str) -> str | None:
+    """
+    Extract the ANSWER section from a FAQ chunk.
+    Expected format includes:
+      QUESTION:
+      ...
+      ANSWER:
+      ...
+      Article link: ...
+    """
+    if not context or "ANSWER:" not in context:
+        return None
+
+    start = context.find("ANSWER:")
+    if start == -1:
+        return None
+    answer = context[start + len("ANSWER:"):].strip()
+
+    # Remove trailing article link line from the body if present.
+    answer = re.sub(r'Article link:\s*"?[^"\n]+"?\s*$', "", answer, flags=re.IGNORECASE).strip()
+    return answer if answer else None
+
+
+def strip_article_link_lines(text: str) -> str:
+    """Remove any `Article link: ...` lines from model or retrieval output."""
+    if not text:
+        return text
+    cleaned = re.sub(r'(?im)^\s*Article link:\s*"?[^"\n]+"?\s*$', "", text)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+
+def is_meta_or_greeting_misfire(reply: str) -> bool:
+    """Detect model outputs that are meta/greeting instead of answering the user."""
+    if not reply:
+        return False
+    normalized = reply.lower()
+    return any(
+        marker in normalized
+        for marker in [
+            "since the user only says",
+            "i will give a greeting",
+            "what can i help you with today",
+            "hi! i'm lance",
+        ]
+    )
+
+
+def build_instruction_fallback_from_context(context: str, platform: str | None) -> str | None:
+    """
+    Convert retrieved instruction context into a user-facing fallback answer.
+    Used only when model output is clearly a greeting/meta misfire.
+    """
+    if not context:
+        return None
+
+    text = context.replace("\ufeff", "").strip()
+    # Remove source/file prefix, if present.
+    text = re.sub(r"^\[SOURCE_\d+\]\s*\[FILE:[^\]]+\]\s*", "", text, flags=re.IGNORECASE).strip()
+
+    lines = [ln.strip() for ln in text.splitlines()]
+    cleaned_lines = []
+    for ln in lines:
+        if not ln:
+            cleaned_lines.append("")
+            continue
+        lower = ln.lower()
+        if lower.startswith("platform:"):
+            continue
+        if lower.startswith("issue type:"):
+            continue
+        if lower.startswith("program:"):
+            continue
+        if lower.startswith("last updated:"):
+            continue
+        if ln == "---":
+            continue
+        cleaned_lines.append(ln)
+
+    body = "\n".join(cleaned_lines).strip()
+    body = re.sub(r"\n{3,}", "\n\n", body).strip()
+    if not body:
+        return None
+
+    display = PLATFORM_DISPLAY_NAMES.get(platform or "", platform or "your platform")
+    if not body.lower().startswith("here's how"):
+        body = f"Here's how to access {display}:\n\n{body}"
+    return body
+
+
+def classify_platform_type_reply(message: str) -> str:
+    """
+    Classify a clarification follow-up as:
+      - TEXTBOOK_EBOOK
+      - COURSEWARE_PLATFORM
+      - UNKNOWN
+    Negation-aware so phrases like "textbook not platform" are handled correctly.
+    """
+    m = message.lower()
+    textbook_terms = ["textbook", "ebook", "e-book", "etext", "e-text", "etextbook", "e-textbook", "book"]
+    courseware_terms = [
+        "platform", "courseware", "mindtap", "connect", "mylab",
+        "mastering", "inquizitive", "inquisitive"
+    ]
+
+    has_textbook = any(t in m for t in textbook_terms)
+    has_courseware = any(t in m for t in courseware_terms)
+    has_not = "not" in m
+
+    # Negation-first checks
+    if has_textbook and has_courseware and has_not:
+        if "not platform" in m or "not courseware" in m:
+            return "TEXTBOOK_EBOOK"
+        if "not textbook" in m or "not ebook" in m or "not e-book" in m:
+            return "COURSEWARE_PLATFORM"
+
+    # Positive-only checks
+    if has_textbook and not has_courseware:
+        return "TEXTBOOK_EBOOK"
+    if has_courseware and not has_textbook:
+        return "COURSEWARE_PLATFORM"
+
+    # Mixed without clear negation target is ambiguous
+    if has_textbook and has_courseware:
+        return "UNKNOWN"
+
+    return "UNKNOWN"
+
+
+def is_out_of_scope_query(message: str) -> bool:
+    """
+    Lightweight keyword check for obvious non-campus-store topics.
+    """
+    m = message.lower()
+    out_of_scope_keywords = [
+        "parking permit",
+        "parking permits",
+        "parking pass",
+        "parking services",
+        "housing",
+        "dorm",
+        "meal plan",
+        "financial aid",
+        "scholarship",
+        "transcript",
+        "registrar",
+        "admissions",
+        "tuition payment",
+    ]
+    return any(k in m for k in out_of_scope_keywords)
+
+
 def detect_platform_and_check_ambiguity(message: str) -> tuple[str, bool]:
     """
     Returns: (platform, is_ambiguous)
     """
-    platforms_found = []
+    platforms_found = detect_platforms_from_text(message)
+    corrected = resolve_platform_correction(message)
+    if corrected:
+        print(f"🔍 DEBUG: Negation/correction detected - choosing {corrected}")
+        return corrected, False
     
-    if "cengage" in message.lower() or "mindtap" in message.lower():
-        platforms_found.append("CENGAGE")
-    if "mcgraw" in message.lower() or "connect" in message.lower():
-        platforms_found.append("MCGRAW_HILL")
-    if "bedford" in message.lower():
-        platforms_found.append("BEDFORD")
-    if "simucase" in message.lower():
-        platforms_found.append("SIMUCASE")
-    if "pearson" in message.lower():
-        platforms_found.append("PEARSON")
-    if "wiley" in message.lower():
-        platforms_found.append("WILEY")
-    if "sage" in message.lower():
-        platforms_found.append("SAGE")
-    if "macmillan" in message.lower() or "achieve" in message.lower():
-        platforms_found.append("MACMILLAN")
-    if "zybooks" in message.lower():
-        platforms_found.append("ZYBOOKS")
-    if "clifton" in message.lower():
-        platforms_found.append("CLIFTON")
-    
-    print(f"🔍 DEBUG: Platforms found = {platforms_found}")
+    print(f"🔍 DEBUG: Platforms found = {[p.lower() for p in platforms_found]}")
     
     if len(platforms_found) > 1:
         print(f"🔍 DEBUG: AMBIGUOUS - returning (None, True)")
@@ -442,15 +692,31 @@ def detect_platform_and_check_ambiguity(message: str) -> tuple[str, bool]:
         return None, False
 
 
-def detect_topic_switch(message: str, stored_intent: str) -> bool:
+def detect_topic_switch(message: str, stored_intent: str, stored_platform: str | None = None) -> bool:
     """Detect if user is switching topics."""
     current_intent = detect_intent(message)
+    detected_platform = detect_platform_from_text(message)
     
     if stored_intent == "IA_ACCESS_ISSUE" and current_intent == "GENERAL_FAQ":
         return True
     
     if stored_intent == "IA_ACCESS_ISSUE" and current_intent == "AMBIGUOUS_PLATFORM":
         return True
+
+    # If user now mentions a platform explicitly, treat it as a topic switch so we don't
+    # keep following the previous platform's course-code flow.
+    if stored_intent == "IA_ACCESS_ISSUE" and detected_platform is not None:
+        if stored_platform is None:
+            return True
+        if detected_platform != stored_platform:
+            return True
+
+    # Session-aware correction phrases should always count as topic switch.
+    msg_lower = message.lower()
+    if stored_platform and ("not " in msg_lower or "instead of" in msg_lower):
+        mentioned_platforms = detect_platforms_from_text(message)
+        if any(p != stored_platform for p in mentioned_platforms):
+            return True
     
     topic_switch_keywords = ["actually", "instead", "what about", "by the way", "nevermind"]
     return any(keyword in message.lower() for keyword in topic_switch_keywords)
@@ -462,6 +728,9 @@ def is_ambiguous_platform_query(message: str) -> tuple[str | None, bool]:
     Returns: (publisher_name, is_ambiguous)
     """
     msg_lower = message.lower()
+    corrected = resolve_platform_correction(message)
+    if corrected:
+        return corrected, False
     
     # ✨ NEW: Check for informational questions FIRST
     informational_patterns = [
@@ -503,6 +772,31 @@ def is_ambiguous_platform_query(message: str) -> tuple[str | None, bool]:
             return "PEARSON", False
         else:
             return "PEARSON", True
+
+    # InQuizitive is always a courseware platform query (not ambiguous textbook-vs-platform).
+    inquizitive_terms = [
+        "inquizitive",
+        "inquizitve",
+        "inquiztive",
+        "inquisitive",
+    ]
+    norton_terms = [
+        "norton",
+        "little seagull",
+        "seagull handbook",
+    ]
+    textbook_terms = ["textbook", "etextbook", "ebook", "e-book", "etext", "e-text"]
+
+    # Explicit InQuizitive mention is specific enough.
+    if any(term in msg_lower for term in inquizitive_terms):
+        return "INQUIZITIVE", False
+
+    # Norton publisher mention may be ambiguous (Norton eTextbook vs Norton InQuizitive),
+    # mirroring Cengage/McGraw/Pearson clarification behavior.
+    if any(term in msg_lower for term in norton_terms):
+        if any(term in msg_lower for term in textbook_terms):
+            return "INQUIZITIVE", False
+        return "INQUIZITIVE", True
     
     # ✨ UPDATED: Immediate Access without platform
     if "immediate access" in msg_lower:
@@ -513,11 +807,10 @@ def is_ambiguous_platform_query(message: str) -> tuple[str | None, bool]:
         ]
         
         has_trouble_keyword = any(keyword in msg_lower for keyword in troubleshooting_keywords)
-        has_platform_mention = any(platform in msg_lower for platform in [
-            "cengage", "mindtap", "mcgraw", "connect", "pearson", 
-            "vitalsource", "bedford", "ebook", "e-book", "etext", "e-text",
-            "simucase", "sage", "vantage", "wiley", "zybooks", "clifton", "macmillan"
-        ])
+        has_platform_mention = (
+            detect_platform_from_text(msg_lower) is not None
+            or any(word in msg_lower for word in ["ebook", "e-book", "etext", "e-text"])
+        )
         
         # Only trigger clarification if:
         # 1. They have a troubleshooting issue AND
@@ -554,6 +847,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         platform = None
         course_code = None
         intent = None
+        explicit_textbook_selection = False
         
         # ===== EARLY CHECK: Ambiguous Platforms =====
         platform_temp, is_ambiguous = detect_platform_and_check_ambiguity(message)
@@ -620,6 +914,12 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     "could you please specify: Are you trying to access a **Pearson textbook** "
                     "or **Pearson MyLab/Mastering**?"
                 )
+            elif publisher == "INQUIZITIVE":
+                clarification = (
+                    "I can help you with Norton! To give you the most accurate instructions, "
+                    "could you please specify: Are you trying to access a **Norton textbook** "
+                    "or **Norton InQuizitive**?"
+                )
             elif publisher == "IMMEDIATE_ACCESS":
                 clarification = (
                     "I can help you with Immediate Access! To give you the most accurate instructions, "
@@ -667,85 +967,124 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             msg_lower = message.lower()
             publisher = session.get("stored_publisher")
             original_query = session.get("stored_original_query", "")  # ✨ Get original query
+            platform_type_reply = classify_platform_type_reply(message)
+
+            low_info_responses = [
+                "i don't know",
+                "i dont know",
+                "not sure",
+                "no idea",
+                "idk",
+                "i'm not sure",
+                "im not sure",
+                "don't know",
+                "do not know",
+                "unsure",
+            ]
+            is_low_info_response = any(phrase in msg_lower for phrase in low_info_responses)
+
+            # Keep clarification state open and do not run retrieval when the student
+            # explicitly says they don't know the platform yet.
+            if is_low_info_response:
+                redirect_reply = (
+                    "No worries! You can usually find the platform name on your Blackboard "
+                    "course page under the Immediate Access tab. It will say something like "
+                    "\"Cengage MindTap,\" \"McGraw Hill Connect,\" or \"Pearson MyLab.\" "
+                    "Once you find it, let me know and I can walk you through the steps. "
+                    "You can also visit the CBU Campus Store for in-person help."
+                )
+
+                session["history"].append({
+                    "role": "user",
+                    "content": message
+                })
+                session["history"].append({
+                    "role": "assistant",
+                    "content": redirect_reply
+                })
+
+                total_time = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=redirect_reply,
+                    source="CLARIFICATION_NEEDED",
+                    article_link=None,
+                    confidence=0.0,
+                    total_time_ms=round(total_time, 2),
+                    retrieval_time_ms=0,
+                    llm_time_ms=0
+                )
             
-            # ✨ NEW: Handle textbook-specific follow-ups
+            # Handle textbook/platform clarification replies
             if publisher == "TEXTBOOK_GENERIC":
                 intent = "IA_ACCESS_ISSUE"
-                
-                # Detect platform from response
-                if "bedford" in msg_lower:
-                    platform = "BEDFORD"
-                elif "cengage" in msg_lower or "mindtap" in msg_lower:
-                    platform = "CENGAGE"
-                elif "mcgraw" in msg_lower or "connect" in msg_lower:
-                    platform = "MCGRAW_HILL"
-                elif "pearson" in msg_lower or "mylab" in msg_lower or "mastering" in msg_lower:
-                    platform = "PEARSON"
-                elif "vitalsource" in msg_lower:
-                    platform = "VITALSOURCE"
-                elif "simucase" in msg_lower:
-                    platform = "SIMUCASE"
-                elif "sage" in msg_lower:
-                    platform = "SAGE"
-                elif "wiley" in msg_lower:
-                    platform = "WILEY"
-                elif "zybooks" in msg_lower:
-                    platform = "ZYBOOKS"
-                elif "clifton" in msg_lower:
-                    platform = "CLIFTON"
-                elif "macmillan" in msg_lower:
-                    platform = "MACMILLAN"
+                platform = detect_platform_from_text(msg_lower)
                 
                 # ✨ Use original query + platform for better retrieval
                 if platform and original_query:
                     enhanced_query = f"{original_query} {platform} access instructions"
                     print(f"🔍 [QUERY DEBUG] Enhanced query: {enhanced_query}")
-                
-            elif "connect" in msg_lower or "mindtap" in msg_lower or "mylab" in msg_lower or "mastering" in msg_lower or "platform" in msg_lower:
-                # Existing logic for Cengage/McGraw/Pearson clarification
+
+            elif platform_type_reply == "TEXTBOOK_EBOOK":
                 intent = "IA_ACCESS_ISSUE"
-                if publisher == "MCGRAW_HILL":
-                    platform = "MCGRAW_HILL"
-                elif publisher == "CENGAGE":
-                    platform = "CENGAGE"
-                elif publisher == "PEARSON":
-                    platform = "PEARSON"
+                platform = None
+                explicit_textbook_selection = True
+                # Force general ebook/textbook instructions path.
+                enhanced_query = "eTextbook immediate access general instructions VitalSource Blackboard step-by-step"
+            elif platform_type_reply == "COURSEWARE_PLATFORM":
+                intent = "IA_ACCESS_ISSUE"
+                if publisher in PLATFORM_ALIASES:
+                    platform = publisher
+                else:
+                    platform = detect_platform_from_text(msg_lower)
             else:
                 intent = "IA_ACCESS_ISSUE"
                 platform = None
-            
-            session["awaiting_platform_type"] = False
-            session["stored_publisher"] = None
-            session["stored_original_query"] = None  # ✨ Clear stored query
+
+            if platform is None:
+                # If this was a textbook/ebook selection, skip platform requirement and
+                # continue with general instructions retrieval.
+                if platform_type_reply == "TEXTBOOK_EBOOK":
+                    print("🔍 [STATE DEBUG] Textbook/Ebook clarification detected; using general instructions")
+                else:
+                    followup_reply = (
+                        "I still need the platform name to give the correct steps. "
+                        "Please share which one you see in Blackboard Immediate Access "
+                        "(for example: Cengage MindTap, McGraw Hill Connect, or Pearson MyLab)."
+                    )
+                    session["history"].append({
+                        "role": "user",
+                        "content": message
+                    })
+                    session["history"].append({
+                        "role": "assistant",
+                        "content": followup_reply
+                    })
+                    total_time = (time.time() - request_start) * 1000
+                    return ChatResponse(
+                        reply=followup_reply,
+                        source="CLARIFICATION_NEEDED",
+                        article_link=None,
+                        confidence=0.0,
+                        total_time_ms=round(total_time, 2),
+                        retrieval_time_ms=0,
+                        llm_time_ms=0
+                    )
+
+            # Only clear platform-clarification state once we actually have a platform.
+            if platform is not None or platform_type_reply == "TEXTBOOK_EBOOK":
+                session["awaiting_platform_type"] = False
+                session["stored_publisher"] = None
+                session["stored_original_query"] = None  # ✨ Clear stored query
             course_code = extract_course_code(message)
             
             if platform is None:
-                if "cengage" in message.lower() or "mindtap" in message.lower():
-                    platform = "CENGAGE"
-                elif "mcgraw" in message.lower() or "connect" in message.lower():
-                    platform = "MCGRAW_HILL"
-                elif "simucase" in message.lower():
-                    platform = "SIMUCASE"
-                elif "pearson" in message.lower():
-                    platform = "PEARSON"
-                elif "bedford" in message.lower():
-                    platform = "BEDFORD"
-                elif "wiley" in message.lower():
-                    platform = "WILEY"
-                elif "sage" in message.lower():
-                    platform = "SAGE"
-                elif "macmillan" in message.lower() or "achieve" in message.lower():
-                    platform = "MACMILLAN"
-                elif "zybooks" in message.lower():
-                    platform = "ZYBOOKS"
-                elif "clifton" in message.lower():
-                    platform = "CLIFTON"
+                platform = detect_platform_from_text(message)
             
             print(f"🔍 [PLATFORM DEBUG] Detected platform: {platform}")
 
             # ✨ ADD THIS ELIF BLOCK FOR COURSE CODE HANDLING
         elif session.get("awaiting_course_code", False):
-            if detect_topic_switch(message, session["stored_intent"]):
+            if detect_topic_switch(message, session["stored_intent"], session.get("stored_platform")):
                 session["awaiting_course_code"] = False
                 session["stored_intent"] = None
                 session["stored_platform"] = None
@@ -775,9 +1114,11 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     "textbook or mcgraw hill connect",
                     "textbook or cengage mindtap",
                     "textbook or pearson mylab",
+                    "textbook or norton inquizitive",
                     "cengage textbook or cengage mindtap",
                     "mcgraw hill textbook or mcgraw hill connect",
-                    "pearson textbook or pearson mylab"
+                    "pearson textbook or pearson mylab",
+                    "norton textbook or norton inquizitive",
                 ]
                 
                 if any(pattern in last_bot_message for pattern in platform_clarification_patterns):
@@ -792,26 +1133,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             course_code = extract_course_code(message)
             
             if platform is None:
-                if "cengage" in message.lower() or "mindtap" in message.lower():
-                    platform = "CENGAGE"
-                elif "mcgraw" in message.lower() or "connect" in message.lower():
-                    platform = "MCGRAW_HILL"
-                elif "simucase" in message.lower():
-                    platform = "SIMUCASE"
-                elif "pearson" in message.lower():
-                    platform = "PEARSON"
-                elif "bedford" in message.lower():
-                    platform = "BEDFORD"
-                elif "wiley" in message.lower():
-                    platform = "WILEY"
-                elif "sage" in message.lower():
-                    platform = "SAGE"
-                elif "macmillan" in message.lower() or "achieve" in message.lower():
-                    platform = "MACMILLAN"
-                elif "zybooks" in message.lower():
-                    platform = "ZYBOOKS"
-                elif "clifton" in message.lower():
-                    platform = "CLIFTON"
+                platform = detect_platform_from_text(message)
             
             print(f"🔍 [PLATFORM DEBUG] Detected platform: {platform}")
 
@@ -822,15 +1144,44 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # 2. Platform detection
         print(f"🔍 [PLATFORM DEBUG] Detected platform: {platform}")
 
-        # Check for course code requirement
-        if intent == "IA_ACCESS_ISSUE" and not course_code:
-            session["awaiting_course_code"] = True
-            session["stored_intent"] = "IA_ACCESS_ISSUE"
-            session["stored_platform"] = platform
+        # Out-of-scope guard for obvious non-campus-store topics.
+        if intent == "GENERAL_FAQ" and is_out_of_scope_query(message):
+            out_of_scope_reply = (
+                "I can help with Campus Store topics like Immediate Access, textbook access, "
+                "returns, and related policies. For parking permits, please check the appropriate "
+                "CBU parking/transportation office resources."
+            )
+            session["history"].append({
+                "role": "user",
+                "content": message
+            })
+            session["history"].append({
+                "role": "assistant",
+                "content": out_of_scope_reply
+            })
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=out_of_scope_reply,
+                source="LLM_ONLY",
+                article_link=None,
+                confidence=0.0,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[]
+            )
+
+        # Do not require course code up front for IA troubleshooting.
+        # Platform/publisher is the primary disambiguation input.
+        if intent == "IA_ACCESS_ISSUE":
+            session["awaiting_course_code"] = False
+            session["stored_intent"] = None
+            session["stored_platform"] = None
 
         is_vague_query = (
             intent == "IA_ACCESS_ISSUE" and
             platform is None and
+            not explicit_textbook_selection and
             len(message.split()) <= 20 and  # allow slightly longer queries
             any(word in message.lower() for word in [
                 "immediate access",
@@ -921,6 +1272,11 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     collection="instructions",
                     platform=platform
                 )
+            elif intent == "GENERAL_FAQ":
+                retrieval = await retrieve_async(
+                    message,
+                    collection="faqs"
+                )
             else:
                 retrieval = await retrieve_async(message)
 
@@ -951,6 +1307,106 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             retrieval = None
             context = ""
             retrieval_time_ms = (time.time() - retrieval_start) * 1000
+
+        # Deterministic FAQ response path: return the retrieved FAQ answer directly
+        # to avoid hallucinated policy/instruction steps.
+        if intent == "GENERAL_FAQ" and retrieval and retrieval.get("source_id", "").startswith("FAQ_SOURCE_"):
+            faq_confidence = float(retrieval.get("score") or 0.0)
+            if faq_confidence < FAQ_DIRECT_MIN_CONFIDENCE:
+                low_conf_reply = (
+                    "I want to make sure I give you accurate Campus Store information. "
+                    "Could you clarify your question in terms of Immediate Access, textbook access, "
+                    "returns, or course-material policies?"
+                )
+                session["history"].append({
+                    "role": "assistant",
+                    "content": low_conf_reply
+                })
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=low_conf_reply,
+                    source="LLM_ONLY",
+                    article_link=None,
+                    confidence=faq_confidence,
+                    retrieval_time_ms=round(retrieval_time_ms, 2),
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[]
+                )
+
+            faq_answer = extract_faq_answer(context)
+            if faq_answer:
+                reply = strip_article_link_lines(faq_answer)
+
+                session["history"].append({
+                    "role": "assistant",
+                    "content": reply
+                })
+                if len(session["history"]) > MAX_HISTORY_TURNS * 2:
+                    session["history"] = session["history"][-MAX_HISTORY_TURNS * 2:]
+
+                total_time_ms = (time.time() - request_start) * 1000
+                confidence = retrieval["score"]
+                source = retrieval["source_id"]
+                article_link = retrieval.get("article_link")
+
+                print(f"\n⏱️  PERFORMANCE METRICS:")
+                print(f"   Retrieval: {retrieval_time_ms:.2f}ms")
+                print(f"   LLM: 0.00ms (FAQ direct answer)")
+                print(f"   Total: {total_time_ms:.2f}ms\n")
+
+                return ChatResponse(
+                    reply=reply,
+                    source=source,
+                    article_link=article_link,
+                    confidence=confidence,
+                    retrieval_time_ms=round(retrieval_time_ms, 2),
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[]
+                )
+
+        # Deterministic instruction response path for platform-specific IA queries.
+        # This avoids LLM variability (greeting/meta leakage) when we already have exact docs.
+        if (
+            intent == "IA_ACCESS_ISSUE"
+            and platform is not None
+            and retrieval
+            and retrieval.get("source_id", "").startswith("INSTR_")
+            and context
+        ):
+            direct_instruction = build_instruction_fallback_from_context(context, platform)
+            if direct_instruction:
+                session["history"].append({
+                    "role": "assistant",
+                    "content": direct_instruction
+                })
+                if len(session["history"]) > MAX_HISTORY_TURNS * 2:
+                    session["history"] = session["history"][-MAX_HISTORY_TURNS * 2:]
+
+                recommended_pdfs = []
+                try:
+                    recommended_pdfs = get_recommendations_for_chat(
+                        retrieval_result=retrieval,
+                        platform=platform,
+                        query=message
+                    )
+                    print(f"📄 Recommending {len(recommended_pdfs)} PDFs")
+                except Exception as e:
+                    print(f"⚠️  PDF recommendation failed: {e}")
+                    recommended_pdfs = []
+
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=direct_instruction,
+                    source=retrieval["source_id"],
+                    article_link=None,
+                    confidence=float(retrieval.get("score") or 0.0),
+                    retrieval_time_ms=round(retrieval_time_ms, 2),
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=recommended_pdfs
+                )
             
         # ===== LLM CALL (TIMED) =====
         system_hint = ""
@@ -1008,7 +1464,9 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             system_hint = (
                 "The user is asking about Immediate Access digital course materials. "
                 "Do NOT suggest purchasing or renting physical textbooks unless the user explicitly asks. "
-                "If required information such as course code or platform is missing, ask for it. "
+                "If required information is missing, ask for the platform/publisher first "
+                "(for example: Cengage, McGraw Hill, Pearson, Norton/InQuizitive). "
+                "Do NOT ask for course code unless platform is already known and a course-specific step truly requires it. "
                 "Do NOT assume availability of print textbooks. "
                 "Only provide instructions for the specific platform mentioned in the official instructions."
             )
@@ -1022,6 +1480,20 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             history=session["history"][-MAX_HISTORY_TURNS:],
             system_hint=system_hint
         )
+        reply = strip_article_link_lines(reply)
+
+        # Safety fallback: for platform-specific IA queries, never return greeting/meta text.
+        if (
+            intent == "IA_ACCESS_ISSUE"
+            and platform is not None
+            and retrieval
+            and retrieval.get("source_id", "").startswith("INSTR_")
+            and is_meta_or_greeting_misfire(reply)
+        ):
+            fallback_reply = build_instruction_fallback_from_context(context, platform)
+            if fallback_reply:
+                print("⚠️ [LLM GUARD] Detected greeting/meta misfire; using context-derived fallback")
+                reply = fallback_reply
         
         # ✨ END LLM TIMER
         llm_time_ms = (time.time() - llm_start) * 1000

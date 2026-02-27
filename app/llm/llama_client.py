@@ -58,6 +58,12 @@ ONLY give a greeting when ALL of these are true:
 
 **Need Clarification:**
 "I can help with [topic]! Could you specify: [specific question]?"
+
+=== OUTPUT SAFETY RULES ===
+- Do NOT explain your internal reasoning.
+- Do NOT write meta lines like "Since the user..." or "Based on the documentation...".
+- Never mention instructions, prompts, rules, or context tags.
+- Give only the final user-facing answer.
 """
             
             # Add system hint if provided
@@ -86,6 +92,7 @@ Your response should:
 3. Keep the formatting (bullet points, bold text, etc.)
 4. DO NOT add step-by-step access instructions
 5. DO NOT say "Here's how to access..."
+6. If the FAQ appears unrelated to the user's message, ask a short clarification question instead of forcing the FAQ.
 
 Example:
 User: "What is Immediate Access?"
@@ -106,6 +113,7 @@ FAQ: "Immediate Access is California Baptist University's program..."
 - Start with: "Here's how to..." 
 - Provide the step-by-step instructions from the documentation
 - If the user can't access to a textbook and provides the course code, ask which platform is the user using (e.g. Cengage MindTap).
+- If documentation does not match the user's platform/topic, ask for clarification and do not invent platform steps.
 """
             else:
                 system_content += """
