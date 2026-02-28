@@ -1,5 +1,5 @@
 test_id,precondition,student_message,test_type,expected_intent,expected_platform,expected_source_prefix,expects_clarification,expects_no_retrieval,notes,response,response_notes
-TC001,,Hi,greeting,GENERAL_FAQ,,LLM_ONLY,No,Yes,Should return greeting and skip retrieval,"Hi! I'm Lance, your Campus Store AI Assistant. I can help with Immediate Access, textbook policies, and troubleshooting. What can I help you with today?",PASS | source=LLM_ONLY expected_prefix=LLM_ONLY OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
+TC001,,Hi,greeting,GENERAL_FAQ,,LLM_ONLY,No,Yes,Should return greeting and skip retrieval,"Hi! I'm Lance, your Campus Store AI Assistant. I can help with Immediate Access, textbook policies, and troubleshooting. What can I help you with today?",PASS | source=LLM_ONLY expected_prefix=LLM_ONLY OK; no_retrieval_expected retrieval_ms=0.00<=tol(2.00) OK; confidence=0.000
 TC002,,Hello there can you help?,greeting_with_extra,GENERAL_FAQ,,LLM_ONLY,No,No,Greeting-like but low-confidence FAQ now intentionally routes to clarification (LLM_ONLY).,"I want to make sure I give you accurate Campus Store information. Could you clarify your question in terms of Immediate Access, textbook access, returns, or course-material policies?",PASS | source=LLM_ONLY expected_prefix=LLM_ONLY OK; confidence=0.082
 TC003,,What is Immediate Access?,faq_info,GENERAL_FAQ,,FAQ_SOURCE_,No,No,Should return FAQ style answer,"Immediate Access is California Baptist University's program that provides day-one access to digital course materials through your student account.
 
@@ -37,13 +37,13 @@ If you're having trouble accessing your materials, please specify which platform
 TC004,,How do I opt out of Immediate Access?,faq_policy,GENERAL_FAQ,,FAQ_SOURCE_,No,No,Policy/FAQ retrieval path,"Some courses use external publisher platforms. In these cases, textbook access is provided through links inside the Blackboard course rather than directly through the Immediate Access page.
 
 If you are opted in but cannot access your textbook, additional course-specific information may be required to guide you correctly.",PASS | source=FAQ_SOURCE_0 expected_prefix=FAQ_SOURCE_ OK; confidence=0.426
-TC005,,I can't access my textbook.,vague_access,IA_ACCESS_ISSUE,,CLARIFICATION_NEEDED,Yes,Yes,Should ask for platform/publisher,"I can help you with textbook access! To give you the most accurate instructions, could you please specify which platform or publisher your textbook uses? Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, Sage, SimuCase, etc.",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
-TC006,,I need help with my textbook in EGR120.,vague_access_with_course,IA_ACCESS_ISSUE,,CLARIFICATION_NEEDED,Yes,Yes,Should ask for platform despite course code mention,"I can help you with textbook access! To give you the most accurate instructions, could you please specify which platform or publisher your textbook uses? Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, Sage, SimuCase, etc.",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
-TC007,After TC005 or TC006 clarification prompt,I don't know,low_info_clarification_reply,IA_ACCESS_ISSUE,,CLARIFICATION_NEEDED,Yes,Yes,Should guide user to find platform in Blackboard and keep clarification state,"No worries! You can usually find the platform name on your Blackboard course page under the Immediate Access tab. It will say something like ""Cengage MindTap,"" ""McGraw Hill Connect,"" or ""Pearson MyLab."" Once you find it, let me know and I can walk you through the steps. You can also visit the CBU Campus Store for in-person help.",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
-TC008,After TC005 or TC006 clarification prompt,Not sure which platform.,low_info_clarification_reply,IA_ACCESS_ISSUE,,CLARIFICATION_NEEDED,Yes,Yes,Should not run retrieval when platform still unknown,"No worries! You can usually find the platform name on your Blackboard course page under the Immediate Access tab. It will say something like ""Cengage MindTap,"" ""McGraw Hill Connect,"" or ""Pearson MyLab."" Once you find it, let me know and I can walk you through the steps. You can also visit the CBU Campus Store for in-person help.",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
-TC009,,I can't access Cengage,publisher_ambiguous,CENGAGE,CENGAGE,CLARIFICATION_NEEDED,Yes,Yes,Should ask textbook vs MindTap,"I can help you with Cengage! To give you the most accurate instructions, could you please specify: Are you trying to access a **Cengage textbook** or **Cengage MindTap** (also called cnowv2)?",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
-TC010,,I can't access McGraw Hill,publisher_ambiguous,MCGRAW_HILL,MCGRAW_HILL,CLARIFICATION_NEEDED,Yes,Yes,Should ask textbook vs Connect,"I can help you with McGraw Hill! To give you the most accurate instructions, could you please specify: Are you trying to access a **McGraw Hill textbook** or **McGraw Hill Connect**?",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
-TC011,,I can't access Pearson,publisher_ambiguous,PEARSON,PEARSON,CLARIFICATION_NEEDED,Yes,Yes,Should ask textbook vs MyLab/Mastering,"I can help you with Pearson! To give you the most accurate instructions, could you please specify: Are you trying to access a **Pearson textbook** or **Pearson MyLab/Mastering**?",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
+TC005,,I can't access my textbook.,vague_access,IA_ACCESS_ISSUE,,CLARIFICATION_NEEDED,Yes,Yes,Should ask for platform/publisher,"I can help you with textbook access! To give you the most accurate instructions, could you please specify which platform or publisher your textbook uses? Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, Sage, SimuCase, etc.",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00<=tol(2.00) OK; confidence=0.000
+TC006,,I need help with my textbook in EGR120.,vague_access_with_course,IA_ACCESS_ISSUE,,CLARIFICATION_NEEDED,Yes,Yes,Should ask for platform despite course code mention,"I can help you with textbook access! To give you the most accurate instructions, could you please specify which platform or publisher your textbook uses? Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, Sage, SimuCase, etc.",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00<=tol(2.00) OK; confidence=0.000
+TC007,After TC005 or TC006 clarification prompt,I don't know,low_info_clarification_reply,IA_ACCESS_ISSUE,,CLARIFICATION_NEEDED,Yes,Yes,Should guide user to find platform in Blackboard and keep clarification state,"No worries! You can usually find the platform name on your Blackboard course page under the Immediate Access tab. It will say something like ""Cengage MindTap,"" ""McGraw Hill Connect,"" or ""Pearson MyLab."" Once you find it, let me know and I can walk you through the steps. You can also visit the CBU Campus Store for in-person help.",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00<=tol(2.00) OK; confidence=0.000
+TC008,After TC005 or TC006 clarification prompt,Not sure which platform.,low_info_clarification_reply,IA_ACCESS_ISSUE,,CLARIFICATION_NEEDED,Yes,Yes,Should not run retrieval when platform still unknown,"No worries! You can usually find the platform name on your Blackboard course page under the Immediate Access tab. It will say something like ""Cengage MindTap,"" ""McGraw Hill Connect,"" or ""Pearson MyLab."" Once you find it, let me know and I can walk you through the steps. You can also visit the CBU Campus Store for in-person help.",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00<=tol(2.00) OK; confidence=0.000
+TC009,,I can't access Cengage,publisher_ambiguous,CENGAGE,CENGAGE,CLARIFICATION_NEEDED,Yes,Yes,Should ask textbook vs MindTap,"I can help you with Cengage! To give you the most accurate instructions, could you please specify: Are you trying to access a **Cengage textbook** or **Cengage MindTap** (also called cnowv2)?",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00<=tol(2.00) OK; confidence=0.000
+TC010,,I can't access McGraw Hill,publisher_ambiguous,MCGRAW_HILL,MCGRAW_HILL,CLARIFICATION_NEEDED,Yes,Yes,Should ask textbook vs Connect,"I can help you with McGraw Hill! To give you the most accurate instructions, could you please specify: Are you trying to access a **McGraw Hill textbook** or **McGraw Hill Connect**?",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00<=tol(2.00) OK; confidence=0.000
+TC011,,I can't access Pearson,publisher_ambiguous,PEARSON,PEARSON,CLARIFICATION_NEEDED,Yes,Yes,Should ask textbook vs MyLab/Mastering,"I can help you with Pearson! To give you the most accurate instructions, could you please specify: Are you trying to access a **Pearson textbook** or **Pearson MyLab/Mastering**?",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00<=tol(2.00) OK; confidence=0.000
 TC012,,I can't access Cengage MindTap,platform_specific,IA_ACCESS_ISSUE,CENGAGE,INSTR_CENGAGE_SOURCE_,No,No,Should retrieve Cengage steps,"Here's how to access Cengage MindTap:
 
 PROBLEM:
@@ -249,7 +249,7 @@ After entering the access code on the Zybooks website, you will have full access
 
 IF ISSUE PERSISTS:
 Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.",PASS | source=INSTR_ZYBOOKS_SOURCE_0 expected_prefix=INSTR_ZYBOOKS_SOURCE_ OK; confidence=0.568
-TC019,,I need help with Cengage and McGraw,multi_platform_ambiguous,IA_ACCESS_ISSUE,,CLARIFICATION,Yes,Yes,Should detect multiple platforms and request clarification,"I notice you mentioned multiple platforms. To give you the most accurate troubleshooting steps, could you please clarify which platform you're having trouble with? (e.g., McGraw Hill Connect, Cengage MindTap, etc.)",PASS | source=CLARIFICATION expected_prefix=CLARIFICATION OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
+TC019,,I need help with Cengage and McGraw,multi_platform_ambiguous,IA_ACCESS_ISSUE,,CLARIFICATION,Yes,Yes,Should detect multiple platforms and request clarification,"I notice you mentioned multiple platforms. To give you the most accurate troubleshooting steps, could you please clarify which platform you're having trouble with? (e.g., McGraw Hill Connect, Cengage MindTap, etc.)",PASS | source=CLARIFICATION expected_prefix=CLARIFICATION OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00<=tol(2.00) OK; confidence=0.000
 TC020,After previous turn about another platform,Actually it's Cengage not McGraw,topic_switch,IA_ACCESS_ISSUE,CENGAGE,INSTR_CENGAGE_SOURCE_,No,No,Should switch platform and not stay on stale previous platform,"Here's how to access Cengage MindTap:
 
 PROBLEM:
@@ -279,7 +279,7 @@ After logging in, the MindTap eText and assignments should be accessible.
 
 IF ISSUE PERSISTS:
 Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.",PASS | source=INSTR_CENGAGE_SOURCE_0 expected_prefix=INSTR_CENGAGE_SOURCE_ OK; confidence=0.263
-TC021,After bot asks for course code,BIO123,course_code_followup,IA_ACCESS_ISSUE,,CLARIFICATION_NEEDED,Yes,Yes,Should ask which platform/publisher is used (not course code) before giving steps.,"I still need the platform name to give the correct steps. Please share which one you see in Blackboard Immediate Access (for example: Cengage MindTap, McGraw Hill Connect, or Pearson MyLab).",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
+TC021,After bot asks for course code,BIO123,course_code_followup,IA_ACCESS_ISSUE,,CLARIFICATION_NEEDED,Yes,Yes,Should ask which platform/publisher is used (not course code) before giving steps.,"I still need the platform name to give the correct steps. Please share which one you see in Blackboard Immediate Access (for example: Cengage MindTap, McGraw Hill Connect, or Pearson MyLab).",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00<=tol(2.00) OK; confidence=0.000
 TC022,After bot asks for platform or textbook,It's MindTap,short_followup_platform,IA_ACCESS_ISSUE,CENGAGE,INSTR_CENGAGE_SOURCE_,No,No,Short answer should still route correctly,"Here's how to access Cengage MindTap:
 
 PROBLEM:
@@ -309,16 +309,7 @@ After logging in, the MindTap eText and assignments should be accessible.
 
 IF ISSUE PERSISTS:
 Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.",PASS | source=INSTR_CENGAGE_SOURCE_0 expected_prefix=INSTR_CENGAGE_SOURCE_ OK; confidence=0.284
-TC023,After bot asks textbook vs platform,Textbook not platform,clarification_branch,IA_ACCESS_ISSUE,,INSTR_GENERAL_SOURCE_,No,No,Should route to ebook/general textbook instructions,"Here's how to access your Cengage textbook:
-
-1. Log into Blackboard.
-2. Select the course that uses Cengage.
-3. Click ""Tools"" from the left side pane.
-4. Select ""Cengage"" from the Tools menu.
-5. Choose your textbook title and click on it.
-6. You should be able to access your textbook online.
-
-If you're still having trouble, you can try running diagnostics on your Cengage connection or contact MacMillan Technical Support for assistance.",PASS | source=INSTR_GENERAL_SOURCE_10 expected_prefix=INSTR_GENERAL_SOURCE_ OK; confidence=0.470
+TC023,After bot asks textbook vs platform,Textbook not platform,clarification_branch,IA_ACCESS_ISSUE,,INSTR_GENERAL_SOURCE_,No,No,Should route to ebook/general textbook instructions,"Since you're having trouble accessing your Cengage textbook, I'd like to clarify that Cengage has different platforms for textbooks and e-books. Could you please tell me which **Cengage product** (e.g., MindTap, Connect, etc.) is associated with your course? This will help me provide more specific instructions.",PASS | source=INSTR_GENERAL_SOURCE_10 expected_prefix=INSTR_GENERAL_SOURCE_ OK; confidence=0.470
 TC024,After bot asks textbook vs platform,Courseware not ebook,clarification_branch,IA_ACCESS_ISSUE,,INSTR_,No,No,Should route to platform courseware instructions if prior platform known,"Here's how to access Cengage MindTap:
 
 PROBLEM:
@@ -427,7 +418,7 @@ After following these steps, you should have access to your Stukent simulations,
 
 IF ISSUE PERSISTS:
 Contact the Immediate Access Support Team at ImmediateAccess@calbaptist.edu for assistance.",PASS | source=INSTR_GENERAL_SOURCE_18 expected_prefix=INSTR_GENERAL_SOURCE_ OK; confidence=0.618
-TC027,,I can't access Canvas textbook,unsupported_platform,IA_ACCESS_ISSUE,,CLARIFICATION_NEEDED,Yes,Yes,Should ask for supported IA platform and avoid random retrieval,"I can help you with textbook access! To give you the most accurate instructions, could you please specify which platform or publisher your textbook uses? Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, Sage, SimuCase, etc.",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00 OK; confidence=0.000
+TC027,,I can't access Canvas textbook,unsupported_platform,IA_ACCESS_ISSUE,,CLARIFICATION_NEEDED,Yes,Yes,Should ask for supported IA platform and avoid random retrieval,"I can help you with textbook access! To give you the most accurate instructions, could you please specify which platform or publisher your textbook uses? Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, Sage, SimuCase, etc.",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00<=tol(2.00) OK; confidence=0.000
 TC028,,What are the return policies for textbooks?,faq_policy,GENERAL_FAQ,,FAQ_SOURCE_,No,No,Should retrieve textbook returns FAQ,"[FAQ_3]
 3. What is the return policy for Fall 2025 semester textbooks?
 For textbooks purchased for Fall 2025 semester courses:
@@ -438,3 +429,49 @@ TC029,,Can I return textbooks in person?,faq_policy,GENERAL_FAQ,,FAQ_SOURCE_,No,
 2. Can I return textbooks in person at the CBU Campus Store?
 Yes. Textbook purchases may be returned in person at the CBU Campus Store, subject to the return conditions and deadlines outlined below.",PASS | source=FAQ_SOURCE_3 expected_prefix=FAQ_SOURCE_ OK; confidence=0.684
 TC030,,Can you help me with parking permits?,out_of_scope,GENERAL_FAQ,,LLM_ONLY,No,No,Should politely decline or redirect to campus resources,"I can help with Campus Store topics like Immediate Access, textbook access, returns, and related policies. For parking permits, please check the appropriate CBU parking/transportation office resources.",PASS | source=LLM_ONLY expected_prefix=LLM_ONLY OK; confidence=0.000
+TC031,,I need help with Norton,publisher_ambiguous,IA_ACCESS_ISSUE,INQUIZITIVE,CLARIFICATION_NEEDED,Yes,Yes,Should ask whether Norton textbook or Norton InQuizitive.,"I can help you with Norton! To give you the most accurate instructions, could you please specify: Are you trying to access a **Norton textbook** or **Norton InQuizitive**?",PASS | source=CLARIFICATION_NEEDED expected_prefix=CLARIFICATION_NEEDED OK; clarification_expected OK; no_retrieval_expected retrieval_ms=0.00<=tol(2.00) OK; confidence=0.000
+TC032,After TC031 clarification prompt,Textbook,clarification_branch,IA_ACCESS_ISSUE,,INSTR_GENERAL_SOURCE_,No,No,Selecting textbook should route to general eTextbook instructions.,"Here's how to access your eTextbook:
+
+PROBLEM:
+Student is opted into Immediate Access but cannot access their MacMillan Achieve textbook, e-book, or assignments.
+
+APPLIES TO:
+Courses using MacMillan Achieve digital content (commonly used in Chemistry courses such as CHE 115).
+
+BLACKBOARD LOCATION:
+Tools tab (left side pane)
+
+STEP-BY-STEP RESOLUTION:
+1. Log into Blackboard.
+2. Select the course that uses MacMillan Achieve.
+3. Click ""Tools"" from the left side pane.
+4. Select ""MacMillan LTI Advantage Course Tools"" from the Tools menu.
+5. Choose your content type:
+- Click ""Achieve"" to access the Achieve homepage and work on assignments.
+- Click ""E-book"" to access the e-book that accompanies your MacMillan Learning course.
+6. If you have not used MacMillan Achieve before, you will be prompted to create an Achieve account first.
+7. Once logged in, you will see the Course Home with a Week Outline showing your assignments.
+
+SUPPORT TOOLS AVAILABLE:
+- MacMillan Learning Diagnostics: Run diagnostics on your MacMillan Learning connection.
+- MacMillan Technical Support: Contact MacMillan technical support if having problems.
+- MacMillan User Profile: View your MacMillan profile information or reset the mapping to your MacMillan account.
+
+EXPECTED RESULT:
+After following these steps, you should have full access to your MacMillan Achieve assignments and e-book content organized by week.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.",PASS | source=INSTR_GENERAL_SOURCE_10 expected_prefix=INSTR_GENERAL_SOURCE_ OK; confidence=0.389; deterministic_textbook_branch llm_ms=0.00 OK; no_meta_repeat_phrase OK
+TC033,After TC031 clarification prompt,InQuizitive,clarification_branch,IA_ACCESS_ISSUE,INQUIZITIVE,INSTR_INQUIZITIVE_SOURCE_,No,No,Selecting InQuizitive should route to InQuizitive platform instructions.,"Here's how to access InQuizitive:
+
+How To Access the Little Seagull & InQuizitive
+1. On your Blackboard course page, click -> Immediate Access on the left-hand side panel.
+a. Then click -> Immediate Access on the right-hand side.
+2. Click -> Launch Courseware.
+a. A new pop-up tab should appear. If no new tab appears, ensure that you
+have enabled Third-Party cookies and disabled Pop-up blockers.
+In the new tab, you will be pathed to the Norton platform.
+3. Read/Accept the Terms of use and Privacy Policy and click -> Continue.
+Following the How to Use InQuizitive tutorial, you should be pathed to the Little Seagull
+Handbook home page, where youâ€™ll be able to access your eTextbook and InQuizitive
+assignments.",PASS | source=INSTR_INQUIZITIVE_SOURCE_0 expected_prefix=INSTR_INQUIZITIVE_SOURCE_ OK; confidence=0.189

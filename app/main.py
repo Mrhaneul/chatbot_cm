@@ -1366,16 +1366,25 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     recommended_pdfs=[]
                 )
 
-        # Deterministic instruction response path for platform-specific IA queries.
-        # This avoids LLM variability (greeting/meta leakage) when we already have exact docs.
+        # Deterministic instruction response path for instruction retrieval.
+        # This avoids LLM variability (greeting/meta leakage, meta commentary) when docs are available.
         if (
             intent == "IA_ACCESS_ISSUE"
-            and platform is not None
             and retrieval
             and retrieval.get("source_id", "").startswith("INSTR_")
             and context
+            and (platform is not None or explicit_textbook_selection)
         ):
-            direct_instruction = build_instruction_fallback_from_context(context, platform)
+            direct_platform = platform if platform is not None else "TEXTBOOK_EBOOK"
+            direct_instruction = build_instruction_fallback_from_context(context, direct_platform)
+            if direct_instruction and explicit_textbook_selection and platform is None:
+                # Normalize heading for textbook clarification branch.
+                direct_instruction = re.sub(
+                    r"^Here's how to access [^:]+:",
+                    "Here's how to access your eTextbook:",
+                    direct_instruction,
+                    flags=re.IGNORECASE,
+                )
             if direct_instruction:
                 session["history"].append({
                     "role": "assistant",
