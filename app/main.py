@@ -304,6 +304,7 @@ def get_or_create_session(session_id: str) -> Dict[str, Any]:
             "stored_intent": None,
             "stored_platform": None,
             "stored_publisher": None,
+            "ia_tab_missing_escalated": False,
             "last_activity": datetime.now(),
             "created_at": datetime.now()
         }
@@ -392,6 +393,11 @@ def detect_intent(message: str) -> str:
     print(f"🔍 [INTENT DEBUG] has_ia_keyword={has_ia_keyword}, mentions_platform_or_textbook={mentions_platform_or_textbook}")
     
     if has_ia_keyword and mentions_platform_or_textbook:
+        return "IA_ACCESS_ISSUE"
+
+    # Short platform-only follow-ups (e.g., "McGraw Hill Connect") should stay
+    # in IA troubleshooting flow.
+    if detect_platform_from_text(normalized) is not None and len(normalized.split()) <= 5:
         return "IA_ACCESS_ISSUE"
 
     # Platform correction messages like "Actually it's Cengage not McGraw"
@@ -518,7 +524,36 @@ def extract_course_code(message: str):
     return match.group(0) if match else None
 
 
-def extract_faq_answer(context: str) -> str | None:
+def is_store_hours_query(message: str) -> bool:
+    """Detect queries asking about store operating hours."""
+    m = (message or "").lower()
+    has_store_term = any(term in m for term in ["campus store", "store", "bookstore"])
+    has_hours_term = any(term in m for term in ["hour", "hours", "open", "close", "closing", "opening", "time"])
+    return has_store_term and has_hours_term
+
+
+def context_contains_store_hours(context: str) -> bool:
+    """Check whether retrieved text actually contains store-hours information."""
+    c = (context or "").lower()
+    if not c:
+        return False
+
+    has_hours_phrase = bool(re.search(r"\b(store\s+hours|hours\s+of\s+operation|business\s+hours)\b", c))
+    has_weekday = bool(re.search(r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", c))
+    has_time = bool(re.search(r"\b\d{1,2}(:\d{2})?\s*(am|pm)\b", c))
+    has_open_close_word = bool(re.search(r"\b(open|closed|close|opening|closing)\b", c))
+
+    # Require explicit schedule-like evidence, not incidental words like "opened".
+    if has_hours_phrase and (has_weekday or has_time or has_open_close_word):
+        return True
+    if has_weekday and (has_time or has_open_close_word):
+        return True
+    if has_time and has_open_close_word:
+        return True
+    return False
+
+
+def extract_faq_answer(context: str, message: str = "") -> str | None:
     """
     Extract the ANSWER section from a FAQ chunk.
     Expected format includes:
@@ -528,8 +563,53 @@ def extract_faq_answer(context: str) -> str | None:
       ...
       Article link: ...
     """
-    if not context or "ANSWER:" not in context:
+    if not context:
         return None
+
+    if "ANSWER:" not in context:
+        # Fallback parser for numbered FAQ blocks:
+        # [FAQ_n]
+        # n. Question?
+        # Answer...
+        blocks = re.split(r"(?=\[FAQ_\d+\])", context)
+        candidates: list[tuple[int, str]] = []
+        msg_terms = set(re.findall(r"[a-z0-9]{3,}", (message or "").lower()))
+        for raw in blocks:
+            block = raw.strip()
+            if not block.startswith("[FAQ_"):
+                continue
+            lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
+            if len(lines) < 3:
+                continue
+
+            question_idx = None
+            for i, ln in enumerate(lines):
+                if re.match(r"^\d+\.\s+.+\?$", ln):
+                    question_idx = i
+                    break
+            if question_idx is None or question_idx + 1 >= len(lines):
+                continue
+
+            answer_lines = []
+            for ln in lines[question_idx + 1:]:
+                if re.match(r"^\[FAQ_\d+\]$", ln):
+                    break
+                answer_lines.append(ln)
+            answer = "\n".join(answer_lines).strip()
+            if not answer:
+                continue
+
+            question_text = lines[question_idx].lower()
+            score = 0
+            if msg_terms:
+                question_terms = set(re.findall(r"[a-z0-9]{3,}", question_text))
+                score = len(msg_terms & question_terms)
+            candidates.append((score, answer))
+
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        return candidates[0][1].strip() or None
 
     start = context.find("ANSWER:")
     if start == -1:
@@ -563,6 +643,20 @@ def is_meta_or_greeting_misfire(reply: str) -> bool:
             "hi! i'm lance",
         ]
     )
+
+
+def faq_suggests_platform_clarification(answer: str) -> bool:
+    """Detect FAQ answers that explicitly ask user to specify a platform."""
+    if not answer:
+        return False
+    a = answer.lower()
+    markers = [
+        "please specify which platform",
+        "which platform you need help",
+        "help with mcgraw hill connect",
+        "help with cengage mindtap",
+    ]
+    return any(m in a for m in markers)
 
 
 def build_instruction_fallback_from_context(context: str, platform: str | None) -> str | None:
@@ -646,6 +740,122 @@ def classify_platform_type_reply(message: str) -> str:
     return "UNKNOWN"
 
 
+def classify_book_format_reply(message: str) -> str:
+    """
+    Classify whether the user means physical textbooks or Immediate Access digital materials.
+    Returns:
+      - PHYSICAL_TEXTBOOK
+      - IMMEDIATE_ACCESS_DIGITAL
+      - UNKNOWN
+    """
+    m = (message or "").lower()
+    physical_terms = [
+        "physical", "print", "printed", "paper", "hard copy", "hardcopy",
+        "in-store", "in store", "bookstore shelf", "book store"
+    ]
+    digital_terms = [
+        "immediate access", "digital", "ebook", "e-book", "etext",
+        "e-text", "online", "publisher platform", "courseware"
+    ]
+
+    has_physical = any(t in m for t in physical_terms)
+    has_digital = any(t in m for t in digital_terms)
+
+    if has_physical and not has_digital:
+        return "PHYSICAL_TEXTBOOK"
+    if has_digital and not has_physical:
+        return "IMMEDIATE_ACCESS_DIGITAL"
+    return "UNKNOWN"
+
+
+def is_book_finding_discovery_query(message: str) -> bool:
+    """
+    Detect student queries about not being able to find books/materials,
+    where we should clarify physical vs Immediate Access.
+    """
+    m = (message or "").lower()
+    if not m:
+        return False
+
+    trouble_terms = [
+        "having trouble",
+        "trouble finding",
+        "can't find",
+        "cant find",
+        "cannot find",
+        "not finding",
+        "issues finding",
+        "struggling",
+        "need help finding",
+        "looking for",
+    ]
+    book_terms = [
+        "book",
+        "books",
+        "textbook",
+        "textbooks",
+        "course materials",
+        "materials",
+    ]
+
+    # Avoid overriding cases that already clearly specify IA platform access.
+    has_clear_ia = (
+        "immediate access" in m
+        or detect_platform_from_text(m) is not None
+        or any(t in m for t in ["connect", "mindtap", "mylab", "mastering"])
+    )
+    has_physical_only = any(t in m for t in ["physical", "print", "printed", "hard copy", "hardcopy"])
+
+    return (
+        any(t in m for t in trouble_terms)
+        and any(t in m for t in book_terms)
+        and not has_clear_ia
+        and not has_physical_only
+    )
+
+
+def is_blackboard_insidecbu_login_issue(message: str) -> bool:
+    """
+    Detect account/login/access-to-class issues that should be handled before
+    platform-specific Immediate Access troubleshooting.
+    """
+    m = (message or "").lower()
+    if not m:
+        return False
+
+    system_terms = ["blackboard", "insidecbu", "inside cbu", "class", "course"]
+    login_terms = [
+        "can't log in", "cant log in", "cannot log in", "unable to log in",
+        "can't login", "cant login", "cannot login", "unable to login",
+        "password", "username", "sign in", "access the class", "access my class",
+        "can't access class", "cant access class", "cannot access class",
+    ]
+
+    has_system = any(t in m for t in system_terms)
+    has_login_issue = any(t in m for t in login_terms)
+
+    # If user already provides a publisher platform, keep IA flow.
+    has_platform = detect_platform_from_text(m) is not None
+
+    return has_system and has_login_issue and not has_platform
+
+
+def is_cannot_find_immediate_access_query(message: str) -> bool:
+    """Detect queries indicating the user cannot find Immediate Access in Blackboard."""
+    m = (message or "").lower()
+    direct_terms = [
+        "don't see immediate access",
+        "dont see immediate access",
+        "can't find immediate access",
+        "cant find immediate access",
+        "cannot find immediate access",
+        "immediate access not showing",
+        "immediate access not populating",
+        "immediate access not pulling up",
+    ]
+    return any(t in m for t in direct_terms)
+
+
 def is_out_of_scope_query(message: str) -> bool:
     """
     Lightweight keyword check for obvious non-campus-store topics.
@@ -667,6 +877,30 @@ def is_out_of_scope_query(message: str) -> bool:
         "tuition payment",
     ]
     return any(k in m for k in out_of_scope_keywords)
+
+
+def is_vague_campus_store_query(message: str) -> bool:
+    """
+    Detect short, ambiguous campus-store mentions that should trigger clarification.
+    Examples: "Campus Store", "CBU Campus Store", "store info"
+    """
+    m = (message or "").strip().lower()
+    if not m:
+        return False
+
+    has_store = any(term in m for term in ["campus store", "bookstore", "store"])
+    if not has_store:
+        return False
+
+    specific_intent_terms = [
+        "hour", "open", "close", "time", "located", "location", "address",
+        "direction", "delivery", "phone", "return", "refund", "immediate access",
+        "textbook", "policy", "policies", "parking"
+    ]
+    if any(term in m for term in specific_intent_terms):
+        return False
+
+    return len(m.split()) <= 4
 
 
 def detect_platform_and_check_ambiguity(message: str) -> tuple[str, bool]:
@@ -720,6 +954,17 @@ def detect_topic_switch(message: str, stored_intent: str, stored_platform: str |
     
     topic_switch_keywords = ["actually", "instead", "what about", "by the way", "nevermind"]
     return any(keyword in message.lower() for keyword in topic_switch_keywords)
+
+
+def detect_recent_platform_from_history(history: list) -> str | None:
+    """Find the most recently mentioned platform in prior user turns."""
+    for msg in reversed(history):
+        if msg.get("role") != "user":
+            continue
+        detected = detect_platform_from_text(msg.get("content", ""))
+        if detected:
+            return detected
+    return None
 
 
 def is_ambiguous_platform_query(message: str) -> tuple[str | None, bool]:
@@ -943,6 +1188,9 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             
             session["awaiting_platform_type"] = True
             session["stored_publisher"] = publisher
+            session["stored_original_query"] = message
+            session["stored_intent"] = "IA_ACCESS_ISSUE"
+            session["stored_platform"] = None
             
             total_time = (time.time() - request_start) * 1000
             
@@ -968,6 +1216,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             publisher = session.get("stored_publisher")
             original_query = session.get("stored_original_query", "")  # ✨ Get original query
             platform_type_reply = classify_platform_type_reply(message)
+            book_format_reply = classify_book_format_reply(message)
 
             low_info_responses = [
                 "i don't know",
@@ -982,6 +1231,151 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 "unsure",
             ]
             is_low_info_response = any(phrase in msg_lower for phrase in low_info_responses)
+            is_acknowledgement = any(
+                phrase in msg_lower
+                for phrase in [
+                    "thank you",
+                    "thanks",
+                    "thx",
+                    "got it",
+                    "found it",
+                    "i found it",
+                    "that helped",
+                ]
+            )
+            cannot_find_ia_terms = [
+                "don't see immediate access",
+                "dont see immediate access",
+                "can't find immediate access",
+                "cant find immediate access",
+                "cannot find immediate access",
+                "i don't see immediate access",
+                "i dont see immediate access",
+                "i can't find it",
+                "i cant find it",
+                "what do i do if i can't find it",
+                "what do i do if i cant find it",
+                "can't find it",
+                "cant find it",
+            ]
+            is_cannot_find_immediate_access = any(term in msg_lower for term in cannot_find_ia_terms)
+
+            if is_blackboard_insidecbu_login_issue(message):
+                login_reply = (
+                    "It sounds like this is a Blackboard/InsideCBU login or class-access issue. "
+                    "Please contact CBU IT support (or the Pre-College support team) to restore account/class access first. "
+                    "Once you can open your Blackboard course, share the platform name from the Immediate Access area "
+                    "(for example: Cengage MindTap, McGraw Hill Connect, or Pearson MyLab), and I'll guide you through textbook access."
+                )
+                session["history"].append({
+                    "role": "user",
+                    "content": message
+                })
+                session["history"].append({
+                    "role": "assistant",
+                    "content": login_reply
+                })
+                session["awaiting_platform_type"] = False
+                session["stored_publisher"] = None
+                session["stored_original_query"] = None
+                session["stored_intent"] = None
+                session["stored_platform"] = None
+                total_time = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=login_reply,
+                    source="LLM_ONLY",
+                    article_link=None,
+                    confidence=0.0,
+                    total_time_ms=round(total_time, 2),
+                    retrieval_time_ms=0,
+                    llm_time_ms=0
+                )
+
+            # Book-finding clarification branch (physical vs Immediate Access).
+            if publisher == "BOOK_FORMAT":
+                if book_format_reply == "PHYSICAL_TEXTBOOK":
+                    physical_reply = (
+                        "Got it - you're looking for physical textbooks. "
+                        "If your course uses Immediate Access, the Campus Store may not carry print alternatives, "
+                        "and print ISBNs are listed on the Campus Store website. "
+                        "If you'd like in-person help, the CBU Campus Store is at 8432 Magnolia Ave, Riverside, CA 92504 "
+                        "(phone: 951-343-4259)."
+                    )
+                    session["history"].append({
+                        "role": "user",
+                        "content": message
+                    })
+                    session["history"].append({
+                        "role": "assistant",
+                        "content": physical_reply
+                    })
+                    session["awaiting_platform_type"] = False
+                    session["stored_publisher"] = None
+                    session["stored_original_query"] = None
+                    session["stored_intent"] = None
+                    session["stored_platform"] = None
+                    total_time = (time.time() - request_start) * 1000
+                    return ChatResponse(
+                        reply=physical_reply,
+                        source="FAQ_SOURCE_3",
+                        article_link=None,
+                        confidence=0.0,
+                        total_time_ms=round(total_time, 2),
+                        retrieval_time_ms=0,
+                        llm_time_ms=0
+                    )
+
+                if book_format_reply == "IMMEDIATE_ACCESS_DIGITAL":
+                    ia_reply = (
+                        "Great - for Immediate Access digital materials, I can guide you step-by-step. "
+                        "Which platform do you see in Blackboard? "
+                        "For example: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, or Sage."
+                    )
+                    session["history"].append({
+                        "role": "user",
+                        "content": message
+                    })
+                    session["history"].append({
+                        "role": "assistant",
+                        "content": ia_reply
+                    })
+                    session["awaiting_platform_type"] = True
+                    session["stored_publisher"] = "TEXTBOOK_GENERIC"
+                    session["stored_intent"] = "IA_ACCESS_ISSUE"
+                    session["stored_platform"] = None
+                    total_time = (time.time() - request_start) * 1000
+                    return ChatResponse(
+                        reply=ia_reply,
+                        source="CLARIFICATION_NEEDED",
+                        article_link=None,
+                        confidence=0.0,
+                        total_time_ms=round(total_time, 2),
+                        retrieval_time_ms=0,
+                        llm_time_ms=0
+                    )
+
+                format_clarification = (
+                    "I can help with that. Are you trying to find a **physical textbook** "
+                    "or **Immediate Access digital materials**?"
+                )
+                session["history"].append({
+                    "role": "user",
+                    "content": message
+                })
+                session["history"].append({
+                    "role": "assistant",
+                    "content": format_clarification
+                })
+                total_time = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=format_clarification,
+                    source="CLARIFICATION_NEEDED",
+                    article_link=None,
+                    confidence=0.0,
+                    total_time_ms=round(total_time, 2),
+                    retrieval_time_ms=0,
+                    llm_time_ms=0
+                )
 
             # Keep clarification state open and do not run retrieval when the student
             # explicitly says they don't know the platform yet.
@@ -990,6 +1384,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     "No worries! You can usually find the platform name on your Blackboard "
                     "course page under the Immediate Access tab. It will say something like "
                     "\"Cengage MindTap,\" \"McGraw Hill Connect,\" or \"Pearson MyLab.\" "
+                    "In Blackboard, Immediate Access is located on the dark left navigation panel "
+                    "inside your course. "
                     "Once you find it, let me know and I can walk you through the steps. "
                     "You can also visit the CBU Campus Store for in-person help."
                 )
@@ -1006,6 +1402,64 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 total_time = (time.time() - request_start) * 1000
                 return ChatResponse(
                     reply=redirect_reply,
+                    source="CLARIFICATION_NEEDED",
+                    article_link=None,
+                    confidence=0.0,
+                    total_time_ms=round(total_time, 2),
+                    retrieval_time_ms=0,
+                    llm_time_ms=0
+                )
+
+            if is_cannot_find_immediate_access:
+                escalate_reply = (
+                    "If you still can't find the Immediate Access tab in Blackboard, please contact "
+                    "ImmediateAccess@calbaptist.edu for assistance. Please send your email from your "
+                    "LancerMail address and include your name, ID#, and course info."
+                )
+                session["history"].append({
+                    "role": "user",
+                    "content": message
+                })
+                session["history"].append({
+                    "role": "assistant",
+                    "content": escalate_reply
+                })
+                session["awaiting_platform_type"] = False
+                session["stored_publisher"] = None
+                session["stored_original_query"] = None
+                session["stored_intent"] = None
+                session["stored_platform"] = None
+                session["ia_tab_missing_escalated"] = True
+                total_time = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=escalate_reply,
+                    source="LLM_ONLY",
+                    article_link=None,
+                    confidence=0.0,
+                    total_time_ms=round(total_time, 2),
+                    retrieval_time_ms=0,
+                    llm_time_ms=0
+                )
+
+            # Avoid repeating a rigid fallback when the student acknowledges help
+            # but still has not shared the platform name.
+            if is_acknowledgement and detect_platform_from_text(msg_lower) is None:
+                ack_reply = (
+                    "Glad that helped. Please share the platform name you found in Blackboard "
+                    "(for example: Cengage MindTap, McGraw Hill Connect, or Pearson MyLab), "
+                    "and I'll walk you through the exact steps."
+                )
+                session["history"].append({
+                    "role": "user",
+                    "content": message
+                })
+                session["history"].append({
+                    "role": "assistant",
+                    "content": ack_reply
+                })
+                total_time = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=ack_reply,
                     source="CLARIFICATION_NEEDED",
                     article_link=None,
                     confidence=0.0,
@@ -1049,7 +1503,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     followup_reply = (
                         "I still need the platform name to give the correct steps. "
                         "Please share which one you see in Blackboard Immediate Access "
-                        "(for example: Cengage MindTap, McGraw Hill Connect, or Pearson MyLab)."
+                        "(for example: Cengage MindTap, McGraw Hill Connect, or Pearson MyLab). "
+                        "Immediate Access is located on the dark left navigation panel in your Blackboard course."
                     )
                     session["history"].append({
                         "role": "user",
@@ -1119,6 +1574,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     "mcgraw hill textbook or mcgraw hill connect",
                     "pearson textbook or pearson mylab",
                     "norton textbook or norton inquizitive",
+                    "which platform do you see in blackboard",
+                    "platform name on your blackboard course page under the immediate access tab",
                 ]
                 
                 if any(pattern in last_bot_message for pattern in platform_clarification_patterns):
@@ -1143,6 +1600,158 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
         # 2. Platform detection
         print(f"🔍 [PLATFORM DEBUG] Detected platform: {platform}")
+
+        # Keep escalation sticky for follow-ups after user says they still cannot
+        # find Immediate Access in Blackboard.
+        missing_ia_followup_terms = [
+            "can't find it",
+            "cant find it",
+            "cannot find it",
+            "what do i do if i can't find it",
+            "what do i do if i cant find it",
+            "still can't find it",
+            "still cant find it",
+        ]
+        if is_cannot_find_immediate_access_query(message) or (
+            session.get("ia_tab_missing_escalated")
+            and any(t in message.lower() for t in missing_ia_followup_terms)
+        ):
+            escalate_reply = (
+                "If you still can't find the Immediate Access tab in Blackboard, please contact "
+                "ImmediateAccess@calbaptist.edu for assistance. Please send your email from your "
+                "LancerMail address and include your name, ID#, and course info."
+            )
+            session["history"].append({
+                "role": "user",
+                "content": message
+            })
+            session["history"].append({
+                "role": "assistant",
+                "content": escalate_reply
+            })
+            session["awaiting_platform_type"] = False
+            session["stored_publisher"] = None
+            session["stored_original_query"] = None
+            session["stored_intent"] = None
+            session["stored_platform"] = None
+            session["ia_tab_missing_escalated"] = True
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=escalate_reply,
+                source="LLM_ONLY",
+                article_link=None,
+                confidence=0.0,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[]
+            )
+
+        # If user provides a platform follow-up while already in IA flow,
+        # keep it in IA routing even if the utterance is short.
+        if (
+            intent == "GENERAL_FAQ"
+            and platform is not None
+            and session.get("stored_intent") == "IA_ACCESS_ISSUE"
+        ):
+            intent = "IA_ACCESS_ISSUE"
+            print(f"🔍 [INTENT DEBUG] IA platform follow-up applied: platform={platform}")
+
+        # Deterministic handoff: if user provides only a platform name while we are
+        # already in IA flow, return platform instructions directly.
+        if (
+            intent == "IA_ACCESS_ISSUE"
+            and platform is not None
+            and len(message.split()) <= 5
+            and session.get("stored_intent") == "IA_ACCESS_ISSUE"
+        ):
+            try:
+                retrieval_start = time.time()
+                platform_query = f"{PLATFORM_DISPLAY_NAMES.get(platform, platform)} immediate access instructions"
+                handoff_retrieval = await retrieve_async(
+                    platform_query,
+                    collection="instructions",
+                    platform=platform
+                )
+                handoff_context = handoff_retrieval.get("context", "") if handoff_retrieval else ""
+                handoff_reply = build_instruction_fallback_from_context(handoff_context, platform)
+                if handoff_reply and handoff_retrieval:
+                    session["history"].append({
+                        "role": "user",
+                        "content": message
+                    })
+                    session["history"].append({
+                        "role": "assistant",
+                        "content": handoff_reply
+                    })
+                    session["awaiting_platform_type"] = False
+                    session["stored_publisher"] = None
+                    session["stored_original_query"] = None
+                    session["stored_platform"] = platform
+                    retrieval_time_ms = (time.time() - retrieval_start) * 1000
+                    total_time_ms = (time.time() - request_start) * 1000
+                    return ChatResponse(
+                        reply=handoff_reply,
+                        source=handoff_retrieval.get("source_id", "INSTR_GENERAL_SOURCE_0"),
+                        article_link=handoff_retrieval.get("article_link"),
+                        confidence=float(handoff_retrieval.get("score") or 0.0),
+                        retrieval_time_ms=round(retrieval_time_ms, 2),
+                        llm_time_ms=0,
+                        total_time_ms=round(total_time_ms, 2),
+                        recommended_pdfs=[]
+                    )
+            except Exception as e:
+                print(f"⚠️  IA platform handoff retrieval failed: {e}")
+
+        # IA continuity guard: keep short troubleshooting follow-ups in IA flow
+        # when the previous intent was IA and the platform is implied from context.
+        if (
+            intent == "GENERAL_FAQ"
+            and platform is None
+            and session.get("stored_intent") == "IA_ACCESS_ISSUE"
+        ):
+            msg_lower = message.lower()
+            followup_issue_terms = [
+                "still",
+                "doesn't open",
+                "doesnt open",
+                "can't open",
+                "cant open",
+                "not opening",
+                "not working",
+                "doesn't work",
+                "doesnt work",
+                "error",
+                "issue",
+                "problem",
+                "unable",
+            ]
+            non_ia_store_terms = [
+                "campus store",
+                "store hours",
+                "where is",
+                "location",
+                "located",
+                "address",
+                "phone",
+                "direction",
+            ]
+            ia_context_terms = [
+                "blackboard",
+                "immediate access",
+                "textbook",
+                "materials",
+                "platform",
+                "course materials",
+            ]
+            looks_like_ia_followup = (
+                any(t in msg_lower for t in followup_issue_terms)
+                or any(t in msg_lower for t in ia_context_terms)
+            )
+            if looks_like_ia_followup and not any(t in msg_lower for t in non_ia_store_terms):
+                intent = "IA_ACCESS_ISSUE"
+                platform = session.get("stored_platform") or detect_recent_platform_from_history(session["history"])
+                print(f"🔍 [INTENT DEBUG] IA continuity applied: platform={platform}")
 
         # Out-of-scope guard for obvious non-campus-store topics.
         if intent == "GENERAL_FAQ" and is_out_of_scope_query(message):
@@ -1171,31 +1780,101 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 recommended_pdfs=[]
             )
 
+        if intent == "GENERAL_FAQ" and is_vague_campus_store_query(message):
+            clarification_reply = (
+                "I can help with Campus Store information. What do you need specifically: "
+                "store hours, location/address, phone, directions, or textbook return policy?"
+            )
+            session["history"].append({
+                "role": "user",
+                "content": message
+            })
+            session["history"].append({
+                "role": "assistant",
+                "content": clarification_reply
+            })
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=clarification_reply,
+                source="CLARIFICATION_NEEDED",
+                article_link=None,
+                confidence=0.0,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[]
+            )
+
+        if is_blackboard_insidecbu_login_issue(message):
+            login_reply = (
+                "It sounds like this is a Blackboard/InsideCBU login or class-access issue. "
+                "Please contact CBU IT support (or the Pre-College support team) to restore account/class access first. "
+                "Once you can open your Blackboard course, share the platform name from the Immediate Access area "
+                "(for example: Cengage MindTap, McGraw Hill Connect, or Pearson MyLab), and I'll guide you through textbook access."
+            )
+            session["history"].append({
+                "role": "user",
+                "content": message
+            })
+            session["history"].append({
+                "role": "assistant",
+                "content": login_reply
+            })
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=login_reply,
+                source="LLM_ONLY",
+                article_link=None,
+                confidence=0.0,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[]
+            )
+
+        if intent == "GENERAL_FAQ" and is_book_finding_discovery_query(message):
+            format_question = (
+                "I can help with that. Are you trying to find a **physical textbook** "
+                "or **Immediate Access digital materials**?"
+            )
+            session["history"].append({
+                "role": "user",
+                "content": message
+            })
+            session["history"].append({
+                "role": "assistant",
+                "content": format_question
+            })
+            session["awaiting_platform_type"] = True
+            session["stored_publisher"] = "BOOK_FORMAT"
+            session["stored_original_query"] = message
+            session["stored_intent"] = "IA_ACCESS_ISSUE"
+            session["stored_platform"] = None
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=format_question,
+                source="CLARIFICATION_NEEDED",
+                article_link=None,
+                confidence=0.0,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[]
+            )
+
         # Do not require course code up front for IA troubleshooting.
         # Platform/publisher is the primary disambiguation input.
         if intent == "IA_ACCESS_ISSUE":
             session["awaiting_course_code"] = False
-            session["stored_intent"] = None
-            session["stored_platform"] = None
+            session["stored_intent"] = "IA_ACCESS_ISSUE"
+            session["ia_tab_missing_escalated"] = False
 
-        is_vague_query = (
+        needs_platform_clarification = (
             intent == "IA_ACCESS_ISSUE" and
             platform is None and
-            not explicit_textbook_selection and
-            len(message.split()) <= 20 and  # allow slightly longer queries
-            any(word in message.lower() for word in [
-                "immediate access",
-                "textbook",
-                "text book",
-                "etextbook",
-                "e-textbook",
-                "ebook",
-                "e-book",
-                "access to my textbook",
-                "access to textbook",
-            ])
+            not explicit_textbook_selection
         )
-        if is_vague_query:
+        if needs_platform_clarification:
             clarification = (
                 "I can help you with textbook access! To give you the most accurate instructions, "
                 "could you please specify which platform or publisher your textbook uses? "
@@ -1205,6 +1884,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             session["awaiting_platform_type"] = True
             session["stored_publisher"] = "TEXTBOOK_GENERIC"
             session["stored_original_query"] = message
+            session["stored_intent"] = "IA_ACCESS_ISSUE"
+            session["stored_platform"] = None
 
 
             total_time = (time.time() - request_start) * 1000
@@ -1217,6 +1898,12 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 retrieval_time_ms=0,
                 llm_time_ms=0
             )
+
+        is_vague_query = needs_platform_clarification
+
+        if intent == "IA_ACCESS_ISSUE" and platform is not None:
+            session["stored_platform"] = platform
+            session["ia_tab_missing_escalated"] = False
 
         print(f"🔍 [VAGUE QUERY DEBUG] intent={intent}, platform={platform}")
         print(f"🔍 [VAGUE QUERY DEBUG] is_vague_query={is_vague_query}")
@@ -1312,6 +1999,27 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # to avoid hallucinated policy/instruction steps.
         if intent == "GENERAL_FAQ" and retrieval and retrieval.get("source_id", "").startswith("FAQ_SOURCE_"):
             faq_confidence = float(retrieval.get("score") or 0.0)
+            if is_store_hours_query(message) and not context_contains_store_hours(context):
+                no_hours_reply = (
+                    "I don't have verified Campus Store hours in my current knowledge base, so I don't want to guess. "
+                    "Please check the Campus Store website or call the store directly for the most current hours."
+                )
+                session["history"].append({
+                    "role": "assistant",
+                    "content": no_hours_reply
+                })
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=no_hours_reply,
+                    source="LLM_ONLY",
+                    article_link=None,
+                    confidence=faq_confidence,
+                    retrieval_time_ms=round(retrieval_time_ms, 2),
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[]
+                )
+
             if faq_confidence < FAQ_DIRECT_MIN_CONFIDENCE:
                 low_conf_reply = (
                     "I want to make sure I give you accurate Campus Store information. "
@@ -1334,7 +2042,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     recommended_pdfs=[]
                 )
 
-            faq_answer = extract_faq_answer(context)
+            faq_answer = extract_faq_answer(context, message)
             if faq_answer:
                 reply = strip_article_link_lines(faq_answer)
 
@@ -1342,6 +2050,12 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     "role": "assistant",
                     "content": reply
                 })
+                if faq_suggests_platform_clarification(reply):
+                    session["awaiting_platform_type"] = True
+                    session["stored_publisher"] = "TEXTBOOK_GENERIC"
+                    session["stored_original_query"] = message
+                    session["stored_intent"] = "IA_ACCESS_ISSUE"
+                    session["stored_platform"] = None
                 if len(session["history"]) > MAX_HISTORY_TURNS * 2:
                     session["history"] = session["history"][-MAX_HISTORY_TURNS * 2:]
 
@@ -1365,6 +2079,26 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     total_time_ms=round(total_time_ms, 2),
                     recommended_pdfs=[]
                 )
+
+            no_verified_faq_reply = (
+                "I couldn't find a verified answer for that in the current Campus Store FAQ documents. "
+                "Please contact the CBU Campus Store directly so you get the correct information."
+            )
+            session["history"].append({
+                "role": "assistant",
+                "content": no_verified_faq_reply
+            })
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=no_verified_faq_reply,
+                source="LLM_ONLY",
+                article_link=None,
+                confidence=faq_confidence,
+                retrieval_time_ms=round(retrieval_time_ms, 2),
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[]
+            )
 
         # Deterministic instruction response path for instruction retrieval.
         # This avoids LLM variability (greeting/meta leakage, meta commentary) when docs are available.

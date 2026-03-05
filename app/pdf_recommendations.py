@@ -6,6 +6,7 @@ Maps FAISS retrieval results to PDF documents stored in Firestore
 from app.firebase_config import db
 from app.platform_registry import load_registry, canonical_platform_key
 from typing import List, Dict, Optional
+from datetime import datetime
 import re
 
 # Mapping of txt file sources to PDF document IDs in Firestore
@@ -135,7 +136,9 @@ def get_pdf_from_firestore(doc_id: str) -> Optional[Dict]:
                 "issue_type": data.get("issue_type", ""),
                 "tags": data.get("tags", []),
                 "priority": data.get("priority", "medium"),
-                "file_size_kb": data.get("file_size_kb", 0)
+                "file_size_kb": data.get("file_size_kb", 0),
+                "created_at": data.get("created_at"),
+                "updated_at": data.get("updated_at"),
             }
     except Exception as e:
         print(f"❌ Error fetching PDF {doc_id} from Firestore: {e}")
@@ -175,7 +178,9 @@ def get_related_pdfs_by_platform(platform: str, limit: int = 3) -> List[Dict]:
                 "platform": data.get("platform", ""),
                 "issue_type": data.get("issue_type", ""),
                 "tags": data.get("tags", []),
-                "priority": data.get("priority", "medium")
+                "priority": data.get("priority", "medium"),
+                "created_at": data.get("created_at"),
+                "updated_at": data.get("updated_at"),
             })
         
         return pdfs
@@ -291,6 +296,18 @@ def format_pdf_for_frontend(pdf: Dict) -> Dict:
     Format PDF metadata for frontend consumption.
     Ensures consistent structure for React components.
     """
+    def normalize_timestamp(value):
+        if value is None:
+            return None
+        if hasattr(value, "to_datetime"):
+            value = value.to_datetime()
+        if isinstance(value, datetime):
+            return value.isoformat()
+        try:
+            return value.isoformat()
+        except Exception:
+            return None
+
     return {
         "doc_id": pdf.get("doc_id", ""),
         "title": pdf.get("title", "Untitled Document"),
@@ -301,7 +318,9 @@ def format_pdf_for_frontend(pdf: Dict) -> Dict:
         "relevance": pdf.get("relevance", "Relevant"),
         "platform": pdf.get("platform", "general"),
         "file_size_kb": pdf.get("file_size_kb", 0),
-        "tags": pdf.get("tags", [])
+        "tags": pdf.get("tags", []),
+        "created_at": normalize_timestamp(pdf.get("created_at")),
+        "updated_at": normalize_timestamp(pdf.get("updated_at")),
     }
 
 

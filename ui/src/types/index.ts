@@ -9,6 +9,8 @@ export interface PDFRecommendation {
   platform: string;
   file_size_kb: number;
   tags: string[];
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface Message {

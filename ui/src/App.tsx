@@ -77,7 +77,9 @@ export default function App() {
           relevance: pdf.relevance || 'Relevant',
           platform: pdf.platform.charAt(0).toUpperCase() + pdf.platform.slice(1),
           file_size_kb: pdf.file_size_kb,
-          tags: pdf.tags || []
+          tags: pdf.tags || [],
+          created_at: pdf.created_at ?? null,
+          updated_at: pdf.updated_at ?? null
         }));
         
         setPdfRecommendations(formattedPDFs);

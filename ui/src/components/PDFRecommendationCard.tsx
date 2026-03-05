@@ -7,6 +7,32 @@ interface PDFRecommendationCardProps {
 }
 
 export function PDFRecommendationCard({ recommendation }: PDFRecommendationCardProps) {
+  const formatUpdatedLabel = () => {
+    const rawDate = recommendation.updated_at || recommendation.created_at;
+    if (!rawDate) {
+      return 'Recently';
+    }
+
+    const parsed = new Date(rawDate);
+    if (Number.isNaN(parsed.getTime())) {
+      return 'Recently';
+    }
+
+    return `Updated ${parsed.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    })}`;
+  };
+
+  const formatPageLabel = () => {
+    const count = recommendation.pages;
+    if (!count) {
+      return 'Page count unavailable';
+    }
+    return `${count} page${count === 1 ? '' : 's'}`;
+  };
+
   const getRelevanceBadge = () => {
     const badges: Record<string, { text: string; className: string }> = {
       'Best Match': {
@@ -80,11 +106,11 @@ export function PDFRecommendationCard({ recommendation }: PDFRecommendationCardP
       <div className="flex items-center gap-4 text-xs text-gray-500 mb-4">
         <div className="flex items-center gap-1">
           <Calendar className="w-3.5 h-3.5" />
-          <span>Recently</span>
+          <span>{formatUpdatedLabel()}</span>
         </div>
         <div className="flex items-center gap-1">
           <FileStack className="w-3.5 h-3.5" />
-          <span>{recommendation.pages} pages</span>
+          <span>{formatPageLabel()}</span>
         </div>
       </div>
 
