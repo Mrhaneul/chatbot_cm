@@ -408,10 +408,10 @@ File updated: `app/main.py`
 
 ## Case 005 - Blackboard & InsideCBU Login for Pre College Credit Class
 
-- Date: 2026-03-03
+- Date: 2026-03-05
 - Source Email File: `emails/Blackboard & InsideCBU Login for Pre College Credit Class.msg`
 - Extracted Student Message:
-  `I'm supposed to access the class I signed up for pre college credit... I don't know how to access the class.`
+  `Hello, I wanted to ask about how I’m supposed to access the class I signed up for pre college credit. I got an email telling me about the materials and how that works but I don’t know how to access the class.`
 - Sender: `Julian Hinojosa <drkwzrd24@gmail.com>`
 
 ### Initial Behavior (Before Fix)
@@ -419,74 +419,66 @@ File updated: `app/main.py`
 1. USER:
    `I'm supposed to access the class... I don't know how to access the class.`
    BOT:
-   `Immediate Access is California Baptist University's program...` (IA overview)
+   `It sounds like this is a Blackboard/InsideCBU login or class-access issue. Please contact CBU IT support (or the Pre-College support team) to restore account/class access first. Once you can open your Blackboard course, share the platform name from the Immediate Access area (for example: Cengage MindTap, McGraw Hill Connect, or Pearson MyLab), and I'll guide you through textbook access.`
    META:
-   `SOURCE=FAQ_SOURCE_5 | CONF=0.5165`
-
-2. USER:
-   `I can't log into Blackboard or InsideCBU.`
-   BOT:
-   `I still need the platform name to give the correct steps...`
-   META:
-   `SOURCE=CLARIFICATION_NEEDED | CONF=0.0`
-
-3. USER:
-   `I just need to access my class first.`
-   BOT:
-   `I still need the platform name to give the correct steps...`
-   META:
-   `SOURCE=CLARIFICATION_NEEDED | CONF=0.0`
+   `SOURCE=LLM_ONLY | CONF=0.0`
 
 ### Issues Logged
 
-1. Login/class-access issue was incorrectly routed into platform clarification.
-2. User was asked for platform before account/course access was restored.
+1. Ambiguous "access class" query was incorrectly and prematurely identified as a login/class-access issue.
+2. User was not asked to clarify their intent before being routed to a specific solution.
 
 ### Root Cause
 
-1. No dedicated guard for Blackboard/InsideCBU login or class-access-first problems.
-2. Clarification state (`awaiting_platform_type`) did not exit when user indicated base login/access blockers.
+1. The `is_blackboard_insidecbu_login_issue` detector was too broad and was triggered by the ambiguous phrase "access the class".
+2. No dedicated clarification step existed for ambiguous "access class" queries.
 
 ### Implemented Solution
 
 File updated: `app/main.py`
 
-1. Added detector:
-   - `is_blackboard_insidecbu_login_issue(message)`
-2. Added routing guard in:
-   - general flow
-   - `awaiting_platform_type` flow
-3. New deterministic response:
-   - route user to CBU IT/Pre-College support to restore Blackboard/InsideCBU/class access first
-   - then ask for Immediate Access platform name after class access is available
+1.  **Refined Detection Logic**:
+    *   Replaced the overly broad `is_blackboard_insidecbu_login_issue` with a more precise `is_explicit_login_issue` function that only triggers on explicit login-related keywords (e.g., "can't log in", "password").
+    *   Created a new `is_ambiguous_class_access_query` function to specifically detect vague phrases like "access the class" when no other context is provided.
+    *   Removed "material" from the exclusion list in `is_ambiguous_class_access_query` to better handle cases where the user mentions it incidentally.
+
+2.  **Added Clarification Flow**:
+    *   When `is_ambiguous_class_access_query` is true, the bot now first asks the user to clarify whether they are having trouble with **"the class itself"** or **"the class materials"**.
+    *   A new session state, `awaiting_class_access_clarification`, is used to track this.
+
+3.  **Implemented Conditional Routing**:
+    *   If the user confirms the issue is with **"the class itself"**, the bot provides the contact information for `ImmediateAccess@calbaptist.edu`.
+    *   If the user confirms the issue is with **"the class materials"**, the bot transitions to the standard platform clarification flow, asking for the publisher/platform name.
 
 ### Retest Transcript (After Fix)
 
 1. USER:
-   `I'm supposed to access the class I signed up for pre college credit...`
+   `Hello, I wanted to ask about how I’m supposed to access the class I signed up for pre college credit. I got an email telling me about the materials and how that works but I don’t know how to access the class.`
    BOT:
-   `It sounds like this is a Blackboard/InsideCBU login or class-access issue. Please contact CBU IT support (or the Pre-College support team) to restore account/class access first. Once you can open your Blackboard course, share the platform name from the Immediate Access area (for example: Cengage MindTap, McGraw Hill Connect, or Pearson MyLab), and I'll guide you through textbook access.`
+   `I'd be happy to help! Just to clarify, are you having trouble accessing **the class itself** (logging in, finding your course), or accessing **the class materials** (textbook, Immediate Access, etc.)?`
    META:
-   `SOURCE=LLM_ONLY | CONF=0.0`
+   `SOURCE=CLARIFICATION_NEEDED | CONF=0.0`
 
 2. USER:
-   `I can't log into Blackboard or InsideCBU.`
+   `the class itself`
    BOT:
-   `It sounds like this is a Blackboard/InsideCBU login or class-access issue...`
+   `Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.`
    META:
    `SOURCE=LLM_ONLY | CONF=0.0`
 
-3. USER:
-   `I just need to access my class first.`
+*(Alternative branch test)*
+
+2. USER:
+   `the class materials`
    BOT:
-   `It sounds like this is a Blackboard/InsideCBU login or class-access issue...`
+   `I can help you with textbook access! To give you the most accurate instructions, could you please specify which platform or publisher your textbook uses? Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, Sage, SimuCase, etc.`
    META:
-   `SOURCE=LLM_ONLY | CONF=0.0`
+   `SOURCE=CLARIFICATION_NEEDED | CONF=0.0`
 
 ### Final Status
 
 - Status: Fixed
-- Outcome: Login/class-access issues are no longer misrouted into platform clarification.
+- Outcome: Ambiguous "access class" queries are no longer misrouted. The bot now correctly asks for clarification and routes the user to the appropriate solution based on their response.
 
 ---
 

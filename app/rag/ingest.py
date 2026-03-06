@@ -1,278 +1,346 @@
-from sentence_transformers import SentenceTransformer
-import faiss
+"""
+INGEST MODULE  –  Refactored v5
+───────────────────────────────────────────────────────────────────────────────
+Changes from v4
+  • Metadata schema + validation moved to metadata.py — no more circular-import
+    risk; retriever.py can import from metadata.py directly.
+  • Embedding model moved to model.py — ingest.py and retriever.py now share
+    a single SentenceTransformer instance via model.get_model().
+
+Previous changes:
+  v4 — config.py centralises all paths/constants; metadata round-trip validated.
+  v3 — Secondary chunk split (MAX_CHUNK_TOKENS), embedded [META:{...}] headers,
+       platforms.yaml-driven platform detection, Python logging.
+───────────────────────────────────────────────────────────────────────────────
+"""
+
+import logging
 import os
+import re
+
+import faiss
 import numpy as np
+import yaml
 
-"""
-INGEST MODULE (FIXED v2)
-- Better error handling for empty directories
-- Validates embeddings shape before creating index
-- Supports multiple platform-specific indices
-"""
+from config import cfg
+from metadata import (
+    INSTRUCTION_META_SCHEMA,
+    FAQ_META_SCHEMA,
+    build_and_validate,
+)
+from model import get_model
 
-FAQ_DIR = "data/faqs"
-INSTRUCTIONS_DIR = "data/instructions"
-FAQ_INDEX_PATH = "data/faqs/faiss_index"
-FAQ_CHUNKS_PATH = "data/faqs/faqs_chunks.txt"
-INSTRUCTIONS_INDEX_PATH = "data/instructions/faiss_index"
-INSTRUCTIONS_CHUNKS_PATH = "data/instructions/instructions_chunks.txt"
-CHUNK_SEPARATOR = "\n<<<CHUNK_SEPARATOR>>>\n"
+log = logging.getLogger(__name__)
 
 
-def _ingest_directory(source_dir: str, index_path: str, chunks_path: str, label: str):
+# ── Platform config loader ────────────────────────────────────────────────────
+
+def _load_platforms() -> list:
+    """Return platform list from platforms.yaml (path from cfg)."""
+    if not os.path.exists(cfg.PLATFORMS_CONFIG):
+        raise FileNotFoundError(
+            f"platforms.yaml not found at '{cfg.PLATFORMS_CONFIG}'. "
+            "Please create it before running ingestion."
+        )
+    with open(cfg.PLATFORMS_CONFIG, "r", encoding="utf-8") as fh:
+        data = yaml.safe_load(fh)
+    return data["platforms"]
+
+
+# ── Chunking helpers ──────────────────────────────────────────────────────────
+
+# Matches all-caps section headers like "PROBLEM:", "STEP-BY-STEP RESOLUTION:"
+_INSTRUCTION_HEADER_RE = re.compile(r"^([A-Z][A-Z\s\-/]+):\s*$", re.MULTILINE)
+
+# Matches FAQ bracket markers like "[FAQ_1]", "[FAQ_12]"
+_FAQ_MARKER_RE = re.compile(r"^\[FAQ_\d+\]", re.MULTILINE)
+
+
+def _approx_tokens(text: str) -> int:
+    """Fast word-piece approximation: 1 token ~= 0.75 words."""
+    return int(len(text.split()) / 0.75)
+
+
+def _secondary_split(body: str, section_title: str, source_file: str) -> list:
     """
-    Ingest text files from a directory into a FAISS index.
-    Each file becomes one chunk (no splitting by \\n\\n).
+    If *body* exceeds cfg.MAX_CHUNK_TOKENS, split further on blank lines.
+    Each sub-chunk inherits the parent title with a "[part N/total]" suffix.
+    Returns a list of chunk dicts — always at least one entry.
     """
-    raw_chunks = []
-    chunks_file_name = os.path.basename(chunks_path)
-    
-    # Check if directory exists
-    if not os.path.exists(source_dir):
-        print(f"⚠️  Directory not found: {source_dir}")
-        return []
-    
-    file_names = sorted(
-        [
-            name for name in os.listdir(source_dir)
-            if name.lower().endswith(".txt")
-        ]
+    if _approx_tokens(body) <= cfg.MAX_CHUNK_TOKENS:
+        return [{"section_title": section_title, "body": body, "source_file": source_file}]
+
+    paragraphs = [p.strip() for p in re.split(r"\n{2,}", body) if p.strip()]
+
+    windows = []
+    current_parts = []
+    current_tokens = 0
+
+    for para in paragraphs:
+        para_tokens = _approx_tokens(para)
+        if current_parts and current_tokens + para_tokens > cfg.MAX_CHUNK_TOKENS:
+            windows.append("\n\n".join(current_parts))
+            current_parts  = [para]
+            current_tokens = para_tokens
+        else:
+            current_parts.append(para)
+            current_tokens += para_tokens
+
+    if current_parts:
+        windows.append("\n\n".join(current_parts))
+
+    total = len(windows)
+    if total == 1:
+        log.warning(
+            "Section '%s' in '%s' is oversized (%d tokens) but cannot be split further.",
+            section_title, source_file, _approx_tokens(body),
+        )
+        return [{"section_title": section_title, "body": body, "source_file": source_file}]
+
+    log.info(
+        "  Secondary split: '%s' -> %d sub-chunks (%d tokens total)",
+        section_title, total, _approx_tokens(body),
     )
-    
-    # Filter out generated chunk files
-    file_names = [f for f in file_names if not f.startswith("faqs_chunks") 
-                  and not f.startswith("instructions_chunks")]
+    return [
+        {
+            "section_title": f"{section_title} [part {i + 1}/{total}]",
+            "body":          window,
+            "source_file":   source_file,
+        }
+        for i, window in enumerate(windows)
+    ]
 
-    print(f"Found {len(file_names)} .txt files in {source_dir}")
 
-    if len(file_names) == 0:
-        print(f"⚠️  No .txt files found in {source_dir}")
-        return []
+def _split_instruction_file(text: str, file_name: str) -> list:
+    """Split instruction file on all-caps headers, then apply secondary split."""
+    matches = list(_INSTRUCTION_HEADER_RE.finditer(text))
 
-    for file_name in file_names:
-        file_path = os.path.join(source_dir, file_name)
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                text = f.read().strip()
-            
-            if text:  # Only add non-empty files
-                raw_chunks.append((file_name, text))
-                print(f"  ✓ Read: {file_name} ({len(text)} chars)")
-            else:
-                print(f"  ⚠️  Skipped empty file: {file_name}")
-        except Exception as e:
-            print(f"  ✗ Error reading {file_name}: {e}")
+    if not matches:
+        return _secondary_split(text.strip(), "FULL_DOCUMENT", file_name)
 
-    if len(raw_chunks) == 0:
-        print(f"⚠️  No valid content found in {source_dir}")
-        return []
-
-    # Add source identifiers
     chunks = []
-    for i, (file_name, chunk) in enumerate(raw_chunks):
-        chunks.append(f"[SOURCE_{i}] [FILE:{file_name}]\n{chunk}")
-
-    print(f"Processing {len(chunks)} chunks for embedding...")
-
-    # Embed and build index
-    model = SentenceTransformer('all-MiniLM-L6-v2')
-    embeddings = model.encode(chunks, normalize_embeddings=True)
-    
-    # Convert to numpy array if needed
-    if not isinstance(embeddings, np.ndarray):
-        embeddings = np.array(embeddings)
-    
-    # Validate embeddings shape
-    if len(embeddings.shape) != 2:
-        print(f"⚠️  Invalid embeddings shape: {embeddings.shape}")
-        print(f"    Expected 2D array (n_chunks, embedding_dim)")
-        return []
-    
-    print(f"Embeddings shape: {embeddings.shape} (chunks × dimensions)")
-
-    # Use IndexFlatIP for cosine similarity (better than L2)
-    index = faiss.IndexFlatIP(embeddings.shape[1])
-    index.add(embeddings.astype('float32'))
-
-    faiss.write_index(index, index_path)
-
-    # Save chunks to disk
-    with open(chunks_path, "w", encoding="utf-8") as f:
-        for chunk in chunks:
-            f.write(chunk + CHUNK_SEPARATOR)
-
-    print(f"✓ Ingested {len(chunks)} {label} chunks.\n")
+    for idx, match in enumerate(matches):
+        section_title = match.group(1).strip()
+        start = match.end()
+        end   = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+        body  = text[start:end].strip()
+        if body:
+            chunks.extend(_secondary_split(body, section_title, file_name))
     return chunks
 
 
-def ingest_faqs():
-    """Ingest FAQ documents."""
-    print("=== Ingesting FAQs ===")
-    return _ingest_directory(FAQ_DIR, FAQ_INDEX_PATH, FAQ_CHUNKS_PATH, "FAQ")
+def _split_faq_file(text: str, file_name: str) -> list:
+    """Split FAQ file on [FAQ_N] markers, then apply secondary split."""
+    matches = list(_FAQ_MARKER_RE.finditer(text))
+
+    if not matches:
+        return _secondary_split(text.strip(), "FAQ_FULL", file_name)
+
+    chunks = []
+    for idx, match in enumerate(matches):
+        faq_id = match.group(0).strip("[]")
+        start  = match.end()
+        end    = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+        body   = text[start:end].strip()
+        if not body:
+            continue
+        for sc in _secondary_split(body, faq_id, file_name):
+            chunks.append({
+                "faq_id":      sc["section_title"],
+                "body":        sc["body"],
+                "source_file": sc["source_file"],
+            })
+    return chunks
 
 
-def ingest_instructions():
-    """
-    Ingest instruction documents and create platform-specific indices.
-    This pre-filtering eliminates the need for runtime re-embedding.
-    """
-    print("=== Ingesting Instructions ===")
-    
-    # Read all instruction files
-    raw_chunks = []
-    
-    if not os.path.exists(INSTRUCTIONS_DIR):
-        print(f"⚠️  Directory not found: {INSTRUCTIONS_DIR}")
-        return []
-    
-    file_names = sorted(
-        [
-            name for name in os.listdir(INSTRUCTIONS_DIR)
-            if name.lower().endswith(".txt") 
-            and not name.startswith("instructions_chunks")
-        ]
-    )
-    
-    print(f"Found {len(file_names)} instruction files")
+# ── FAISS index builder ───────────────────────────────────────────────────────
 
-    if len(file_names) == 0:
-        print(f"⚠️  No instruction files found")
-        return []
+def _build_and_save_index(chunks: list, index_path: str, chunks_path: str, label: str):
+    """Embed *chunks*, build IndexFlatIP, persist both to disk."""
+    if not chunks:
+        log.warning("No chunks to index for '%s' — skipping.", label)
+        return
 
-    for file_name in file_names:
-        file_path = os.path.join(INSTRUCTIONS_DIR, file_name)
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                text = f.read().strip()
-            if text:
-                raw_chunks.append((file_name, text))
-                print(f"  ✓ Read: {file_name}")
-        except Exception as e:
-            print(f"  ✗ Error reading {file_name}: {e}")
+    log.info("  Embedding %d chunks for '%s' ...", len(chunks), label)
+    embeddings = get_model().encode(chunks, normalize_embeddings=True)
 
-    if len(raw_chunks) == 0:
-        print(f"⚠️  No valid instruction content found")
-        return []
-
-    # Categorize chunks by platform
-    all_chunks = []
-    platform_data = {
-        'cengage': [],
-        'mcgraw': [],
-        'pearson': [],
-        'wiley': [],
-        'macmillan': [],
-        'sage': [],
-        'bedford': [],
-        'clifton': [],
-        'simucase': [],
-        'zybooks': [],
-        'inquizitive': [],
-    }
-
-    for i, (file_name, text) in enumerate(raw_chunks):
-        chunk = f"[SOURCE_{i}] [FILE:{file_name}]\n{text}"
-        all_chunks.append(chunk)
-        
-        # Platform detection (case-insensitive)
-        text_lower = text.lower()
-        file_lower = file_name.lower()
-        
-        # Check each platform
-        if "cengage" in text_lower or "mindtap" in text_lower or "cengage" in file_lower:
-            platform_data['cengage'].append(chunk)
-        if "mcgraw" in text_lower or "connect" in text_lower or "mcgraw" in file_lower:
-            platform_data['mcgraw'].append(chunk)
-        if "pearson" in text_lower or "mylab" in text_lower or "mastering" in text_lower or "pearson" in file_lower:
-            platform_data['pearson'].append(chunk)
-        if "wiley" in text_lower or "wileyplus" in text_lower or "wiley" in file_lower:
-            platform_data['wiley'].append(chunk)
-        if "macmillan" in text_lower or "achieve" in text_lower or "macmillan" in file_lower:
-            platform_data['macmillan'].append(chunk)
-        if "sage" in text_lower or "vantage" in text_lower or "sage" in file_lower:
-            platform_data['sage'].append(chunk)
-        if "bedford" in text_lower or "bookshelf" in text_lower or "bedford" in file_lower:
-            platform_data['bedford'].append(chunk)
-        if "clifton" in text_lower or "strengthsquest" in text_lower or "clifton" in file_lower:
-            platform_data['clifton'].append(chunk)
-        if "simucase" in text_lower or "simucase" in file_lower:
-            platform_data['simucase'].append(chunk)
-        if "zybook" in text_lower or "zybook" in file_lower:
-            platform_data['zybooks'].append(chunk)
-        if (
-            "inquizitive" in text_lower
-            or "inquisitive" in text_lower
-            or "little seagull" in text_lower
-            or "norton" in text_lower
-            or "seagull handbook" in text_lower
-            or "inquizitive" in file_lower
-            or "inquisitive" in file_lower
-            or "norton" in file_lower
-            or "seagull" in file_lower
-        ):
-            platform_data['inquizitive'].append(chunk)
-
-    # Load embedding model
-    model = SentenceTransformer('all-MiniLM-L6-v2')
-
-    # === Build general instructions index ===
-    print(f"\n  Building general index ({len(all_chunks)} chunks)...")
-    embeddings = model.encode(all_chunks, normalize_embeddings=True)
-    
     if not isinstance(embeddings, np.ndarray):
         embeddings = np.array(embeddings)
-    
+
+    if embeddings.ndim != 2:
+        raise ValueError(f"Unexpected embeddings shape {embeddings.shape} for '{label}'")
+
     index = faiss.IndexFlatIP(embeddings.shape[1])
-    index.add(embeddings.astype('float32'))
-    faiss.write_index(index, INSTRUCTIONS_INDEX_PATH)
-    
-    with open(INSTRUCTIONS_CHUNKS_PATH, "w", encoding="utf-8") as f:
-        for chunk in all_chunks:
-            f.write(chunk + CHUNK_SEPARATOR)
-    print(f"  ✓ Saved general instructions index")
+    index.add(embeddings.astype("float32"))
+    faiss.write_index(index, index_path)
 
-    # === Build platform-specific indices ===
-    platform_summary = {}
-    
-    for platform_name, chunks in platform_data.items():
-        if chunks:
-            try:
-                print(f"\n  Building {platform_name} index ({len(chunks)} chunks)...")
-                
-                embeddings_p = model.encode(chunks, normalize_embeddings=True)
-                
-                if not isinstance(embeddings_p, np.ndarray):
-                    embeddings_p = np.array(embeddings_p)
-                
-                index_p = faiss.IndexFlatIP(embeddings_p.shape[1])
-                index_p.add(embeddings_p.astype('float32'))
-                
-                index_path = f"data/instructions/faiss_index_{platform_name}"
-                chunks_path = f"data/instructions/instructions_chunks_{platform_name}.txt"
-                
-                faiss.write_index(index_p, index_path)
-                
-                with open(chunks_path, "w", encoding="utf-8") as f:
-                    for chunk in chunks:
-                        f.write(chunk + CHUNK_SEPARATOR)
-                
-                print(f"  ✓ Saved {platform_name}-specific index")
-                platform_summary[platform_name] = len(chunks)
-            except Exception as e:
-                print(f"  ✗ Error building {platform_name} index: {e}")
-        else:
-            print(f"  ⚠️  No {platform_name} chunks found")
+    with open(chunks_path, "w", encoding="utf-8") as fh:
+        for chunk in chunks:
+            fh.write(chunk + cfg.CHUNK_SEPARATOR)
 
-    print(f"\n✓ Total instructions ingested: {len(all_chunks)}")
-    for platform, count in platform_summary.items():
-        print(f"  - {platform.capitalize()}: {count}")
-    
+    log.info("  Saved index '%s'  (%d vectors, dim=%d)", label, len(chunks), embeddings.shape[1])
+
+
+# ── FAQ ingestion ─────────────────────────────────────────────────────────────
+
+def ingest_faqs():
+    """
+    Ingest FAQ documents into a FAISS index.
+    Each [FAQ_N] entry (or secondary sub-chunk) becomes its own vector.
+    """
+    log.info("=== Ingesting FAQs ===")
+
+    if not os.path.exists(cfg.FAQ_DIR):
+        raise FileNotFoundError(f"FAQ directory not found: '{cfg.FAQ_DIR}'")
+
+    file_names = sorted(
+        f for f in os.listdir(cfg.FAQ_DIR)
+        if f.lower().endswith(".txt") and not f.startswith("faqs_chunks")
+    )
+    log.info("Found %d FAQ file(s) in %s", len(file_names), cfg.FAQ_DIR)
+
+    all_chunks = []
+
+    for file_name in file_names:
+        file_path = os.path.join(cfg.FAQ_DIR, file_name)
+        try:
+            with open(file_path, "r", encoding="utf-8") as fh:
+                text = fh.read().strip()
+        except Exception:
+            log.exception("Failed to read %s", file_path)
+            continue
+
+        if not text:
+            log.warning("Skipped empty file: %s", file_name)
+            continue
+
+        raw_chunks = _split_faq_file(text, file_name)
+        log.info("  %s  ->  %d FAQ chunk(s)", file_name, len(raw_chunks))
+
+        for rc in raw_chunks:
+            context    = f"{file_name} / {rc.get('faq_id', '')}"
+            meta_dict  = {
+                "platform":    "faq",
+                "source_file": rc["source_file"],
+                "faq_id":      rc.get("faq_id", ""),
+            }
+            meta_str   = build_and_validate(meta_dict, FAQ_META_SCHEMA, context)
+            chunk_text = f"[META:{meta_str}]\n{rc['body']}"
+            all_chunks.append(chunk_text)
+
+    _build_and_save_index(all_chunks, cfg.FAQ_INDEX_PATH, cfg.FAQ_CHUNKS_PATH, "FAQs")
+    log.info("=== FAQ ingestion complete: %d total chunks ===\n", len(all_chunks))
     return all_chunks
 
 
+# ── Instruction ingestion ─────────────────────────────────────────────────────
+
+def ingest_instructions():
+    """
+    Ingest instruction documents and build a general index plus one
+    platform-specific index per entry in platforms.yaml.
+    """
+    log.info("=== Ingesting Instructions ===")
+
+    if not os.path.exists(cfg.INSTRUCTIONS_DIR):
+        raise FileNotFoundError(f"Instructions directory not found: '{cfg.INSTRUCTIONS_DIR}'")
+
+    platforms = _load_platforms()
+
+    keyword_to_platform: dict = {}
+    for p in platforms:
+        for kw in p["keywords"]:
+            keyword_to_platform[kw.lower()] = p["key"]
+
+    file_names = sorted(
+        f for f in os.listdir(cfg.INSTRUCTIONS_DIR)
+        if f.lower().endswith(".txt") and not f.startswith("instructions_chunks")
+    )
+    log.info("Found %d instruction file(s) in %s", len(file_names), cfg.INSTRUCTIONS_DIR)
+
+    all_chunks: list = []
+    platform_chunks: dict = {p["key"]: [] for p in platforms}
+
+    for file_name in file_names:
+        file_path = os.path.join(cfg.INSTRUCTIONS_DIR, file_name)
+        try:
+            with open(file_path, "r", encoding="utf-8") as fh:
+                text = fh.read().strip()
+        except Exception:
+            log.exception("Failed to read %s", file_path)
+            continue
+
+        if not text:
+            log.warning("Skipped empty file: %s", file_name)
+            continue
+
+        combined = (text + " " + file_name).lower()
+        matched_platforms = {
+            plat_key
+            for kw, plat_key in keyword_to_platform.items()
+            if kw in combined
+        }
+
+        raw_chunks = _split_instruction_file(text, file_name)
+        log.info("  %s  ->  %d section chunk(s)  [platforms: %s]",
+                 file_name, len(raw_chunks),
+                 ", ".join(matched_platforms) if matched_platforms else "general")
+
+        for rc in raw_chunks:
+            context   = f"{file_name} / {rc.get('section_title', '')}"
+            meta_dict = {
+                "platform":      list(matched_platforms) if matched_platforms else ["general"],
+                "source_file":   rc["source_file"],
+                "section_title": rc.get("section_title", ""),
+            }
+            meta_str   = build_and_validate(meta_dict, INSTRUCTION_META_SCHEMA, context)
+            chunk_text = (
+                f"[META:{meta_str}]\n"
+                f"{rc['section_title']}:\n"
+                f"{rc['body']}"
+            )
+            all_chunks.append(chunk_text)
+
+            for plat_key in matched_platforms:
+                if plat_key in platform_chunks:
+                    platform_chunks[plat_key].append(chunk_text)
+
+    # General index
+    _build_and_save_index(
+        all_chunks,
+        cfg.INSTRUCTIONS_INDEX_PATH,
+        cfg.INSTRUCTIONS_CHUNKS_PATH,
+        "instructions_general",
+    )
+
+    # Platform-specific indices
+    log.info("\nBuilding platform-specific indices ...")
+    for p in platforms:
+        key    = p["key"]
+        chunks = platform_chunks[key]
+        if chunks:
+            _build_and_save_index(
+                chunks,
+                cfg.platform_index_path(key),
+                cfg.platform_chunks_path(key),
+                f"instructions_{key}",
+            )
+        else:
+            log.warning("  No chunks found for platform '%s' — index skipped.", key)
+
+    log.info("\n=== Instruction ingestion complete: %d total chunks ===", len(all_chunks))
+    for p in platforms:
+        count = len(platform_chunks[p["key"]])
+        if count:
+            log.info("  %-15s %d chunk(s)", p["key"], count)
+
+    return all_chunks
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
-    print("=== Running Ingestion Pipeline ===\n")
+    log.info("=== Running Ingestion Pipeline ===")
     ingest_faqs()
-    print()
     ingest_instructions()
-    print("\n✓ Ingestion complete!")
+    log.info("=== Ingestion pipeline complete ===")

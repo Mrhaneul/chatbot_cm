@@ -10,7 +10,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Dict, Any
 import uuid
-import time  
+import time
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 try:
@@ -301,6 +301,7 @@ def get_or_create_session(session_id: str) -> Dict[str, Any]:
             "history": [],
             "awaiting_course_code": False,
             "awaiting_platform_type": False,
+            "awaiting_class_access_clarification": False,
             "stored_intent": None,
             "stored_platform": None,
             "stored_publisher": None,
@@ -814,30 +815,109 @@ def is_book_finding_discovery_query(message: str) -> bool:
     )
 
 
-def is_blackboard_insidecbu_login_issue(message: str) -> bool:
+def is_explicit_login_issue(message: str) -> bool:
     """
-    Detect account/login/access-to-class issues that should be handled before
-    platform-specific Immediate Access troubleshooting.
+    Detect EXPLICIT account/login issues (password, can't log in, etc.).
+    This should NOT trigger for ambiguous "access class" queries.
     """
     m = (message or "").lower()
     if not m:
         return False
 
     system_terms = ["blackboard", "insidecbu", "inside cbu", "class", "course"]
-    login_terms = [
+    explicit_login_terms = [
         "can't log in", "cant log in", "cannot log in", "unable to log in",
         "can't login", "cant login", "cannot login", "unable to login",
-        "password", "username", "sign in", "access the class", "access my class",
-        "can't access class", "cant access class", "cannot access class",
+        "password", "username", "sign in", "log into", "logging in",
+        "account", "credential",
     ]
 
     has_system = any(t in m for t in system_terms)
-    has_login_issue = any(t in m for t in login_terms)
+    has_explicit_login = any(t in m for t in explicit_login_terms)
 
     # If user already provides a publisher platform, keep IA flow.
     has_platform = detect_platform_from_text(m) is not None
 
-    return has_system and has_login_issue and not has_platform
+    return has_system and has_explicit_login and not has_platform
+
+
+def is_ambiguous_class_access_query(message: str) -> bool:
+    """
+    Detect AMBIGUOUS "access class" queries where it's unclear if user means:
+    - Login/class access itself, OR
+    - Class materials (textbook/Immediate Access)
+
+    These need clarification before routing.
+    """
+    m = (message or "").lower()
+    if not m:
+        return False
+
+    # Phrases that suggest ambiguous "access class" intent
+    ambiguous_terms = [
+        "how to access the class", "access the class", "access my class",
+        "access class", "access the course", "access my course",
+        "how do i access", "how to access",
+    ]
+
+    # Phrases that explicitly indicate materials/textbook (not ambiguous)
+    material_terms = [
+        "textbook", "book", "ebook", "immediate access",
+        "cengage", "mcgraw", "pearson", "vitalsource", "platform",
+        "homework", "assignment", "reading",
+    ]
+
+    # Phrases that explicitly indicate login issues (not ambiguous)
+    login_terms = [
+        "can't log in", "cant log in", "cannot log in", "password",
+        "username", "sign in", "log into", "account",
+    ]
+
+    has_ambiguous = any(t in m for t in ambiguous_terms)
+    has_material = any(t in m for t in material_terms)
+    has_login = any(t in m for t in login_terms)
+
+    # If user already provides a platform, it's about materials
+    has_platform = detect_platform_from_text(m) is not None
+
+    # Ambiguous if: has ambiguous term AND no explicit material AND no explicit login AND no platform
+    return has_ambiguous and not has_material and not has_login and not has_platform
+
+
+def is_confirmed_class_access_issue(message: str) -> bool:
+    """Detect when user confirms they're having class ACCESS (login) issues."""
+    m = (message or "").lower()
+    if not m:
+        return False
+
+    access_itself_terms = [
+        "class itself", "course itself", "the class itself", "the course itself",
+        "logging in", "log in", "login", "sign in", "access the class itself",
+        "can't get into", "cant get into", "get into the class", "get into class",
+        "account", "password", "class access"
+    ]
+    return any(t in m for t in access_itself_terms)
+
+
+def is_confirmed_materials_issue(message: str) -> bool:
+    """Detect when user confirms they're having MATERIALS (textbook/IA) issues."""
+    m = (message or "").lower()
+    if not m:
+        return False
+
+    materials_terms = [
+        "material", "materials", "textbook", "textbooks", "book", "books",
+        "ebook", "ebooks", "immediate access", "platform", "cengage",
+        "mcgraw", "pearson", "vitalsource", "homework", "assignment",
+        "digital", "content",
+    ]
+    return any(t in m for t in materials_terms)
+
+
+# Keep legacy function for backward compatibility
+def is_blackboard_insidecbu_login_issue(message: str) -> bool:
+    """Legacy function - now redirects to is_explicit_login_issue."""
+    return is_explicit_login_issue(message)
 
 
 def is_cannot_find_immediate_access_query(message: str) -> bool:
@@ -1094,6 +1174,53 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         intent = None
         explicit_textbook_selection = False
         
+        # Check for ambiguous class access queries (need clarification)
+        if is_ambiguous_class_access_query(message):
+            clarification = (
+                "I'd be happy to help! Just to clarify, are you having trouble accessing **the class itself** "
+                "(logging in, finding your course), or accessing **the class materials** "
+                "(textbook, Immediate Access, etc.)?"
+            )
+            session["history"].append({"role": "user", "content": message})
+            session["history"].append({"role": "assistant", "content": clarification})
+            session["awaiting_class_access_clarification"] = True
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=clarification,
+                source="CLARIFICATION_NEEDED",
+                article_link=None,
+                confidence=0.0,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[]
+            )
+
+        # Handle follow-up questions about class materials
+        if is_confirmed_materials_issue(message) and not session.get("awaiting_platform_type", False) and not session.get("awaiting_class_access_clarification", False):
+            # User is asking about materials, trigger platform clarification
+            clarification = (
+                "I can help you with textbook access! To give you the most accurate instructions, "
+                "could you please specify which platform or publisher your textbook uses? "
+                "Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, "
+                "Sage, SimuCase, etc."
+            )
+            session["history"].append({"role": "user", "content": message})
+            session["history"].append({"role": "assistant", "content": clarification})
+            session["awaiting_platform_type"] = True
+            session["stored_publisher"] = "TEXTBOOK_GENERIC"
+            session["stored_intent"] = "IA_ACCESS_ISSUE"
+            total_time = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=clarification,
+                source="CLARIFICATION_NEEDED",
+                article_link=None,
+                confidence=0.0,
+                total_time_ms=round(total_time, 2),
+                retrieval_time_ms=0,
+                llm_time_ms=0
+            )
+
         # ===== EARLY CHECK: Ambiguous Platforms =====
         platform_temp, is_ambiguous = detect_platform_and_check_ambiguity(message)
         
@@ -1209,6 +1336,75 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         print(f"🔍 [PLATFORM DEBUG EARLY] platform_temp = {platform_temp}")
         print(f"🔍 [PLATFORM DEBUG EARLY] platform = {platform}")
 
+
+        # Handle class access clarification state
+        if session.get("awaiting_class_access_clarification", False):
+            print(f"🔍 [STATE DEBUG] Processing class access clarification response")
+            
+            if is_confirmed_class_access_issue(message):
+                # User confirmed it's about logging in / accessing the class itself
+                access_reply = (
+                    "Contact ImmediateAccess@calbaptist.edu for assistance. "
+                    "Please send your email from your LancerMail address and include your name, ID#, and course info."
+                )
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": access_reply})
+                session["awaiting_class_access_clarification"] = False
+                session["awaiting_platform_type"] = False
+                total_time = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=access_reply,
+                    source="LLM_ONLY",
+                    article_link=None,
+                    confidence=0.0,
+                    total_time_ms=round(total_time, 2),
+                    retrieval_time_ms=0,
+                    llm_time_ms=0
+                )
+            elif is_confirmed_materials_issue(message):
+                # User confirmed it's about materials/textbook
+                clarification = (
+                    "I can help you with textbook access! To give you the most accurate instructions, "
+                    "could you please specify which platform or publisher your textbook uses? "
+                    "Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, "
+                    "Sage, SimuCase, etc."
+                )
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": clarification})
+                session["awaiting_class_access_clarification"] = False
+                session["awaiting_platform_type"] = True
+                session["stored_publisher"] = "TEXTBOOK_GENERIC"
+                session["stored_intent"] = "IA_ACCESS_ISSUE"
+                total_time = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=clarification,
+                    source="CLARIFICATION_NEEDED",
+                    article_link=None,
+                    confidence=0.0,
+                    total_time_ms=round(total_time, 2),
+                    retrieval_time_ms=0,
+                    llm_time_ms=0
+                )
+            else:
+                # User didn't clearly answer - re-prompt
+                clarification = (
+                    "Could you please clarify: are you having trouble accessing **the class itself** "
+                    "(logging in, finding your course), or accessing **the class materials** "
+                    "(textbook, Immediate Access, etc.)?"
+                )
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": clarification})
+                total_time = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=clarification,
+                    source="CLARIFICATION_NEEDED",
+                    article_link=None,
+                    confidence=0.0,
+                    total_time_ms=round(total_time, 2),
+                    retrieval_time_ms=0,
+                    llm_time_ms=0
+                )
+
         if session.get("awaiting_platform_type", False):
             print(f"🔍 [STATE DEBUG] Processing platform type clarification")
             
@@ -1259,37 +1455,6 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 "cant find it",
             ]
             is_cannot_find_immediate_access = any(term in msg_lower for term in cannot_find_ia_terms)
-
-            if is_blackboard_insidecbu_login_issue(message):
-                login_reply = (
-                    "It sounds like this is a Blackboard/InsideCBU login or class-access issue. "
-                    "Please contact CBU IT support (or the Pre-College support team) to restore account/class access first. "
-                    "Once you can open your Blackboard course, share the platform name from the Immediate Access area "
-                    "(for example: Cengage MindTap, McGraw Hill Connect, or Pearson MyLab), and I'll guide you through textbook access."
-                )
-                session["history"].append({
-                    "role": "user",
-                    "content": message
-                })
-                session["history"].append({
-                    "role": "assistant",
-                    "content": login_reply
-                })
-                session["awaiting_platform_type"] = False
-                session["stored_publisher"] = None
-                session["stored_original_query"] = None
-                session["stored_intent"] = None
-                session["stored_platform"] = None
-                total_time = (time.time() - request_start) * 1000
-                return ChatResponse(
-                    reply=login_reply,
-                    source="LLM_ONLY",
-                    article_link=None,
-                    confidence=0.0,
-                    total_time_ms=round(total_time, 2),
-                    retrieval_time_ms=0,
-                    llm_time_ms=0
-                )
 
             # Book-finding clarification branch (physical vs Immediate Access).
             if publisher == "BOOK_FORMAT":
@@ -1594,6 +1759,56 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             
             print(f"🔍 [PLATFORM DEBUG] Detected platform: {platform}")
 
+        # Check for ambiguous class access queries (need clarification)
+        if is_ambiguous_class_access_query(message):
+            clarification = (
+                "I'd be happy to help! Just to clarify, are you having trouble accessing **the class itself** "
+                "(logging in, finding your course), or accessing **the class materials** "
+                "(textbook, Immediate Access, etc.)?"
+            )
+            session["history"].append({"role": "user", "content": message})
+            session["history"].append({"role": "assistant", "content": clarification})
+            session["awaiting_class_access_clarification"] = True
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=clarification,
+                source="CLARIFICATION_NEEDED",
+                article_link=None,
+                confidence=0.0,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[]
+            )
+
+        # Check for explicit login issues (not ambiguous)
+        if is_explicit_login_issue(message):
+            login_reply = (
+                "It sounds like this is a Blackboard/InsideCBU login or class-access issue. "
+                "Please contact CBU IT support (or the Pre-College support team) to restore account/class access first. "
+                "Once you can open your Blackboard course, share the platform name from the Immediate Access area "
+                "(for example: Cengage MindTap, McGraw Hill Connect, or Pearson MyLab), and I'll guide you through textbook access."
+            )
+            session["history"].append({
+                "role": "user",
+                "content": message
+            })
+            session["history"].append({
+                "role": "assistant",
+                "content": login_reply
+            })
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=login_reply,
+                source="LLM_ONLY",
+                article_link=None,
+                confidence=0.0,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[]
+            )
+
         # NOW the intent is set!
         # 1. Intent detection happens somewhere up here
         print(f"🔍 [INTENT DEBUG] Final intent: {intent}")
@@ -1804,34 +2019,6 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 total_time_ms=round(total_time_ms, 2),
                 recommended_pdfs=[]
             )
-
-        if is_blackboard_insidecbu_login_issue(message):
-            login_reply = (
-                "It sounds like this is a Blackboard/InsideCBU login or class-access issue. "
-                "Please contact CBU IT support (or the Pre-College support team) to restore account/class access first. "
-                "Once you can open your Blackboard course, share the platform name from the Immediate Access area "
-                "(for example: Cengage MindTap, McGraw Hill Connect, or Pearson MyLab), and I'll guide you through textbook access."
-            )
-            session["history"].append({
-                "role": "user",
-                "content": message
-            })
-            session["history"].append({
-                "role": "assistant",
-                "content": login_reply
-            })
-            total_time_ms = (time.time() - request_start) * 1000
-            return ChatResponse(
-                reply=login_reply,
-                source="LLM_ONLY",
-                article_link=None,
-                confidence=0.0,
-                retrieval_time_ms=0,
-                llm_time_ms=0,
-                total_time_ms=round(total_time_ms, 2),
-                recommended_pdfs=[]
-            )
-
         if intent == "GENERAL_FAQ" and is_book_finding_discovery_query(message):
             format_question = (
                 "I can help with that. Are you trying to find a **physical textbook** "

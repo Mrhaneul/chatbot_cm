@@ -1,0 +1,82 @@
+# platforms.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Single source of truth for platform detection in both ingest.py and
+# retriever.py.  To add a new platform, append a new entry here — no code
+# changes needed anywhere else.
+#
+# Schema per entry:
+#   key          : internal snake_case identifier (used for file paths)
+#   display_name : human-readable name (used in logs and API responses)
+#   keywords     : list of lowercase strings; a chunk/file matches this
+#                  platform when ANY keyword appears in its text or filename.
+# ─────────────────────────────────────────────────────────────────────────────
+
+platforms:
+  - key: cengage
+    display_name: Cengage MindTap
+    keywords:
+      - cengage
+      - mindtap
+
+  - key: mcgraw
+    display_name: McGraw Hill Connect
+    keywords:
+      - mcgraw
+      - connect
+
+  - key: pearson
+    display_name: Pearson MyLab / Mastering
+    keywords:
+      - pearson
+      - mylab
+      - mastering
+
+  - key: wiley
+    display_name: WileyPLUS
+    keywords:
+      - wiley
+      - wileyplus
+
+  - key: macmillan
+    display_name: Macmillan Achieve
+    keywords:
+      - macmillan
+      - achieve
+
+  - key: sage
+    display_name: SAGE Vantage
+    keywords:
+      - sage
+      - vantage
+
+  - key: bedford
+    display_name: Bedford Bookshelf
+    keywords:
+      - bedford
+      - bookshelf
+
+  - key: clifton
+    display_name: CliftonStrengths
+    keywords:
+      - clifton
+      - strengthsquest
+
+  - key: simucase
+    display_name: SimuCase
+    keywords:
+      - simucase
+
+  - key: zybooks
+    display_name: ZyBooks
+    keywords:
+      - zybook
+
+  - key: inquizitive
+    display_name: InQuizitive / Norton
+    keywords:
+      - inquizitive
+      - inquisitive
+      - little seagull
+      - norton
+      - seagull handbook
+      - seagull
