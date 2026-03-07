@@ -17,18 +17,19 @@ Previous changes:
 import logging
 import os
 import re
+import time # Added this line
 
 import faiss
 import numpy as np
 import yaml
 
-from config import cfg
-from metadata import (
+from .config import cfg
+from .metadata import (
     INSTRUCTION_META_SCHEMA,
     FAQ_META_SCHEMA,
     build_and_validate,
 )
-from model import get_model
+from .model import get_model
 
 log = logging.getLogger(__name__)
 
@@ -340,7 +341,22 @@ def ingest_instructions():
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    from app.utils.logging_config import configure_logging
+    configure_logging() # Ensure logging is configured for CLI execution
+
     log.info("=== Running Ingestion Pipeline ===")
-    ingest_faqs()
-    ingest_instructions()
-    log.info("=== Ingestion pipeline complete ===")
+    
+    start_time = time.time() # Add this line to measure execution time
+
+    faq_chunks_count = len(ingest_faqs())
+    instruction_chunks_count = len(ingest_instructions())
+
+    end_time = time.time() # Add this line to measure execution time
+    duration = end_time - start_time # Add this line
+
+    log.info(f"Ingestion pipeline complete in {duration:.2f} seconds.") # Modify this line
+    print(f"\n--- Ingestion Summary ---")
+    print(f"  Processed {faq_chunks_count} FAQ chunks.")
+    print(f"  Processed {instruction_chunks_count} instruction chunks.")
+    print(f"  Total execution time: {duration:.2f} seconds.")
+    print(f"--- Remember to restart the FastAPI app for changes to take effect. ---")

@@ -1,0 +1,39 @@
+name: CI Build and Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip' # Cache pip dependencies
+
+    - name: Install dependencies
+      run: pip install -r requirements.txt
+
+    - name: Set environment variables
+      run: |
+        echo "PYTHONPATH=$GITHUB_WORKSPACE" >> $GITHUB_ENV
+        echo "PLATFORMS_CONFIG=app/rag/platforms.yaml" >> $GITHUB_ENV
+
+    - name: Run FAISS index ingestion
+      run: python -m app.rag.ingest
+
+    - name: Validate FAISS indexes
+      run: python scripts/validate_indexes.py
+
+    - name: Run unit tests
+      run: python -m pytest -q

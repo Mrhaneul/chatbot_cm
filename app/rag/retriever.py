@@ -22,13 +22,13 @@ import faiss
 import numpy as np
 import yaml
 
-from config import cfg
-from metadata import (
+from .config import cfg
+from .metadata import (
     INSTRUCTION_META_SCHEMA,
     FAQ_META_SCHEMA,
     parse_and_validate,
 )
-from model import get_model
+from .model import get_model
 
 log = logging.getLogger(__name__)
 

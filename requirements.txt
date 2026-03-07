@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+requests
+pydantic
+pytest
+pytest-asyncio
+numpy
+pyyaml
+faiss-cpu
+sentence-transformers

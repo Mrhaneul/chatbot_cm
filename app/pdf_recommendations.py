@@ -213,7 +213,7 @@ def get_pdf_recommendations(
     Generate PDF recommendations based on FAISS retrieval results.
     
     Args:
-        retrieval_result: The result from FAQRetriever.retrieve()
+        retrieval_result: The result from retriever.retrieve()
         platform: Detected platform (e.g., "MCGRAW_HILL", "CENGAGE")
         max_recommendations: Maximum number of PDFs to recommend
     
@@ -335,7 +335,7 @@ def get_recommendations_for_chat(
     This is the main function you'll call from main.py.
     
     Args:
-        retrieval_result: FAISS retrieval result from FAQRetriever
+        retrieval_result: FAISS retrieval result from retriever
         platform: Detected platform (CENGAGE, MCGRAW_HILL, etc.)
         query: Original user query (for additional context)
     

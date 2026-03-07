@@ -17,7 +17,7 @@ import logging
 
 from sentence_transformers import SentenceTransformer
 
-from config import cfg
+from .config import cfg
 
 log = logging.getLogger(__name__)
 

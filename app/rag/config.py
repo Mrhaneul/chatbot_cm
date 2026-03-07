@@ -15,18 +15,10 @@ Usage:
 ───────────────────────────────────────────────────────────────────────────────
 """
 
-import logging
 import os
 from dataclasses import dataclass, field
 
-
-# ── Logging (configure once here; all modules inherit it) ─────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
-    datefmt="%H:%M:%S",
-)
-
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 @dataclass(frozen=True)
 class Config:
@@ -41,7 +33,7 @@ class Config:
     # ── Directory paths ───────────────────────────────────────────────────────
     FAQ_DIR:          str = field(default_factory=lambda: os.getenv("FAQ_DIR",          "data/faqs"))
     INSTRUCTIONS_DIR: str = field(default_factory=lambda: os.getenv("INSTRUCTIONS_DIR", "data/instructions"))
-    PLATFORMS_CONFIG: str = field(default_factory=lambda: os.getenv("PLATFORMS_CONFIG", "platforms.yaml"))
+    PLATFORMS_CONFIG: str = field(default_factory=lambda: os.getenv("PLATFORMS_CONFIG", os.path.join(_CURRENT_DIR, "platforms.yaml")))
 
     # ── Derived index / chunk paths  (computed as properties below) ───────────
     # These are not fields so they stay in sync with FAQ_DIR / INSTRUCTIONS_DIR

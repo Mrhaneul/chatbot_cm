@@ -2,7 +2,8 @@ from email.mime import message
 from fastapi import FastAPI, HTTPException
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.llm.llama_client import LlamaClient
-from app.rag.retriever import FAQRetriever
+# from app.rag.retriever import FAQRetriever  # Deprecated import
+from app.rag.retriever import get_retriever  # New singleton accessor
 from app.platform_registry import load_registry, internal_platform_key, canonical_platform_key
 import asyncio
 import os
@@ -22,6 +23,13 @@ except Exception:
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+import yaml
+from app.rag.config import cfg
+
+from app.utils.logging_config import configure_logging
+
+# Configure logging once at startup
+configure_logging()
 
 """
 MAIN API (FIXED + PERFORMANCE TRACKING)
@@ -79,7 +87,7 @@ sessions: Dict[str, Dict[str, Any]] = {}
 
 # Initialize services
 llm = LlamaClient()
-retriever = FAQRetriever()
+retriever = get_retriever()
 llm_semaphore = asyncio.Semaphore(MAX_CONCURRENT_LLM_REQUESTS)
 chat_request_queue: asyncio.Queue[str] = asyncio.Queue()
 chat_jobs: Dict[str, Dict[str, Any]] = {}
@@ -2653,3 +2661,24 @@ def compare_models(payload: ChatRequest):
         "min_ms": round(min(r["elapsed_ms"] for r in results), 2),
         "max_ms": round(max(r["elapsed_ms"] for r in results), 2)
     }
+
+@app.get("/platforms")
+async def get_platforms():
+    """
+    Returns a list of supported platforms from platforms.yaml.
+    """
+    try:
+        with open(cfg.PLATFORMS_CONFIG, "r", encoding="utf-8") as fh:
+            platforms_data = yaml.safe_load(fh)
+            return platforms_data.get("platforms", [])
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=500,
+            detail=f"platforms.yaml not found at {cfg.PLATFORMS_CONFIG}. "
+                   "Ensure the config file exists and is accessible."
+        )
+    except yaml.YAMLError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error parsing platforms.yaml: {e}"
+        )
