@@ -955,6 +955,31 @@ def is_confirmed_class_access_issue(message: str) -> bool:
     return any(t in m for t in access_itself_terms)
 
 
+def is_ia_overview_query(message: str) -> bool:
+    """
+    Detect 'what is Immediate Access' style overview/definition queries.
+    Used to boost retrieval toward ia_overview.txt rather than issue-specific chunks.
+    """
+    m = (message or "").lower()
+    overview_signals = [
+        "what is immediate access",
+        "what's immediate access",
+        "what is ia",
+        "tell me about immediate access",
+        "explain immediate access",
+        "explain what immediate access",
+        "how does immediate access work",
+        "how does ia work",
+        "describe immediate access",
+        "what does immediate access mean",
+        "what is the immediate access program",
+        "can you explain immediate access",
+        "can you tell me about immediate access",
+        "want to know about immediate access",
+    ]
+    return any(s in m for s in overview_signals)
+
+
 def is_bundle_admin_question(message: str) -> bool:
     """
     Detect questions about IA bundle composition (adding/missing textbooks in bundle).
@@ -1021,6 +1046,16 @@ def is_confirmed_materials_issue(message: str) -> bool:
     # Policy/FAQ questions about opting out, physical availability, or bundle
     # admin are not access troubleshooting issues — exclude them.
     if is_opt_out_policy_question(message) or is_bundle_admin_question(message):
+        return False
+
+    # Informational "what is / how does" questions are FAQ lookups, not access issues.
+    informational_prefixes = [
+        "what is", "what's", "what are",
+        "how does", "how do", "tell me about",
+        "explain", "describe", "definition of", "define",
+        "can you tell me", "i want to know",
+    ]
+    if any(p in m for p in informational_prefixes):
         return False
 
     materials_terms = [
@@ -2350,8 +2385,11 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     platform=_plat_key
                 )
             elif intent == "GENERAL_FAQ":
+                faq_query = message
+                if is_ia_overview_query(message):
+                    faq_query = "Immediate Access program overview day-one digital course materials student account CBU definition"
                 retrieval = await retrieve_async(
-                    message,
+                    faq_query,
                     collection="faqs"
                 )
             else:

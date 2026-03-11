@@ -20,7 +20,7 @@ export function PDFSidebar({
 }: PDFSidebarProps) {
   return (
     <>
-      {/* Toggle button for mobile/tablet */}
+      {/* Toggle button — only shown on smaller screens where sidebar overlays */}
       <button
         onClick={onToggle}
         className="fixed right-0 top-1/2 -translate-y-1/2 bg-[#A07400] text-white p-2 rounded-l-lg shadow-lg z-50 lg:hidden"
@@ -90,7 +90,7 @@ export function PDFSidebar({
         </div>
       </aside>
 
-      {/* Overlay for mobile */}
+      {/* Overlay — only on smaller screens where sidebar overlays the chat */}
       {isOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-30 lg:hidden"

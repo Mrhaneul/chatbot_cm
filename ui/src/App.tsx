@@ -10,7 +10,7 @@ import { PDFRecommendation, Message } from './types';
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [pdfRecommendations, setPdfRecommendations] = useState<PDFRecommendation[]>([]);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [sessionId, setSessionId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [apiStatus, setApiStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');

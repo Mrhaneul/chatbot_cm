@@ -1019,3 +1019,31 @@ if any(s in normalized for s in opt_out_policy_signals) and not any(
 
 ---
 
+## Case 013 - McGraw Hill Bookshelf Wrong Email / Duplicate Account
+
+- Date: 2026-03-11
+- Source Email File: `emails/Trouble Accessing Textbook.msg`
+- Sender: John Marcos King (ID: 812819)
+- Course: ENG 123
+- Extracted Student Message:
+  `I am having issues accessing my textbook for ENG 123. When I was prompted to make an account the first time, I inputted an incorrect email address (ending in cbu.edu and not calbaptist.edu). Once I realized my mistake I made another Bookshelf account with the correct email. Now the website will not allow me to update my email on the incorrect account and will only send me to the incorrect account (which I can't access because of the verification) when I click 'read now.'`
+
+### Bot Transcript
+
+1. User: *(exact message above)*
+   Bot: *(Bedford/VitalSource duplicate account instructions — correct)*
+   - Identified root cause: multiple VitalSource accounts with different emails
+   - Step-by-step: request account merge via VitalSource Support live chat
+   - Contact escalation to ImmediateAccess@calbaptist.edu if issue persists
+   Meta: `source: INSTR_BEDFORD_SOURCE_1`
+
+### Assessment
+
+No fix required. The existing `ia_bedford_bookshelf_email_error_access.txt` instruction file covers this exact scenario — multiple VitalSource/Bookshelf accounts with wrong email, redirecting to incorrect account on "Read Now". Bot routes correctly and returns accurate guidance.
+
+Note: The email says "McGraw Hill Bookshelf" but this is actually VitalSource Bookshelf (Bedford). ENG 123 uses Bedford-published texts delivered through VitalSource Bookshelf.
+
+### Status: PASSING (no fix needed)
+
+---
+
