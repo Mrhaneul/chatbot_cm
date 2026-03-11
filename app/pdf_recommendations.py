@@ -11,56 +11,74 @@ import re
 
 # Mapping of txt file sources to PDF document IDs in Firestore
 TXT_TO_PDF_MAP = {
-    # Bedford
+    # Bedford (both legacy key and actual source_file name in chunks)
     "ia_bedford_access.txt": "bedford_bookshelf_access",
-    
-    # Cengage
+    "ia_bedford_bookshelf_access.txt": "bedford_bookshelf_access",
+
+    # Cengage (actual source_file in chunks is ia_cengage_mindtap_access.txt)
     "ia_cengage_access.txt": "cengage_access",
-    
-    # CliftonStrengths
+    "ia_cengage_mindtap_access.txt": "cengage_access",
+
+    # CliftonStrengths (actual source_file is ia_cliftonstrengths_assessment_access.txt)
     "ia_clifton_access.txt": "clifton_access",
-    
+    "ia_cliftonstrengths_assessment_access.txt": "clifton_access",
+
     # DC Codes
     "ia_dccodes_access.txt": "dccodes_access",
-    
-    # Macmillan
+    "dc_codes_instore_redemption.txt": "dccodes_access",
+
+    # Macmillan (actual source_file is ia_macmillan_achieve_access.txt)
     "ia_macmillan_access.txt": "macmillan_access",
-    
-    # McGraw Hill
+    "ia_macmillan_achieve_access.txt": "macmillan_access",
+
+    # McGraw Hill (chunks currently resolve to macmillan source file)
     "ia_mcgraw_access.txt": "mcgraw_connect_access",
     "ia_mcgraw_navigation.txt": "mcgraw_tools_navigation",
-    
-    # Pearson
+    "ia_mcgraw_hill_connect_access.txt": "mcgraw_connect_access",
+    "ia_mcgraw_hill_connect_learning_activities_access.txt": "mcgraw_connect_access",
+    "ia_mcgraw_hill_connect_tools_access.txt": "mcgraw_tools_navigation",
+    "ia_mcgraw_hill_tools_access.txt": "mcgraw_tools_navigation",
+
+    # Pearson (actual source_file is ia_pearson_mylab_mastering_access.txt)
     "ia_pearson_access.txt": "pearson_mylab_access",
-    
-    # Sage
+    "ia_pearson_mylab_mastering_access.txt": "pearson_mylab_access",
+
+    # Sage (actual source_file is ia_sage_vantage_access.txt)
     "ia_sage_access.txt": "sage_access",
-    
+    "ia_sage_vantage_access.txt": "sage_access",
+
     # SimuCase
     "ia_simucase_access.txt": "simucase_access",
 
     # InQuizitive
     "ia_inquizitive_access.txt": "inquizitive_access",
-    
+
     # Stukent
     "ia_stukent_access.txt": "stukent_access",
-    
-    # VitalSource
+
+    # VitalSource (actual source_files)
     "ia_vitalsource_account.txt": "vitalsource_create_account",
-    
-    # Wiley
+    "ia_vitalsource_bookshelf_account_creation.txt": "vitalsource_create_account",
+    "ia_vitalsource_launch_courseware_access.txt": "vitalsource_create_account",
+
+    # Wiley (actual source_file is ia_wileyplus_access.txt)
     "ia_wiley_access.txt": "wiley_access",
-    
+    "ia_wileyplus_access.txt": "wiley_access",
+
     # ZyBooks
     "ia_zybooks_access.txt": "zybooks_access",
-    
-    # General - Cookies
+
+    # General - Cookies (actual source_file names)
     "ia_cookies_chrome.txt": "cookies_chrome",
+    "ia_browser_chrome_cookies_popups.txt": "cookies_chrome",
     "ia_cookies_ipad.txt": "cookies_ipad",
+    "ia_browser_ipad_safari_cookies_popups.txt": "cookies_ipad",
     "ia_cookies_safari.txt": "cookies_safari",
-    
-    # General - Overview
+    "ia_browser_safari_cookies_popups.txt": "cookies_safari",
+
+    # General - Overview / eTextbook
     "ia_overview.txt": "immediate_access_overview",
+    "ia_etextbook_general_access.txt": "immediate_access_overview",
 }
 
 # Platform-specific relevance ranking
@@ -109,11 +127,29 @@ for _platform, _priority in _registry.get("platform_priority", {}).items():
 def extract_source_filename(retrieval_context: str) -> Optional[str]:
     """
     Extract the source filename from FAISS retrieval context.
-    Example: "[SOURCE_0] [FILE:ia_mcgraw_access.txt]" -> "ia_mcgraw_access.txt"
+
+    Supports two formats:
+    - New:    [META:{"source_file": "ia_zybooks_access.txt", ...}]
+    - Legacy: [SOURCE_0] [FILE:ia_mcgraw_access.txt]
     """
-    match = re.search(r'\[FILE:([^\]]+)\]', retrieval_context)
-    if match:
-        return match.group(1)
+    import json as _json
+
+    # New format: [META:{...}] with a "source_file" key
+    meta_match = re.match(r'^\s*\[META:(\{.*?\})\]', retrieval_context)
+    if meta_match:
+        try:
+            meta = _json.loads(meta_match.group(1))
+            source_file = meta.get("source_file")
+            if source_file:
+                return source_file
+        except Exception:
+            pass
+
+    # Legacy format: [FILE:filename.txt]
+    legacy_match = re.search(r'\[FILE:([^\]]+)\]', retrieval_context)
+    if legacy_match:
+        return legacy_match.group(1)
+
     return None
 
 

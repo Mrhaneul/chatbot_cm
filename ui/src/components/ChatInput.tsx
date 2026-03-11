@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Send, Paperclip } from 'lucide-react';
+import { Send } from 'lucide-react';
 
 interface ChatInputProps {
   onSendMessage: (content: string) => void;
@@ -28,15 +28,6 @@ export function ChatInput({ onSendMessage, disabled = false }: ChatInputProps) {
     <div className="border-t border-gray-200 bg-white px-4 py-4">
       <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
         <div className="flex gap-2 items-end">
-          <button
-            type="button"
-            disabled={disabled}
-            className="p-3 text-[#165FB3] hover:text-[#A07400] hover:bg-[#FFFAEB] rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label="Attach file"
-          >
-            <Paperclip className="w-5 h-5" />
-          </button>
-
           <div className="flex-1 relative">
             <textarea
               value={message}

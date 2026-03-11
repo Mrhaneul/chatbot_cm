@@ -50,10 +50,11 @@ platforms:
       - vantage
 
   - key: bedford
-    display_name: Bedford Bookshelf
+    display_name: Bedford / VitalSource Bookshelf
     keywords:
       - bedford
       - bookshelf
+      - vitalsource
 
   - key: clifton
     display_name: CliftonStrengths

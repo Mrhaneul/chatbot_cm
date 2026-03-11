@@ -19,7 +19,7 @@ import json
 INSTRUCTION_META_SCHEMA: dict = {
     "platform":      list,   # list of matched platform keys, e.g. ["cengage"]
     "source_file":   str,    # original filename, e.g. "ia_cengage_mindtap_access.txt"
-    "section_title": str,    # all-caps header, e.g. "STEP-BY-STEP RESOLUTION"
+    "section_title": str,    # scenario label, e.g. "FULL_DOCUMENT" or "SCENARIO_1"
 }
 
 FAQ_META_SCHEMA: dict = {

@@ -177,17 +177,19 @@ class FAQRetriever:
 
         # ── Instructions path ─────────────────────────────────────────────────
         if selected == "instructions":
-            plat_data   = self._platform_indexes.get(platform or "", {})
+            # Ensure platform lookup is case-insensitive
+            plat_key = platform.upper() if platform else ""
+            plat_data   = self._platform_indexes.get(plat_key, {})
             plat_index  = plat_data.get("index")
             plat_chunks = plat_data.get("chunks", [])
 
             if platform and plat_index:
                 index         = plat_index
                 chunks        = plat_chunks
-                source_prefix = f"INSTR_{platform}"
+                source_prefix = f"INSTR_{plat_key}"
             else:
                 if platform:
-                    log.warning("No index for platform '%s' — using general index.", platform)
+                    log.warning("No index for platform '%s' (looked for '%s') — using general index.", platform, plat_key)
                 index         = self.instructions_index
                 chunks        = self.instruction_chunks
                 source_prefix = "INSTR_GENERAL"

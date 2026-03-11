@@ -50,8 +50,8 @@ def _load_platforms() -> list:
 
 # ── Chunking helpers ──────────────────────────────────────────────────────────
 
-# Matches all-caps section headers like "PROBLEM:", "STEP-BY-STEP RESOLUTION:"
-_INSTRUCTION_HEADER_RE = re.compile(r"^([A-Z][A-Z\s\-/]+):\s*$", re.MULTILINE)
+# Matches horizontal rule separators between distinct instruction scenarios
+_SCENARIO_SEPARATOR_RE = re.compile(r"\n[ \t]*---+[ \t]*\n", re.MULTILINE)
 
 # Matches FAQ bracket markers like "[FAQ_1]", "[FAQ_12]"
 _FAQ_MARKER_RE = re.compile(r"^\[FAQ_\d+\]", re.MULTILINE)
@@ -113,20 +113,26 @@ def _secondary_split(body: str, section_title: str, source_file: str) -> list:
 
 
 def _split_instruction_file(text: str, file_name: str) -> list:
-    """Split instruction file on all-caps headers, then apply secondary split."""
-    matches = list(_INSTRUCTION_HEADER_RE.finditer(text))
+    """
+    Split instruction file on '---' scenario boundaries, keeping each complete
+    scenario (PROBLEM + RESOLUTION + all related sections) as one chunk.
 
-    if not matches:
+    Previously the file was split on every ALL-CAPS header, which fragmented
+    PROBLEM and STEP-BY-STEP RESOLUTION into separate vectors. Top-1 retrieval
+    then returned only the PROBLEM chunk, omitting actionable resolution steps.
+
+    Now each '---'-delimited block is one embeddable unit. Secondary splitting
+    is applied only if a single scenario exceeds MAX_CHUNK_TOKENS.
+    """
+    scenarios = [s.strip() for s in _SCENARIO_SEPARATOR_RE.split(text) if s.strip()]
+
+    if not scenarios:
         return _secondary_split(text.strip(), "FULL_DOCUMENT", file_name)
 
     chunks = []
-    for idx, match in enumerate(matches):
-        section_title = match.group(1).strip()
-        start = match.end()
-        end   = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
-        body  = text[start:end].strip()
-        if body:
-            chunks.extend(_secondary_split(body, section_title, file_name))
+    for i, scenario in enumerate(scenarios):
+        title = f"SCENARIO_{i + 1}" if len(scenarios) > 1 else "FULL_DOCUMENT"
+        chunks.extend(_secondary_split(scenario, title, file_name))
     return chunks
 
 
@@ -295,11 +301,9 @@ def ingest_instructions():
                 "section_title": rc.get("section_title", ""),
             }
             meta_str   = build_and_validate(meta_dict, INSTRUCTION_META_SCHEMA, context)
-            chunk_text = (
-                f"[META:{meta_str}]\n"
-                f"{rc['section_title']}:\n"
-                f"{rc['body']}"
-            )
+            # Body already contains all section headers (PROBLEM:, STEP-BY-STEP
+            # RESOLUTION:, etc.) — do not prepend section_title again.
+            chunk_text = f"[META:{meta_str}]\n{rc['body']}"
             all_chunks.append(chunk_text)
 
             for plat_key in matched_platforms:

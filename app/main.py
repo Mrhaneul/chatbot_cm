@@ -29,15 +29,20 @@ from app.rag.config import cfg
 from app.utils.logging_config import configure_logging
 
 # Configure logging once at startup
-configure_logging()
+def strip_meta_prefix(context: str) -> str:
+    """Remove the [META:{...}] header from a retrieved context chunk.
 
-"""
-MAIN API (FIXED + PERFORMANCE TRACKING)
-- Session-scoped memory (Bug #4)
-- Automatic session cleanup
-- Multi-user safe
-- ✨ NEW: Response time tracking for model comparison
-"""
+    Handles leading BOM characters and whitespace before the tag.
+    """
+    # Strip BOM and surrounding whitespace before checking
+    cleaned = context.replace("\ufeff", "").strip()
+    if cleaned.startswith("[META:"):
+        newline_pos = cleaned.find("\n")
+        if newline_pos != -1:
+            return cleaned[newline_pos + 1:].strip()
+    return cleaned
+
+
 
 CONFIDENCE_THRESHOLD = 0.1
 FAQ_DIRECT_MIN_CONFIDENCE = float(os.getenv("FAQ_DIRECT_MIN_CONFIDENCE", "0.2"))
@@ -115,6 +120,11 @@ PLATFORM_ALIASES: Dict[str, list[str]] = {
         "norton",
         "seagull handbook",
     ],
+}
+
+# Maps detected platform keys to their FAISS index keys (for platforms that share an index).
+PLATFORM_RETRIEVAL_KEY: Dict[str, str] = {
+    "VITALSOURCE": "bedford",  # VitalSource and Bedford share the same Bookshelf platform/index
 }
 
 PLATFORM_DISPLAY_NAMES: Dict[str, str] = {
@@ -332,16 +342,43 @@ def cleanup_expired_sessions():
     ]
     for sid in expired:
         del sessions[sid]
-        print(f"🗑️  Cleaned up expired session: {sid[:8]}...")
+        print(f"[SESSION] Cleaned up expired session: {sid[:8]}...")
     
     if expired:
-        print(f"✓ Removed {len(expired)} expired sessions. Active: {len(sessions)}")
+        print(f"[SESSION] Removed {len(expired)} expired sessions. Active: {len(sessions)}")
 
 
 def detect_intent(message: str) -> str:
     """Detect user intent from message."""
     normalized = message.lower()
-    
+
+    # Opt-out and physical textbook policy questions must go to FAQ, not IA troubleshooting.
+    # "access" in ia_keywords is too broad and would otherwise match "immediate access"
+    # in a policy question, misrouting it to IA_ACCESS_ISSUE.
+    opt_out_policy_signals = [
+        "opt out", "opt-out", "opting out", "opted out",
+        "physical textbook", "physical copy", "print textbook",
+        "buy a textbook", "purchase textbook", "purchase a textbook",
+        "buy textbook", "available in the", "student store",
+    ]
+    # Guard: if troubleshooting context is present, the "opt out" text is likely
+    # describing the Blackboard button ("Want to opt out?"), not asking about policy.
+    opt_out_troubleshooting_exclusions = [
+        "cannot access", "can't access", "cant access",
+        "no read now", "read now button", "read now",
+        "not showing", "only shows", "only gives", "only option",
+        "green check", "checkmark", "opted in",
+        "still cannot", "still can't", "still cant",
+    ]
+    if any(s in normalized for s in opt_out_policy_signals) and not any(
+        t in normalized for t in opt_out_troubleshooting_exclusions
+    ):
+        return "GENERAL_FAQ"
+
+    # Bundle admin questions are FAQ, not access troubleshooting.
+    if is_bundle_admin_question(message):
+        return "GENERAL_FAQ"
+
     # ✨ Check for informational questions FIRST
     informational_patterns = [
         "what is",
@@ -399,7 +436,7 @@ def detect_intent(message: str) -> str:
         ])
     )
 
-    print(f"🔍 [INTENT DEBUG] has_ia_keyword={has_ia_keyword}, mentions_platform_or_textbook={mentions_platform_or_textbook}")
+    print(f"[INTENT DEBUG] has_ia_keyword={has_ia_keyword}, mentions_platform_or_textbook={mentions_platform_or_textbook}")
     
     if has_ia_keyword and mentions_platform_or_textbook:
         return "IA_ACCESS_ISSUE"
@@ -418,7 +455,7 @@ def detect_intent(message: str) -> str:
 
     # Treat informational questions as GENERAL_FAQ only when they are not IA/platform access issues.
     if any(pattern in normalized for pattern in informational_patterns):
-        print(f"🔍 [INTENT DEBUG] Informational question detected")
+        print("[INTENT DEBUG] Informational question detected")
         return "GENERAL_FAQ"
     
     # Only trigger IA_ACCESS_ISSUE for "immediate access" if combined with troubleshooting keywords
@@ -616,6 +653,12 @@ def extract_faq_answer(context: str, message: str = "") -> str | None:
             candidates.append((score, answer))
 
         if not candidates:
+            # Last-resort fallback: plain "N. Question?\nAnswer..." format (no bracket markers).
+            # The chunk is already the closest match from FAISS; skip the first question line
+            # and return the rest as the answer.
+            lines = [ln.strip() for ln in context.splitlines() if ln.strip()]
+            if len(lines) >= 2 and re.match(r"^\d+\.\s+.+", lines[0]):
+                return "\n".join(lines[1:]).strip() or None
             return None
         candidates.sort(key=lambda item: item[0], reverse=True)
         return candidates[0][1].strip() or None
@@ -677,7 +720,12 @@ def build_instruction_fallback_from_context(context: str, platform: str | None) 
         return None
 
     text = context.replace("\ufeff", "").strip()
-    # Remove source/file prefix, if present.
+    # Remove META header if strip_meta_prefix was not called upstream.
+    if text.startswith("[META:"):
+        newline_pos = text.find("\n")
+        if newline_pos != -1:
+            text = text[newline_pos + 1:].strip()
+    # Remove legacy source/file prefix, if present.
     text = re.sub(r"^\[SOURCE_\d+\]\s*\[FILE:[^\]]+\]\s*", "", text, flags=re.IGNORECASE).strip()
 
     lines = [ln.strip() for ln in text.splitlines()]
@@ -907,10 +955,72 @@ def is_confirmed_class_access_issue(message: str) -> bool:
     return any(t in m for t in access_itself_terms)
 
 
+def is_bundle_admin_question(message: str) -> bool:
+    """
+    Detect questions about IA bundle composition (adding/missing textbooks in bundle).
+    These are Campus Store admin questions, not access troubleshooting.
+    """
+    m = (message or "").lower()
+    bundle_signals = [
+        "not in my bundle",
+        "not in the bundle",
+        "isn't in my bundle",
+        "add it to my bundle",
+        "add to my bundle",
+        "add to the bundle",
+        "add a textbook",
+        "add the textbook",
+        "missing from my bundle",
+        "missing from bundle",
+        "not included in",
+        "not part of my bundle",
+    ]
+    return any(s in m for s in bundle_signals)
+
+
+def is_opt_out_policy_question(message: str) -> bool:
+    """
+    Detect policy questions about opting out of Immediate Access or physical
+    textbook availability.  These are FAQ questions, not access troubleshooting.
+
+    IMPORTANT: "opt out" appears as button text in Blackboard ("Want to opt out?").
+    Students describing this button are reporting an ACCESS issue, not asking about
+    opt-out policy.  Exclude messages that also contain troubleshooting context.
+    """
+    m = (message or "").lower()
+
+    # If the message also contains troubleshooting signals, do NOT treat it as a
+    # policy question.  The student is describing an access problem, not asking
+    # about whether/how to opt out.
+    troubleshooting_signals = [
+        "cannot access", "can't access", "cant access",
+        "no read now", "read now button", "read now",
+        "not showing", "not there", "not appear",
+        "only shows", "only gives", "only option",
+        "green check", "checkmark", "opted in",
+        "still cannot", "still can't", "still cant",
+    ]
+    if any(t in m for t in troubleshooting_signals):
+        return False
+
+    signals = [
+        "opt out", "opt-out", "opting out", "opted out",
+        "physical textbook", "physical copy", "print textbook",
+        "buy a textbook", "purchase textbook", "purchase a textbook",
+        "buy textbook", "student store", "available in the",
+    ]
+    return any(s in m for s in signals)
+
+
 def is_confirmed_materials_issue(message: str) -> bool:
     """Detect when user confirms they're having MATERIALS (textbook/IA) issues."""
     m = (message or "").lower()
     if not m:
+        return False
+
+    # Policy/FAQ questions about opting out, physical availability, or bundle
+    # admin are not access troubleshooting issues — exclude them.
+    if is_opt_out_policy_question(message) or is_bundle_admin_question(message):
         return False
 
     materials_terms = [
@@ -937,11 +1047,49 @@ def is_cannot_find_immediate_access_query(message: str) -> bool:
         "can't find immediate access",
         "cant find immediate access",
         "cannot find immediate access",
+        "there is no immediate access tab",
+        "there's no immediate access tab",
+        "no immediate access tab",
+        "immediate access tab is missing",
+        "missing immediate access tab",
         "immediate access not showing",
         "immediate access not populating",
         "immediate access not pulling up",
     ]
     return any(t in m for t in direct_terms)
+
+
+def is_missing_read_now_button(message: str) -> bool:
+    """Detect queries where the user cannot find or see the 'Read Now' button in McGraw Hill.
+
+    Strips quotes before matching so 'read now' and "read now" both resolve to
+    the plain token 'read now', preventing false negatives from quoted forms.
+    """
+    # Strip all straight quotes so quoted forms ("read now", 'read now') unify
+    m = (message or "").lower().replace("'", "").replace('"', "")
+
+    if "read now" not in m:
+        return False
+
+    missing_signals = [
+        "do not have",
+        "dont have",
+        "don't have",
+        "no read now",
+        "not have",
+        "can't find",
+        "cant find",
+        "cannot find",
+        "don't see",
+        "dont see",
+        "do not see",
+        "missing",
+        "not there",
+        "not showing",
+        "i don't see",
+        "i dont see",
+    ]
+    return any(s in m for s in missing_signals)
 
 
 def is_out_of_scope_query(message: str) -> bool:
@@ -998,19 +1146,19 @@ def detect_platform_and_check_ambiguity(message: str) -> tuple[str, bool]:
     platforms_found = detect_platforms_from_text(message)
     corrected = resolve_platform_correction(message)
     if corrected:
-        print(f"🔍 DEBUG: Negation/correction detected - choosing {corrected}")
+        print(f"[PLATFORM DEBUG] Negation/correction detected - choosing {corrected}")
         return corrected, False
     
-    print(f"🔍 DEBUG: Platforms found = {[p.lower() for p in platforms_found]}")
+    print(f"[PLATFORM DEBUG] Platforms found = {[p.lower() for p in platforms_found]}")
     
     if len(platforms_found) > 1:
-        print(f"🔍 DEBUG: AMBIGUOUS - returning (None, True)")
+        print("[PLATFORM DEBUG] AMBIGUOUS - returning (None, True)")
         return None, True
     elif len(platforms_found) == 1:
-        print(f"🔍 DEBUG: Single platform - returning ({platforms_found[0]}, False)")
+        print(f"[PLATFORM DEBUG] Single platform - returning ({platforms_found[0]}, False)")
         return platforms_found[0], False
     else:
-        print(f"🔍 DEBUG: No platform - returning (None, False)")
+        print("[PLATFORM DEBUG] No platform - returning (None, False)")
         return None, False
 
 
@@ -1178,7 +1326,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
         # Initialize variables
         platform = None
-        course_code = None
+        # Detect platform early for direct mentions
+        platform = detect_platform_from_text(message)
         intent = None
         explicit_textbook_selection = False
         
@@ -1205,7 +1354,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             )
 
         # Handle follow-up questions about class materials
-        if is_confirmed_materials_issue(message) and not session.get("awaiting_platform_type", False) and not session.get("awaiting_class_access_clarification", False):
+        if is_confirmed_materials_issue(message) and not session.get("awaiting_platform_type", False) and not session.get("awaiting_class_access_clarification", False) and platform is None:
             # User is asking about materials, trigger platform clarification
             clarification = (
                 "I can help you with textbook access! To give you the most accurate instructions, "
@@ -1232,10 +1381,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # ===== EARLY CHECK: Ambiguous Platforms =====
         platform_temp, is_ambiguous = detect_platform_and_check_ambiguity(message)
         
-        print(f"🔍 DEBUG: is_ambiguous = {is_ambiguous}")
+        print(f"[PLATFORM DEBUG] is_ambiguous = {is_ambiguous}")
         
         if is_ambiguous:
-            print(f"🔍 DEBUG: ENTERING ambiguity block")
+            print("[PLATFORM DEBUG] ENTERING ambiguity block")
             session["history"].append({
                 "role": "user",
                 "content": message
@@ -1269,7 +1418,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         publisher, needs_clarification = is_ambiguous_platform_query(message)
 
         if needs_clarification:
-            print(f"🔍 [CLARIFICATION DEBUG] Detected ambiguous query for {publisher}")
+            print(f"[CLARIFICATION DEBUG] Detected ambiguous query for {publisher}")
             
             session["history"].append({
                 "role": "user",
@@ -1341,13 +1490,13 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         
         platform = platform_temp
 
-        print(f"🔍 [PLATFORM DEBUG EARLY] platform_temp = {platform_temp}")
-        print(f"🔍 [PLATFORM DEBUG EARLY] platform = {platform}")
+        print(f"[PLATFORM DEBUG EARLY] platform_temp = {platform_temp}")
+        print(f"[PLATFORM DEBUG EARLY] platform = {platform}")
 
 
         # Handle class access clarification state
         if session.get("awaiting_class_access_clarification", False):
-            print(f"🔍 [STATE DEBUG] Processing class access clarification response")
+            print("[STATE DEBUG] Processing class access clarification response")
             
             if is_confirmed_class_access_issue(message):
                 # User confirmed it's about logging in / accessing the class itself
@@ -1414,7 +1563,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 )
 
         if session.get("awaiting_platform_type", False):
-            print(f"🔍 [STATE DEBUG] Processing platform type clarification")
+            print("[STATE DEBUG] Processing platform type clarification")
             
             msg_lower = message.lower()
             publisher = session.get("stored_publisher")
@@ -1448,11 +1597,6 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 ]
             )
             cannot_find_ia_terms = [
-                "don't see immediate access",
-                "dont see immediate access",
-                "can't find immediate access",
-                "cant find immediate access",
-                "cannot find immediate access",
                 "i don't see immediate access",
                 "i dont see immediate access",
                 "i can't find it",
@@ -1462,7 +1606,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 "can't find it",
                 "cant find it",
             ]
-            is_cannot_find_immediate_access = any(term in msg_lower for term in cannot_find_ia_terms)
+            is_cannot_find_immediate_access = (
+                is_cannot_find_immediate_access_query(message)
+                or any(term in msg_lower for term in cannot_find_ia_terms)
+            )
 
             # Book-finding clarification branch (physical vs Immediate Access).
             if publisher == "BOOK_FORMAT":
@@ -1708,7 +1855,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             if platform is None:
                 platform = detect_platform_from_text(message)
             
-            print(f"🔍 [PLATFORM DEBUG] Detected platform: {platform}")
+            print(f"[PLATFORM DEBUG] Detected platform: {platform}")
 
             # ✨ ADD THIS ELIF BLOCK FOR COURSE CODE HANDLING
         elif session.get("awaiting_course_code", False):
@@ -1754,11 +1901,11 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 if any(pattern in last_bot_message for pattern in platform_clarification_patterns):
                     is_platform_clarification = True
                     intent = "IA_ACCESS_ISSUE"
-                    print(f"🔍 [INTENT DEBUG] Platform clarification detected - preserving IA_ACCESS_ISSUE intent")
+                    print("[INTENT DEBUG] Platform clarification detected - preserving IA_ACCESS_ISSUE intent")
             
             if not is_platform_clarification:
                 intent = detect_intent(message)  # ✨ THIS IS THE CRITICAL LINE!
-                print(f"🔍 [INTENT DEBUG] Called detect_intent(), result: {intent}")
+                print(f"[INTENT DEBUG] Called detect_intent(), result: {intent}")
             
             course_code = extract_course_code(message)
             
@@ -1819,10 +1966,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
         # NOW the intent is set!
         # 1. Intent detection happens somewhere up here
-        print(f"🔍 [INTENT DEBUG] Final intent: {intent}")
+        print(f"[INTENT DEBUG] Final intent: {intent}")
 
         # 2. Platform detection
-        print(f"🔍 [PLATFORM DEBUG] Detected platform: {platform}")
+        print(f"[PLATFORM DEBUG] Detected platform: {platform}")
 
         # Keep escalation sticky for follow-ups after user says they still cannot
         # find Immediate Access in Blackboard.
@@ -1896,7 +2043,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     collection="instructions",
                     platform=platform
                 )
-                handoff_context = handoff_retrieval.get("context", "") if handoff_retrieval else ""
+                handoff_context = strip_meta_prefix(handoff_retrieval.get("context", "") if handoff_retrieval else "")
                 handoff_reply = build_instruction_fallback_from_context(handoff_context, platform)
                 if handoff_reply and handoff_retrieval:
                     session["history"].append({
@@ -1913,6 +2060,16 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     session["stored_platform"] = platform
                     retrieval_time_ms = (time.time() - retrieval_start) * 1000
                     total_time_ms = (time.time() - request_start) * 1000
+                    handoff_pdfs = []
+                    try:
+                        handoff_pdfs = get_recommendations_for_chat(
+                            retrieval_result=handoff_retrieval,
+                            platform=platform,
+                            query=message
+                        )
+                        print(f"[PDF] Handoff recommending {len(handoff_pdfs)} PDFs")
+                    except Exception as pdf_err:
+                        print(f"[WARN] PDF recommendation failed in handoff: {pdf_err}")
                     return ChatResponse(
                         reply=handoff_reply,
                         source=handoff_retrieval.get("source_id", "INSTR_GENERAL_SOURCE_0"),
@@ -1921,10 +2078,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                         retrieval_time_ms=round(retrieval_time_ms, 2),
                         llm_time_ms=0,
                         total_time_ms=round(total_time_ms, 2),
-                        recommended_pdfs=[]
+                        recommended_pdfs=handoff_pdfs
                     )
             except Exception as e:
-                print(f"⚠️  IA platform handoff retrieval failed: {e}")
+                print(f"[WARN] IA platform handoff retrieval failed: {e}")
 
         # IA continuity guard: keep short troubleshooting follow-ups in IA flow
         # when the previous intent was IA and the platform is implied from context.
@@ -1966,15 +2123,22 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 "materials",
                 "platform",
                 "course materials",
+                "read now",
+                "read now button",
             ]
             looks_like_ia_followup = (
                 any(t in msg_lower for t in followup_issue_terms)
                 or any(t in msg_lower for t in ia_context_terms)
             )
-            if looks_like_ia_followup and not any(t in msg_lower for t in non_ia_store_terms):
+            if (
+                looks_like_ia_followup
+                and not any(t in msg_lower for t in non_ia_store_terms)
+                and not is_opt_out_policy_question(message)
+                and not is_bundle_admin_question(message)
+            ):
                 intent = "IA_ACCESS_ISSUE"
                 platform = session.get("stored_platform") or detect_recent_platform_from_history(session["history"])
-                print(f"🔍 [INTENT DEBUG] IA continuity applied: platform={platform}")
+                print(f"[INTENT DEBUG] IA continuity applied: platform={platform}")
 
         # Out-of-scope guard for obvious non-campus-store topics.
         if intent == "GENERAL_FAQ" and is_out_of_scope_query(message):
@@ -2064,6 +2228,12 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             session["stored_intent"] = "IA_ACCESS_ISSUE"
             session["ia_tab_missing_escalated"] = False
 
+        # Only re-detect platform if it was not already set by the IA continuity
+        # guard or other earlier logic.  Overwriting here would lose the session
+        # platform recovered by the continuity guard (e.g. for follow-ups like
+        # "I can't find the read now button" which have no platform name in text).
+        if platform is None:
+            platform = detect_platform_from_text(message)
         needs_platform_clarification = (
             intent == "IA_ACCESS_ISSUE" and
             platform is None and
@@ -2100,8 +2270,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             session["stored_platform"] = platform
             session["ia_tab_missing_escalated"] = False
 
-        print(f"🔍 [VAGUE QUERY DEBUG] intent={intent}, platform={platform}")
-        print(f"🔍 [VAGUE QUERY DEBUG] is_vague_query={is_vague_query}")
+        print(f"[VAGUE QUERY DEBUG] intent={intent}, platform={platform}")
+        print(f"[VAGUE QUERY DEBUG] is_vague_query={is_vague_query}")
 
         # 5. Then add to history
         session["history"].append({
@@ -2125,34 +2295,59 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             if is_greeting:
                 retrieval = None
                 context = ""
-                print("🔍 [RAG DEBUG] Greeting detected - skipping retrieval")
+                print("[RAG DEBUG] Greeting detected - skipping retrieval")
             # ✨ NEW: Skip retrieval for vague queries
             elif is_vague_query:
                 retrieval = None
                 context = ""
-                print("🔍 [RAG DEBUG] Query too vague - skipping retrieval, will ask for clarification")
+                print("[RAG DEBUG] Query too vague - skipping retrieval, will ask for clarification")
             # Skip retrieval for unsupported platforms
             elif intent == "UNSUPPORTED_PLATFORM":
                 retrieval = None
                 context = ""
             elif intent == "IA_ACCESS_ISSUE":
                 enhanced_query = enhance_query_with_conversation_context(message, session["history"])
-                
-                print(f"🔍 [RAG DEBUG] Original query: '{message}'")
-                print(f"🔍 [RAG DEBUG] Enhanced query: '{enhanced_query}'")
-                print(f"🔍 [RAG DEBUG] Platform: {platform}")
-                
+
+                # Deterministic override: "Read Now button missing" is a general
+                # Immediate Access concept — not platform-specific. Retrieve from the
+                # general instructions index so any platform finds the same guidance.
+                # Without this override, platform-specific general-access chunks win
+                # in FAISS because they contain "Read section" language.
+                _plat_raw = platform.lower().split('_')[0] if platform else None
+                # Resolve aliased platforms to their shared index key (e.g. VITALSOURCE → bedford)
+                read_now_retrieval_platform = PLATFORM_RETRIEVAL_KEY.get(
+                    platform, _plat_raw
+                ) if platform else None
+                # "Launch Courseware" (VitalSource-specific button) needs the bedford
+                # index, not the general Read Now index — keep platform as-is.
+                is_launch_courseware = "launch courseware" in message.lower()
+                if (is_missing_read_now_button(message) or session.get("read_now_missing_active")) and not is_launch_courseware:
+                    enhanced_query = (
+                        "Read Now button missing Immediate Access not available processing"
+                    )
+                    read_now_retrieval_platform = None  # use general index, not platform-specific
+                    session["read_now_missing_active"] = True
+                    print(f"[RAG DEBUG] Read Now button override applied — using general index")
+                elif is_launch_courseware:
+                    enhanced_query = "launch courseware button VitalSource instead of Read Now access eTextbook"
+                    print(f"[RAG DEBUG] Launch Courseware override applied — platform={read_now_retrieval_platform}")
+
+                print(f"[RAG DEBUG] Original query: '{message}'")
+                print(f"[RAG DEBUG] Enhanced query: '{enhanced_query}'")
+                print(f"[RAG DEBUG] Platform: {platform}")
+
                 retrieval = await retrieve_async(
                     enhanced_query,
                     collection="instructions",
-                    platform=platform
+                    platform=read_now_retrieval_platform
                 )
             elif course_code:
                 enhanced_query = enhance_query_with_conversation_context(message, session["history"])
+                _plat_key = PLATFORM_RETRIEVAL_KEY.get(platform, platform.lower().split('_')[0] if platform else None)
                 retrieval = await retrieve_async(
                     enhanced_query,
                     collection="instructions",
-                    platform=platform
+                    platform=_plat_key
                 )
             elif intent == "GENERAL_FAQ":
                 retrieval = await retrieve_async(
@@ -2163,13 +2358,13 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 retrieval = await retrieve_async(message)
 
             if retrieval and "context" in retrieval:
-                context = retrieval["context"]
+                context = strip_meta_prefix(retrieval["context"])
             
             # ✨ END RETRIEVAL TIMER
             retrieval_time_ms = (time.time() - retrieval_start) * 1000
 
         except AttributeError as e:
-            print(f"⚠️  Platform-specific index not found ({e}), falling back to general index")
+            print(f"[WARN] Platform-specific index not found ({e}), falling back to general index")
             try:
                 retrieval = await retrieve_async(
                     enhanced_query if 'enhanced_query' in locals() else message,
@@ -2177,15 +2372,15 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     platform=None
                 )
                 if retrieval and "context" in retrieval:
-                    context = retrieval["context"]
+                    context = strip_meta_prefix(retrieval["context"])
                 retrieval_time_ms = (time.time() - retrieval_start) * 1000
             except Exception as e2:
-                print(f"⚠️  Fallback retrieval also failed: {e2}")
+                print(f"[WARN] Fallback retrieval also failed: {e2}")
                 retrieval = None
                 context = ""
                 retrieval_time_ms = (time.time() - retrieval_start) * 1000
         except Exception as e:
-            print(f"⚠️  Retrieval failed: {e}")
+            print(f"[WARN] Retrieval failed: {e}")
             retrieval = None
             context = ""
             retrieval_time_ms = (time.time() - retrieval_start) * 1000
@@ -2259,7 +2454,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 source = retrieval["source_id"]
                 article_link = retrieval.get("article_link")
 
-                print(f"\n⏱️  PERFORMANCE METRICS:")
+                print("\n[PERF] PERFORMANCE METRICS:")
                 print(f"   Retrieval: {retrieval_time_ms:.2f}ms")
                 print(f"   LLM: 0.00ms (FAQ direct answer)")
                 print(f"   Total: {total_time_ms:.2f}ms\n")
@@ -2329,9 +2524,9 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                         platform=platform,
                         query=message
                     )
-                    print(f"📄 Recommending {len(recommended_pdfs)} PDFs")
+                    print(f"[PDF] Recommending {len(recommended_pdfs)} PDFs")
                 except Exception as e:
-                    print(f"⚠️  PDF recommendation failed: {e}")
+                    print(f"[WARN] PDF recommendation failed: {e}")
                     recommended_pdfs = []
 
                 total_time_ms = (time.time() - request_start) * 1000
@@ -2430,7 +2625,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         ):
             fallback_reply = build_instruction_fallback_from_context(context, platform)
             if fallback_reply:
-                print("⚠️ [LLM GUARD] Detected greeting/meta misfire; using context-derived fallback")
+                print("[WARN] [LLM GUARD] Detected greeting/meta misfire; using context-derived fallback")
                 reply = fallback_reply
         
         # ✨ END LLM TIMER
@@ -2464,13 +2659,13 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     platform=platform,
                     query=message
                 )
-                print(f"📄 Recommending {len(recommended_pdfs)} PDFs")
+                print(f"[PDF] Recommending {len(recommended_pdfs)} PDFs")
         except Exception as e:
-            print(f"⚠️  PDF recommendation failed: {e}")
+            print(f"[WARN] PDF recommendation failed: {e}")
             recommended_pdfs = []
 
         # ✨ PRINT PERFORMANCE METRICS
-        print(f"\n⏱️  PERFORMANCE METRICS:")
+        print("\n[PERF] PERFORMANCE METRICS:")
         print(f"   LLM Queue Wait: {llm_queue_wait_ms:.2f}ms")
         print(f"   Retrieval: {retrieval_time_ms:.2f}ms")
         print(f"   LLM: {llm_time_ms:.2f}ms")
@@ -2600,6 +2795,27 @@ def debug_retrieval(payload: ChatRequest):
         "source": result["source_id"],
         "score": result["score"],
         "context_preview": result["context"][:200] + "..."
+    }
+
+@app.post("/debug/retrieval-context")
+def debug_retrieval_context(payload: ChatRequest, platform: str | None = None):
+    """
+    Return the full retrieved context for inspection.
+    Optional query param: ?platform=mcgraw (or any platform key).
+    """
+    start = time.time()
+    result = retriever.retrieve(
+        payload.message,
+        collection="instructions",
+        platform=platform
+    )
+    elapsed = time.time() - start
+    return {
+        "elapsed_ms": round(elapsed * 1000, 2),
+        "source": result["source_id"],
+        "score": result["score"],
+        "metadata": result.get("metadata", {}),
+        "context": result["context"],
     }
 
 
