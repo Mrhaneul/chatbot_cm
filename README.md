@@ -2,34 +2,68 @@
 
 ## 1. Project Overview
 
-Lance is a FastAPI-based Retrieval-Augmented Generation (RAG) chatbot developed for the CBU Campus Store. Its primary purpose is to assist students with troubleshooting common inquiries, particularly regarding Immediate Access digital textbook and courseware access issues across 11 platforms: Cengage MindTap, McGraw Hill Connect, Pearson MyLab/Mastering, WileyPlus, Macmillan Achieve, Sage Vantage, Bedford Bookshelf, CliftonStrengths, SimuCase, ZyBooks, and InQuizitive.
+Lance is a FastAPI-based Retrieval-Augmented Generation (RAG) chatbot developed for the CBU Campus Store. Its primary purpose is to assist students with common support inquiries, especially around Immediate Access digital textbook and courseware access issues.
+
+Lance supports 11 publisher platforms:
+
+| Platform | Display Name |
+|---|---|
+| `cengage` | Cengage MindTap / Cengage Unlimited |
+| `mcgraw` | McGraw Hill Connect / ALEKS |
+| `pearson` | Pearson MyLab / Mastering |
+| `wiley` | WileyPlus |
+| `macmillan` | Macmillan Achieve |
+| `sage` | Sage Vantage |
+| `bedford` | Bedford / VitalSource Bookshelf |
+| `clifton` | CliftonStrengths |
+| `simucase` | SimuCase |
+| `zybooks` | ZyBooks |
+| `inquizitive` | InQuizitive (Norton) |
+
+Most responses are **deterministic**: the bot returns FAQ answers or instruction steps directly from retrieved chunks, without sending them through the LLM. The LLM (Ollama `llama3.2`) is only invoked when no high-confidence deterministic path is available.
+
+---
 
 ## 2. Project Structure
 
 ```
 .
 ├── app/
-│   ├── main.py                     # FastAPI routes and chat logic (2600+ lines)
+│   ├── main.py                     # FastAPI routes, chat logic, routing guards (~2700+ lines)
 │   ├── pdf_recommendations.py      # Firestore PDF recommendation logic
 │   ├── rag/
 │   │   ├── __init__.py
 │   │   ├── config.py               # Centralized config with env var overrides
-│   │   ├── ingest.py               # PDF-to-FAISS ingestion pipeline
+│   │   ├── ingest.py               # Chunking + FAISS ingestion pipeline
 │   │   ├── retriever.py            # FAISS retrieval + singleton get_retriever()
-│   │   ├── model.py                # SentenceTransformer singleton
+│   │   ├── model.py                # SentenceTransformer singleton (shared)
 │   │   ├── metadata.py             # Chunk metadata schemas + validation
 │   │   └── platforms.yaml          # Single source of truth for platform keywords
 │   └── utils/
 │       └── logging_config.py       # Centralized logging setup
+├── data/
+│   ├── faqs/                       # FAQ .txt source files + compiled faiss_index
+│   │   ├── campus_store_hours.txt
+│   │   ├── campus_store_location.txt
+│   │   ├── campus_store_delivery_directions.txt
+│   │   ├── campus_store_merchandise.txt
+│   │   ├── ia_overview.txt
+│   │   ├── ia_access_issue.txt
+│   │   ├── ia_opt_out_physical_textbooks.txt
+│   │   ├── ia_bundle_missing_textbook.txt
+│   │   └── textbook_refund_policy.txt
+│   └── instructions/               # Per-platform instruction .txt files + faiss indexes
 ├── tests/
 │   ├── test_ingest.py
 │   ├── test_retriever.py
-│   └── test_api_platforms.py
+│   ├── test_api_platforms.py
+│   ├── test_case012.py
+│   └── test_case_006_immediate_access_tab.py
+├── research/
+│   └── email_issue_log.md          # Case-by-case log of real student email scenarios
+├── emails/                         # Source .msg email files used for testing
 ├── scripts/
 │   └── validate_indexes.py         # CI index validation script
-├── data/
-│   ├── faqs/                       # FAQ .txt files + faiss_index
-│   └── instructions/               # Platform instruction .txt files + faiss indexes
 ├── .github/
 │   └── workflows/
 │       └── ci.yml
@@ -38,79 +72,149 @@ Lance is a FastAPI-based Retrieval-Augmented Generation (RAG) chatbot developed 
 └── README.md
 ```
 
-## 3. Environment Setup
+---
 
-It is recommended to use a Conda environment for consistent dependency management.
+## 3. Environment Setup
 
 ```bash
 conda activate campus-store-bot
-```
-
-To install Python dependencies:
-
-```bash
 pip install -r requirements.txt
 ```
 
+---
+
 ## 4. Environment Variable Overrides
 
-The chatbot's behavior and underlying RAG components can be configured using environment variables. This allows for flexible deployment and easy adjustments without modifying code.
+| Variable | Default | Description |
+|---|---|---|
+| `FAQ_DIR` | `data/faqs` | Directory of FAQ `.txt` files |
+| `INSTRUCTIONS_DIR` | `data/instructions` | Directory of instruction `.txt` files |
+| `PLATFORMS_CONFIG` | `app/rag/platforms.yaml` | Path to platform YAML config |
+| `MAX_CHUNK_TOKENS` | `400` | Max tokens per chunk before secondary split |
+| `RETRIEVAL_TOP_K` | `1` | Top-k FAISS results per query |
+| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | SentenceTransformer model for embeddings |
 
-| Variable           | Default Value                | Description                                                                  |
-| :----------------- | :--------------------------- | :--------------------------------------------------------------------------- |
-| `FAQ_DIR`          | `data/faqs`                  | Directory containing FAQ `.txt` files for ingestion.                         |
-| `INSTRUCTIONS_DIR` | `data/instructions`          | Directory containing instruction `.txt` files for ingestion.                 |
-| `PLATFORMS_CONFIG` | `app/rag/platforms.yaml`     | Path to the YAML file defining platform configurations. (Auto-resolved relative to `app/rag/config.py`.) |
-| `MAX_CHUNK_TOKENS` | `400`                        | Maximum tokens per chunk before secondary split during ingestion.            |
-| `RETRIEVAL_TOP_K`  | `1`                          | Number of top-k FAISS results to return per query.                           |
-| `EMBEDDING_MODEL`  | `all-MiniLM-L6-v2`           | Name of the SentenceTransformer model used for embeddings.                   |
-
-**Example Override (PowerShell):**
+**Example (PowerShell):**
 ```powershell
-$env:MAX_CHUNK_TOKENS="300"; $env:FAQ_DIR="custom/faqs"; uvicorn app.main:app --reload
+$env:MAX_CHUNK_TOKENS="300"; uvicorn app.main:app --reload
 ```
+
+---
 
 ## 5. Running the System
 
-Ensure Ollama is running and the `llama3.2` model is available locally before starting the API.
+1. **Start Ollama** (required for LLM fallback path):
+   ```bash
+   ollama serve
+   ollama run llama3.2
+   ```
 
-1.  **Start Ollama**:
-    ```bash
-    ollama serve
-    ollama run llama3.2
-    ```
-2.  **Start the API**:
-    ```bash
-    uvicorn app.main:app --reload
-    ```
-3.  **Rebuild FAISS Indexes**: Run this command after adding or editing any `.txt` files in `data/`.
-    ```bash
-    python -m app.rag.ingest
-    ```
+2. **Start the API**:
+   ```bash
+   uvicorn app.main:app
+   ```
+
+3. **Rebuild FAISS indexes** — run after adding or editing any `.txt` file in `data/`:
+   ```bash
+   python -m app.rag.ingest
+   ```
+
+---
 
 ## 6. Running Tests
-
-Execute the full test suite with `pytest`:
 
 ```bash
 pytest -q
 ```
 
-## 7. How to Add a New Platform
+Individual scenario tests (not part of the pytest suite — run directly):
+```bash
+python tests/test_case012.py
+```
 
-Adding support for a new academic platform is straightforward and requires no code changes:
+---
 
-1.  **Edit `app/rag/platforms.yaml`**: Add a new entry to the `platforms` list. Each entry requires a `key` (internal identifier), `display_name` (human-readable), and a list of `keywords` associated with the platform.
-2.  **Add Instruction Files**: Place `.txt` files containing step-by-step instructions for the new platform into the `data/instructions/` directory, ensuring platform keywords appear in the filenames or content for proper routing.
-3.  **Re-run Ingestion**: Execute `python -m app.rag.ingest` to rebuild all FAISS indexes, including the new platform's index.
-    *   No code changes are needed anywhere else in the application.
+## 7. Routing & Guardrail Logic
 
-## 8. Continuous Integration (CI)
+`app/main.py` uses a layered deterministic routing system before falling back to the LLM. Key logic layers, in order of evaluation:
 
-A GitHub Actions workflow is configured in `.github/workflows/ci.yml`. This workflow automatically runs the ingestion pipeline, validates all FAISS indexes, and executes unit tests on every `push` and `pull_request` to `main` without needing to manually set PYTHON_PATH.
+1. **`is_confirmed_materials_issue()`** — Early exit for clear IA access troubleshooting. Skipped for informational/definition queries (e.g. "What is Immediate Access?").
+2. **`detect_intent()`** — Classifies message as `IA_ACCESS_ISSUE`, `GENERAL_FAQ`, or falls through. Contains inline guards for opt-out policy, bundle admin, and Blackboard login queries.
+3. **IA continuity guard** — In multi-turn sessions with established IA context, follow-up messages are kept on the `IA_ACCESS_ISSUE` path. Excluded for store location, opt-out policy, bundle admin, and merchandise queries.
+4. **Special-case GENERAL_FAQ branches** — Deterministic handlers for: store hours, store location, vague campus store queries, book discovery (physical vs. IA), Blackboard/InsideCBU login.
+5. **Enhanced retrieval queries** — For certain query types, a rewritten query is sent to FAISS instead of the raw message to improve retrieval accuracy (e.g. "What is Immediate Access?" uses an overview-focused query to pin `ia_overview.txt`).
+6. **`is_missing_read_now_button()` + `is_launch_courseware()`** — Separate retrieval paths for "Read Now button missing" vs. "Launch Courseware button" scenarios, with platform-specific FAISS index routing.
 
-## 9. Key Architectural Decisions
+---
 
-*   **FAISS IndexFlatIP**: Chosen over IVF/HNSW because the current corpus (~1,000 vectors) is too small for approximate indexes to be beneficial. Revisit after several semesters of content growth.
-*   **Local LLM**: Eliminates vendor dependency and API costs. Hardware upgrade to Mac Studio M4 Max is planned to support 25-30 simultaneous users.
-*   **Single Source of Truth**: `platforms.yaml` drives both ingestion and retrieval. Adding a platform requires only a YAML edit + re-index.
+## 8. How to Add a New Platform
+
+For a standard new platform with its own unique index, no code changes are required:
+
+1. **Edit `app/rag/platforms.yaml`** — add an entry with `key`, `display_name`, and `keywords`.
+2. **Add instruction files** — place `.txt` files in `data/instructions/` with platform keywords in the filename or content.
+3. **Re-ingest**:
+   ```bash
+   python -m app.rag.ingest
+   ```
+
+**Exception — shared indexes:** If the new platform shares an existing FAISS index with another platform (e.g. VitalSource shares Bedford's index), you must also add a mapping to `PLATFORM_RETRIEVAL_KEY` in `app/main.py`:
+
+```python
+PLATFORM_RETRIEVAL_KEY: Dict[str, str] = {
+    "VITALSOURCE": "bedford",   # existing
+    "NEWPLATFORM": "existing_key",  # add here
+}
+```
+
+This tells the retriever to look up the correct index when the detected platform name differs from the FAISS index key.
+
+---
+
+## 9. How to Add a New FAQ
+
+1. Create a `.txt` file in `data/faqs/` using the format:
+   ```
+   QUESTION:
+   <question text>
+
+   ANSWER:
+   <answer text>
+   ```
+2. Re-run ingestion:
+   ```bash
+   python -m app.rag.ingest
+   ```
+3. If the FAQ covers a query type that FAISS may not retrieve correctly (due to embedding dilution on long chunks), add an enhanced query override in the `GENERAL_FAQ` retrieval block in `app/main.py`.
+
+---
+
+## 10. Email Case Log
+
+Real student email scenarios have been extracted, replayed against the chatbot, and logged in `research/email_issue_log.md`. Cases 001–013 are complete. Each entry includes the transcript, root cause, fix applied, and retest result.
+
+---
+
+## 11. How to Update Merchandise Information
+
+Merchandise query handling is fully wired. To make changes:
+
+| What you want to change | Where to make the change |
+|---|---|
+| The answer content (product types, hours, contact info) | `data/faqs/campus_store_merchandise.txt` |
+| The keywords that trigger merchandise detection (e.g. add "poster", "pennant") | `is_merchandise_query()` in `app/main.py` — add to `phrase_signals` (safe for substring match) or `word_signals` (short words that need whole-word matching to avoid false positives like "hat" inside "what") |
+| The FAISS retrieval query used to find the merchandise chunk | `app/main.py` — update the `faq_query` string inside the `if is_merchandise_query(message):` block in the `GENERAL_FAQ` retrieval section |
+
+After editing `campus_store_merchandise.txt`, always re-run ingestion to rebuild the FAISS index:
+```bash
+python -m app.rag.ingest
+```
+
+---
+
+## 12. Key Architectural Decisions
+
+- **FAISS IndexFlatIP** — Chosen over IVF/HNSW because the corpus (~1,000 vectors) is too small for approximate indexes. Revisit as content grows.
+- **Deterministic-first** — The bot avoids LLM generation wherever possible. FAQ answers are returned directly from retrieved chunks; the LLM is only used for complex multi-signal IA troubleshooting with no clean FAQ match.
+- **Local LLM** — Eliminates vendor dependency and API costs. Hardware upgrade to Mac Studio M4 Max is planned to support concurrent users.
+- **Single source of truth** — `platforms.yaml` drives both ingestion and retrieval routing. Platform additions require only a YAML edit and re-index.

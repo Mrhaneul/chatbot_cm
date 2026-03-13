@@ -882,6 +882,25 @@ def is_book_finding_discovery_query(message: str) -> bool:
     )
 
 
+def is_blackboard_location_query(message: str) -> bool:
+    """
+    Detect queries asking for the physical location/address of a web-based platform
+    (Blackboard, InsideCBU, Canvas, etc.). These should never return the campus store
+    address — they need a safe redirect response instead.
+    """
+    m = (message or "").lower()
+    web_platforms = ["blackboard", "insidecbu", "inside cbu", "canvas", "lms"]
+    location_terms = [
+        "where is", "where can i find", "where do i find",
+        "address", "located", "location", "directions to",
+        "how do i get to", "how do i find", "where do i go",
+        "website", "url", "link", "site",
+    ]
+    has_web_platform = any(p in m for p in web_platforms)
+    has_location_term = any(t in m for t in location_terms)
+    return has_web_platform and has_location_term
+
+
 def is_explicit_login_issue(message: str) -> bool:
     """
     Detect EXPLICIT account/login issues (password, can't log in, etc.).
@@ -964,6 +983,45 @@ def is_confirmed_class_access_issue(message: str) -> bool:
         "account", "password", "class access"
     ]
     return any(t in m for t in access_itself_terms)
+
+
+def is_merchandise_query(message: str) -> bool:
+    """
+    Detect questions about buying campus store merchandise, apparel, gifts, etc.
+    These should never be routed to IA/textbook troubleshooting paths.
+
+    To expand detection coverage, add keyword strings to merch_signals below.
+    Short words (hat, mug, cup, etc.) use word-boundary matching to avoid
+    false positives from substrings (e.g. "hat" inside "what").
+    To expand the answer content, edit: data/faqs/campus_store_merchandise.txt
+    """
+    m = (message or "").lower()
+
+    # Long/safe signals — substring match is fine
+    phrase_signals = [
+        "merch", "merchandise", "apparel", "clothing",
+        "hoodie", "hoodies", "shirt", "shirts", "jacket",
+        "lanyard", "keychain", "graduation regalia", "regalia",
+        "water bottle",
+        "buy cbu", "purchase cbu", "sell merchandise", "sell merch",
+        "sell apparel", "does the store sell", "does campus store sell",
+        "can i buy", "where can i buy", "where do i buy",
+    ]
+
+    # Short words — must match as whole words to avoid substring false positives
+    # e.g. "hat" inside "what", "cup" inside "occupy", "gear" inside "appear"
+    word_signals = [
+        "mug", "mugs", "cup", "cups", "bottle",
+        "hat", "hats", "gear", "gift", "gifts", "supplies",
+    ]
+
+    if any(s in m for s in phrase_signals):
+        return True
+
+    if any(re.search(rf"\b{re.escape(w)}\b", m) for w in word_signals):
+        return True
+
+    return False
 
 
 def is_ia_overview_query(message: str) -> bool:
@@ -1463,7 +1521,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # ===== EARLY CHECK: Ambiguous Platform Queries =====
         publisher, needs_clarification = is_ambiguous_platform_query(message)
 
-        if needs_clarification:
+        if needs_clarification and not is_missing_read_now_button(message):
             print(f"[CLARIFICATION DEBUG] Detected ambiguous query for {publisher}")
             
             session["history"].append({
@@ -2010,6 +2068,13 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 recommended_pdfs=[]
             )
 
+        # Force IA_ACCESS_ISSUE when a Read Now button is clearly missing and
+        # a platform has already been identified — detect_intent() can misclassify
+        # these as GENERAL_FAQ when the phrasing lacks other IA signals.
+        if is_missing_read_now_button(message) and platform is not None and intent != "IA_ACCESS_ISSUE":
+            intent = "IA_ACCESS_ISSUE"
+            print(f"[INTENT DEBUG] Read Now missing override → IA_ACCESS_ISSUE (platform={platform})")
+
         # NOW the intent is set!
         # 1. Intent detection happens somewhere up here
         print(f"[INTENT DEBUG] Final intent: {intent}")
@@ -2181,6 +2246,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 and not any(t in msg_lower for t in non_ia_store_terms)
                 and not is_opt_out_policy_question(message)
                 and not is_bundle_admin_question(message)
+                and not is_merchandise_query(message)
             ):
                 intent = "IA_ACCESS_ISSUE"
                 platform = session.get("stored_platform") or detect_recent_platform_from_history(session["history"])
@@ -2207,6 +2273,27 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 source="LLM_ONLY",
                 article_link=None,
                 confidence=0.0,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[]
+            )
+
+        if intent == "GENERAL_FAQ" and is_blackboard_location_query(message):
+            blackboard_reply = (
+                "Blackboard is a web-based learning platform — it doesn't have a physical location. "
+                "You can access it through your web browser by searching for \"CBU Blackboard\" or "
+                "through the InsideCBU portal.\n\n"
+                "If you're having trouble logging in, please contact the CBU IT Help Desk for assistance."
+            )
+            session["history"].append({"role": "user", "content": message})
+            session["history"].append({"role": "assistant", "content": blackboard_reply})
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=blackboard_reply,
+                source="GENERAL_FAQ",
+                article_link=None,
+                confidence=1.0,
                 retrieval_time_ms=0,
                 llm_time_ms=0,
                 total_time_ms=round(total_time_ms, 2),
@@ -2368,12 +2455,19 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 # index, not the general Read Now index — keep platform as-is.
                 is_launch_courseware = "launch courseware" in message.lower()
                 if (is_missing_read_now_button(message) or session.get("read_now_missing_active")) and not is_launch_courseware:
-                    enhanced_query = (
-                        "Read Now button missing Immediate Access not available processing"
-                    )
-                    read_now_retrieval_platform = None  # use general index, not platform-specific
+                    if platform == "MCGRAW_HILL":
+                        # McGraw Hill does not use a Read Now button by design.
+                        # Route to mcgraw-specific index with a targeted query.
+                        enhanced_query = "McGraw Hill Connect no Read Now button Immediate Access tab Connect link eTextbook"
+                        read_now_retrieval_platform = "mcgraw"
+                        print(f"[RAG DEBUG] Read Now override — McGraw Hill specific path")
+                    else:
+                        enhanced_query = (
+                            "Read Now button missing Immediate Access not available processing"
+                        )
+                        read_now_retrieval_platform = None  # use general index, not platform-specific
+                        print(f"[RAG DEBUG] Read Now button override applied — using general index")
                     session["read_now_missing_active"] = True
-                    print(f"[RAG DEBUG] Read Now button override applied — using general index")
                 elif is_launch_courseware:
                     enhanced_query = "launch courseware button VitalSource instead of Read Now access eTextbook"
                     print(f"[RAG DEBUG] Launch Courseware override applied — platform={read_now_retrieval_platform}")
@@ -2397,7 +2491,9 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 )
             elif intent == "GENERAL_FAQ":
                 faq_query = message
-                if is_ia_overview_query(message):
+                if is_merchandise_query(message):
+                    faq_query = "CBU Campus Store merchandise apparel clothing mugs gifts supplies"
+                elif is_ia_overview_query(message):
                     faq_query = "Immediate Access program overview day-one digital course materials student account CBU definition"
                 retrieval = await retrieve_async(
                     faq_query,
