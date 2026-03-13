@@ -8,3 +8,4 @@ numpy
 pyyaml
 faiss-cpu
 sentence-transformers
+python-dotenv

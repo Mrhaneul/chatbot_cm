@@ -28,6 +28,17 @@ from app.rag.config import cfg
 
 from app.utils.logging_config import configure_logging
 
+# Near the top with other imports
+from app.admin import admin_router
+from fastapi.responses import FileResponse
+
+# Near where other routers/routes are registered
+app.include_router(admin_router)
+
+@app.get("/admin")
+def admin_ui():
+    return FileResponse("lance_admin_ui.html")
+
 # Configure logging once at startup
 def strip_meta_prefix(context: str) -> str:
     """Remove the [META:{...}] header from a retrieved context chunk.

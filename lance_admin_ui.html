@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lance Admin — CBU Campus Store</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cbu-blue: #002554;
+    --cbu-gold: #A07400;
+    --cbu-gold-light: #C9960C;
+    --bg: #F4F6FA;
+    --surface: #FFFFFF;
+    --surface-2: #EEF1F8;
+    --border: #D0D8E8;
+    --text: #0D1B2E;
+    --text-muted: #6B7A99;
+    --success: #1A7A4A;
+    --success-bg: #E6F5ED;
+    --error: #B0180E;
+    --error-bg: #FDECEA;
+    --warn-bg: #FFF8E6;
+    --warn: #8A5C00;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+    --radius: 8px;
+    --shadow: 0 2px 12px rgba(0,37,84,0.08);
+    --shadow-lg: 0 8px 32px rgba(0,37,84,0.13);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding-bottom: 60px;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--cbu-blue);
+    padding: 0 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 60px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.18);
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .lance-badge {
+    font-family: var(--mono);
+    font-size: 18px;
+    font-weight: 600;
+    color: #fff;
+    letter-spacing: -0.5px;
+  }
+
+  .lance-badge span {
+    color: var(--cbu-gold-light);
+  }
+
+  .header-tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.45);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 3px;
+  }
+
+  .header-right {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: rgba(255,255,255,0.4);
+  }
+
+  /* ── Layout ── */
+  .page {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 40px 24px 0;
+  }
+
+  .page-title {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--cbu-blue);
+    margin-bottom: 6px;
+  }
+
+  .page-subtitle {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: 36px;
+    line-height: 1.6;
+  }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px 32px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+  }
+
+  .card-title {
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--mono);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--cbu-blue);
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--cbu-gold);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-title .step-num {
+    background: var(--cbu-blue);
+    color: #fff;
+    font-size: 11px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  /* ── Form elements ── */
+  .field {
+    margin-bottom: 20px;
+  }
+
+  label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 7px;
+  }
+
+  label .required {
+    color: var(--cbu-gold);
+    margin-left: 2px;
+  }
+
+  label .hint {
+    font-weight: 400;
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-left: 6px;
+  }
+
+  .type-selector {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .type-option {
+    position: relative;
+  }
+
+  .type-option input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+  }
+
+  .type-option label {
+    display: block;
+    padding: 14px 16px;
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    background: var(--surface-2);
+    margin: 0;
+  }
+
+  .type-option label:hover {
+    border-color: var(--cbu-blue);
+    background: #EBF0F9;
+  }
+
+  .type-option input:checked + label {
+    border-color: var(--cbu-blue);
+    background: #EBF0F9;
+    box-shadow: inset 0 0 0 1px var(--cbu-blue);
+  }
+
+  .type-label-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--cbu-blue);
+    margin-bottom: 3px;
+  }
+
+  .type-label-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.4;
+  }
+
+  /* File drop zones */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 28px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: var(--surface-2);
+    position: relative;
+  }
+
+  .drop-zone:hover, .drop-zone.dragover {
+    border-color: var(--cbu-blue);
+    background: #EBF0F9;
+  }
+
+  .drop-zone.has-file {
+    border-color: var(--success);
+    background: var(--success-bg);
+    border-style: solid;
+  }
+
+  .drop-zone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+
+  .drop-icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+    display: block;
+  }
+
+  .drop-primary {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--cbu-blue);
+    margin-bottom: 3px;
+  }
+
+  .drop-secondary {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .file-chosen {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--success);
+    font-weight: 500;
+    margin-top: 6px;
+    display: none;
+  }
+
+  .drop-zone.has-file .file-chosen { display: block; }
+  .drop-zone.has-file .drop-icon { display: none; }
+  .drop-zone.has-file .drop-primary { color: var(--success); }
+
+  /* Text input */
+  input[type="text"] {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-family: var(--sans);
+    font-size: 14px;
+    color: var(--text);
+    background: var(--surface);
+    transition: border-color 0.15s;
+    outline: none;
+  }
+
+  input[type="text"]:focus {
+    border-color: var(--cbu-blue);
+    box-shadow: 0 0 0 3px rgba(0,37,84,0.08);
+  }
+
+  input[type="text"]::placeholder { color: var(--text-muted); }
+
+  /* Optional section toggle */
+  .optional-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    margin-bottom: 16px;
+    user-select: none;
+  }
+
+  .toggle-switch {
+    width: 38px;
+    height: 22px;
+    background: var(--border);
+    border-radius: 11px;
+    position: relative;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+
+  .toggle-switch::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    background: #fff;
+    border-radius: 50%;
+    top: 3px;
+    left: 3px;
+    transition: transform 0.2s;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  }
+
+  .toggle-switch.on {
+    background: var(--cbu-blue);
+  }
+
+  .toggle-switch.on::after {
+    transform: translateX(16px);
+  }
+
+  .toggle-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  .toggle-sublabel {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .optional-fields {
+    display: none;
+    background: var(--warn-bg);
+    border: 1px solid #E8CC88;
+    border-radius: var(--radius);
+    padding: 18px 20px;
+  }
+
+  .optional-fields.visible { display: block; }
+
+  /* Submit button */
+  .submit-btn {
+    width: 100%;
+    padding: 14px;
+    background: var(--cbu-blue);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    font-family: var(--sans);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .submit-btn:hover:not(:disabled) {
+    background: #003580;
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-1px);
+  }
+
+  .submit-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  /* Progress / status */
+  .progress-card {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px 28px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+  }
+
+  .progress-card.visible { display: block; }
+
+  .progress-title {
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--mono);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--cbu-blue);
+    margin-bottom: 16px;
+  }
+
+  .step-list { list-style: none; }
+
+  .step-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--surface-2);
+    font-size: 13px;
+  }
+
+  .step-item:last-child { border-bottom: none; }
+
+  .step-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .step-icon.pending  { background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border); }
+  .step-icon.running  { background: #EBF0F9; color: var(--cbu-blue); border: 1px solid var(--cbu-blue); animation: pulse 1s infinite; }
+  .step-icon.done     { background: var(--success-bg); color: var(--success); border: 1px solid var(--success); }
+  .step-icon.skipped  { background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border); }
+  .step-icon.error    { background: var(--error-bg); color: var(--error); border: 1px solid var(--error); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .step-text { color: var(--text); line-height: 1.4; }
+  .step-text .step-detail { font-size: 11px; color: var(--text-muted); margin-top: 2px; font-family: var(--mono); }
+
+  /* Result banner */
+  .result-banner {
+    display: none;
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    font-size: 14px;
+    font-weight: 500;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .result-banner.visible { display: flex; }
+  .result-banner.success { background: var(--success-bg); border: 1px solid #7EC8A0; color: var(--success); }
+  .result-banner.error   { background: var(--error-bg);   border: 1px solid #E8A09C; color: var(--error); }
+
+  .result-icon { font-size: 20px; flex-shrink: 0; }
+  .result-body .result-title { font-weight: 600; margin-bottom: 4px; }
+  .result-body .result-detail { font-size: 12px; font-weight: 400; opacity: 0.8; line-height: 1.5; }
+
+  /* Info box */
+  .info-box {
+    background: var(--warn-bg);
+    border: 1px solid #E8CC88;
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    font-size: 12px;
+    color: var(--warn);
+    line-height: 1.6;
+    margin-bottom: 20px;
+  }
+
+  .info-box strong { font-weight: 600; }
+
+  /* Command ref */
+  .cmd-ref {
+    background: var(--cbu-blue);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    margin-bottom: 20px;
+  }
+
+  .cmd-ref-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.5);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .cmd-block {
+    background: rgba(0,0,0,0.3);
+    border-radius: 5px;
+    padding: 10px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: #A8C4F0;
+    margin-bottom: 8px;
+    line-height: 1.6;
+  }
+
+  .cmd-block:last-child { margin-bottom: 0; }
+  .cmd-comment { color: rgba(255,255,255,0.3); }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    .page { padding: 20px 16px 0; }
+    .card { padding: 20px 18px; }
+    .type-selector { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="lance-badge">Lance<span>Admin</span></div>
+    <div class="header-tag">Internal Tool</div>
+  </div>
+  <div class="header-right">CBU Campus Store</div>
+</header>
+
+<div class="page">
+
+  <h1 class="page-title">Add Content to Lance</h1>
+  <p class="page-subtitle">
+    Use this tool to add new FAQ answers or platform instructions to Lance.
+    The tool will save the file, update the search index, and optionally upload a PDF guide — all in one step.
+  </p>
+
+  <div class="info-box">
+    <strong>Before you start:</strong> Make sure the Lance backend is running on this machine
+    (<code>uvicorn app.main:app</code>) and you are accessing this page locally.
+    Changes take effect immediately after submission.
+  </div>
+
+  <!-- Result banner (shown after submit) -->
+  <div class="result-banner" id="resultBanner">
+    <div class="result-icon" id="resultIcon"></div>
+    <div class="result-body">
+      <div class="result-title" id="resultTitle"></div>
+      <div class="result-detail" id="resultDetail"></div>
+    </div>
+  </div>
+
+  <!-- Progress card (shown during submit) -->
+  <div class="progress-card" id="progressCard">
+    <div class="progress-title">Processing…</div>
+    <ul class="step-list" id="stepList"></ul>
+  </div>
+
+  <!-- Step 1: Content type -->
+  <div class="card">
+    <div class="card-title">
+      <span class="step-num">1</span>
+      Content Type
+    </div>
+    <div class="field">
+      <label>What kind of content are you adding? <span class="required">*</span></label>
+      <div class="type-selector">
+        <div class="type-option">
+          <input type="radio" name="contentType" id="typeFaq" value="faq" checked>
+          <label for="typeFaq">
+            <div class="type-label-title">📋 General FAQ</div>
+            <div class="type-label-desc">Store hours, opt-out policy, browser troubleshooting, general Immediate Access info</div>
+          </label>
+        </div>
+        <div class="type-option">
+          <input type="radio" name="contentType" id="typeInstruction" value="instruction">
+          <label for="typeInstruction">
+            <div class="type-label-title">🔧 Platform Instruction</div>
+            <div class="type-label-desc">Step-by-step access instructions for a specific publisher platform (Cengage, McGraw Hill, etc.)</div>
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: TXT file -->
+  <div class="card">
+    <div class="card-title">
+      <span class="step-num">2</span>
+      Instruction File (.txt)
+    </div>
+
+    <div class="field">
+      <label>Upload the .txt instruction file <span class="required">*</span></label>
+      <div class="drop-zone" id="txtDropZone">
+        <input type="file" id="txtFile" accept=".txt">
+        <span class="drop-icon">📄</span>
+        <div class="drop-primary">Click to choose a .txt file, or drag and drop here</div>
+        <div class="drop-secondary">Must follow the QUESTION: / ANSWER: format</div>
+        <div class="file-chosen" id="txtFileChosen"></div>
+      </div>
+    </div>
+
+    <div class="info-box" style="margin-bottom:0">
+      <strong>Required format:</strong><br>
+      Your .txt file must start with <code>QUESTION:</code> followed by <code>ANSWER:</code><br>
+      Example filename: <code>ia_browser_cache_clear.txt</code> or <code>ia_mcgraw_no_read_now.txt</code>
+    </div>
+  </div>
+
+  <!-- Step 3: PDF (optional) -->
+  <div class="card">
+    <div class="card-title">
+      <span class="step-num">3</span>
+      PDF Guide <span style="font-weight:400;color:var(--text-muted);font-size:11px;margin-left:6px;">(Optional)</span>
+    </div>
+
+    <div class="optional-toggle" id="pdfToggle" onclick="togglePdf()">
+      <div class="toggle-switch" id="pdfToggleSwitch"></div>
+      <div>
+        <div class="toggle-label">Attach a PDF guide</div>
+        <div class="toggle-sublabel">Upload a PDF to Firebase Storage so Lance can reference it</div>
+      </div>
+    </div>
+
+    <div class="optional-fields" id="pdfFields">
+      <div class="field">
+        <label>PDF file <span class="required">*</span></label>
+        <div class="drop-zone" id="pdfDropZone">
+          <input type="file" id="pdfFile" accept=".pdf">
+          <span class="drop-icon">📎</span>
+          <div class="drop-primary">Click to choose a .pdf file, or drag and drop here</div>
+          <div class="drop-secondary">.pdf files only</div>
+          <div class="file-chosen" id="pdfFileChosen"></div>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>PDF label <span class="required">*</span> <span class="hint">— shown to students</span></label>
+        <input type="text" id="pdfLabel" placeholder='e.g. "Safari Clear Cache Guide" or "McGraw Hill Connect Setup Guide"'>
+      </div>
+    </div>
+  </div>
+
+  <!-- Submit -->
+  <div class="card" style="padding:20px 28px">
+    <button class="submit-btn" id="submitBtn" onclick="handleSubmit()">
+      <span>Add Content to Lance</span>
+      <span>→</span>
+    </button>
+  </div>
+
+  <!-- CLI Reference -->
+  <div class="cmd-ref">
+    <div class="cmd-ref-title">CLI Reference — same actions via terminal</div>
+    <div class="cmd-block">
+      <span class="cmd-comment"># Add a FAQ (no PDF)</span><br>
+      python lance_add_content.py --type faq --txt data/faqs/your_file.txt
+    </div>
+    <div class="cmd-block">
+      <span class="cmd-comment"># Add a platform instruction with PDF</span><br>
+      python lance_add_content.py --type instruction \<br>
+      &nbsp;&nbsp;--txt data/instructions/your_file.txt \<br>
+      &nbsp;&nbsp;--pdf docs/your_guide.pdf \<br>
+      &nbsp;&nbsp;--pdf-label "Your Guide Title"
+    </div>
+  </div>
+
+</div><!-- /page -->
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let pdfEnabled = false;
+  let txtFileData = null;
+  let pdfFileData = null;
+
+  // ── PDF toggle ─────────────────────────────────────────────────────────────
+  function togglePdf() {
+    pdfEnabled = !pdfEnabled;
+    document.getElementById('pdfToggleSwitch').classList.toggle('on', pdfEnabled);
+    document.getElementById('pdfFields').classList.toggle('visible', pdfEnabled);
+  }
+
+  // ── File drop zones ────────────────────────────────────────────────────────
+  function setupDropZone(zoneId, inputId, chosenId, ext, onFile) {
+    const zone  = document.getElementById(zoneId);
+    const input = document.getElementById(inputId);
+    const chosen = document.getElementById(chosenId);
+
+    input.addEventListener('change', () => {
+      const file = input.files[0];
+      if (!file) return;
+      if (!file.name.toLowerCase().endsWith(ext)) {
+        alert(`Please select a ${ext} file.`);
+        input.value = '';
+        return;
+      }
+      zone.classList.add('has-file');
+      chosen.textContent = '✓ ' + file.name;
+      onFile(file);
+    });
+
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+    zone.addEventListener('drop', e => {
+      e.preventDefault();
+      zone.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (!file || !file.name.toLowerCase().endsWith(ext)) {
+        alert(`Please drop a ${ext} file.`);
+        return;
+      }
+      zone.classList.add('has-file');
+      chosen.textContent = '✓ ' + file.name;
+      onFile(file);
+    });
+  }
+
+  function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = reject;
+      r.readAsText(file);
+    });
+  }
+
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result.split(',')[1]);
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+  }
+
+  setupDropZone('txtDropZone', 'txtFile', 'txtFileChosen', '.txt', f => { txtFileData = f; });
+  setupDropZone('pdfDropZone', 'pdfFile', 'pdfFileChosen', '.pdf', f => { pdfFileData = f; });
+
+  // ── Progress steps UI ──────────────────────────────────────────────────────
+  const STEPS = [
+    { id: 'validate',  label: 'Validating .txt file format' },
+    { id: 'upload_txt',label: 'Saving file to Lance' },
+    { id: 'ingest',    label: 'Rebuilding search index (FAISS ingestion)' },
+    { id: 'upload_pdf',label: 'Uploading PDF to Firebase' },
+  ];
+
+  function buildStepList(includePdf) {
+    const list = document.getElementById('stepList');
+    list.innerHTML = '';
+    STEPS.forEach(s => {
+      if (s.id === 'upload_pdf' && !includePdf) return;
+      const li = document.createElement('li');
+      li.className = 'step-item';
+      li.id = 'step-' + s.id;
+      li.innerHTML = `
+        <div class="step-icon pending" id="icon-${s.id}">○</div>
+        <div class="step-text">
+          ${s.label}
+          <div class="step-detail" id="detail-${s.id}"></div>
+        </div>`;
+      list.appendChild(li);
+    });
+  }
+
+  function setStep(id, state, detail = '') {
+    const icon = document.getElementById('icon-' + id);
+    const det  = document.getElementById('detail-' + id);
+    if (!icon) return;
+    icon.className = 'step-icon ' + state;
+    icon.textContent = state === 'done' ? '✓' : state === 'error' ? '✗' : state === 'running' ? '…' : state === 'skipped' ? '–' : '○';
+    if (det && detail) det.textContent = detail;
+  }
+
+  function showResult(type, title, detail) {
+    const banner = document.getElementById('resultBanner');
+    banner.className = 'result-banner visible ' + type;
+    document.getElementById('resultIcon').textContent = type === 'success' ? '✅' : '❌';
+    document.getElementById('resultTitle').textContent = title;
+    document.getElementById('resultDetail').textContent = detail;
+    banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  // ── Validation (client-side) ───────────────────────────────────────────────
+  async function validateTxt(file) {
+    const text = await readFileAsText(file);
+    if (!text.includes('QUESTION:')) return 'Missing QUESTION: header in the .txt file.';
+    if (!text.includes('ANSWER:'))   return 'Missing ANSWER: header in the .txt file.';
+    return null;
+  }
+
+  // ── Submit ─────────────────────────────────────────────────────────────────
+  async function handleSubmit() {
+    // Clear previous state
+    document.getElementById('resultBanner').className = 'result-banner';
+    document.getElementById('progressCard').className = 'progress-card';
+
+    const contentType = document.querySelector('input[name="contentType"]:checked').value;
+    const includePdf  = pdfEnabled;
+
+    // Basic validation
+    if (!txtFileData) {
+      alert('Please select a .txt file before submitting.');
+      return;
+    }
+    if (includePdf && !pdfFileData) {
+      alert('Please select a PDF file, or disable the PDF option.');
+      return;
+    }
+    if (includePdf && !document.getElementById('pdfLabel').value.trim()) {
+      alert('Please enter a label for the PDF.');
+      return;
+    }
+
+    // Disable button
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span>Processing…</span>';
+
+    // Show progress
+    buildStepList(includePdf);
+    document.getElementById('progressCard').className = 'progress-card visible';
+    document.getElementById('progressCard').scrollIntoView({ behavior: 'smooth' });
+
+    try {
+      // Step 1: Validate
+      setStep('validate', 'running');
+      const validErr = await validateTxt(txtFileData);
+      if (validErr) {
+        setStep('validate', 'error', validErr);
+        showResult('error', 'Validation failed', validErr + ' Make sure your file has both QUESTION: and ANSWER: sections.');
+        btn.disabled = false;
+        btn.innerHTML = '<span>Add Content to Lance</span><span>→</span>';
+        return;
+      }
+      setStep('validate', 'done', txtFileData.name + ' — format OK');
+
+      // Step 2 + 3 + 4: Send to backend
+      setStep('upload_txt', 'running');
+
+      const formData = new FormData();
+      formData.append('content_type', contentType);
+      formData.append('txt_file', txtFileData, txtFileData.name);
+
+      if (includePdf) {
+        formData.append('pdf_file', pdfFileData, pdfFileData.name);
+        formData.append('pdf_label', document.getElementById('pdfLabel').value.trim());
+      }
+
+      const response = await fetch('/admin/add-content', {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        // Mark which step failed
+        const failedStep = result.failed_step || 'upload_txt';
+        setStep('upload_txt', failedStep === 'upload_txt' ? 'error' : 'done');
+        setStep('ingest',     failedStep === 'ingest'     ? 'error' : failedStep === 'upload_txt' ? 'pending' : 'done');
+        if (includePdf) setStep('upload_pdf', failedStep === 'upload_pdf' ? 'error' : 'pending');
+        showResult('error', 'Something went wrong', result.message || 'An unexpected error occurred. Please try again or use the CLI script.');
+      } else {
+        setStep('upload_txt', 'done', 'Saved to ' + result.txt_dest);
+        setStep('ingest', 'done', result.ingest_detail || 'Index rebuilt');
+        if (includePdf) {
+          setStep('upload_pdf', result.pdf_uploaded ? 'done' : 'skipped',
+            result.pdf_uploaded ? 'Uploaded: ' + result.pdf_url : 'Skipped (Firebase not configured)');
+        }
+        showResult(
+          'success',
+          'Content added successfully',
+          txtFileData.name + ' is now live in Lance. Students will receive answers from this content immediately.'
+        );
+        // Reset form
+        setTimeout(resetForm, 1200);
+      }
+
+    } catch (err) {
+      setStep('upload_txt', 'error', err.message);
+      showResult('error', 'Request failed', 'Could not reach the Lance backend. Make sure the server is running (uvicorn app.main:app).');
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<span>Add Content to Lance</span><span>→</span>';
+  }
+
+  function resetForm() {
+    txtFileData = null;
+    pdfFileData = null;
+    document.getElementById('txtFile').value = '';
+    document.getElementById('pdfFile').value = '';
+    document.getElementById('txtDropZone').classList.remove('has-file');
+    document.getElementById('pdfDropZone').classList.remove('has-file');
+    document.getElementById('txtFileChosen').textContent = '';
+    document.getElementById('pdfFileChosen').textContent = '';
+    document.getElementById('pdfLabel').value = '';
+  }
+</script>
+</body>
+</html>
