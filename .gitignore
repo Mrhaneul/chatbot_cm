@@ -57,7 +57,13 @@ logs/
 
 # Firebase service account
 firebase-service-account.json
-*.json
-firebase-service-account.json
 *firebase-adminsdk*.json
 serviceAccountKey.json
+app/firebase-service-account.json
+
+# Research artifacts (tracked but not runtime)
+# research/ files are intentionally tracked
+!research/benchmark_concurrency_results.json
+
+# Stray root files cleaned up in Phase 2
+# (moved to research/)

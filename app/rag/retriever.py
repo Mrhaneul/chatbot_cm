@@ -14,7 +14,6 @@ Previous changes:
 ───────────────────────────────────────────────────────────────────────────────
 """
 
-import functools
 import logging
 import re
 
@@ -228,16 +227,20 @@ class FAQRetriever:
 
 # ── Singleton accessor ────────────────────────────────────────────────────────
 
-@functools.lru_cache(maxsize=1)
-def get_retriever() -> FAQRetriever:
+_retriever_instance: FAQRetriever | None = None
+
+
+def get_retriever(force_reload: bool = False) -> FAQRetriever:
     """
     Return the application-wide FAQRetriever instance.
 
-    lru_cache guarantees __init__ runs exactly once — all FAISS indexes and
-    the embedding model stay in RAM across requests.
+    The instance is created once and reused across requests.  Pass
+    ``force_reload=True`` to discard the cached instance and rebuild it from
+    disk — use this after adding or removing content via the admin UI so the
+    new FAISS index is picked up without restarting uvicorn.
 
     FastAPI usage:
-        from retriever import get_retriever, FAQRetriever
+        from app.rag.retriever import get_retriever, FAQRetriever
         from fastapi import Depends
 
         @app.post("/chat")
@@ -247,4 +250,9 @@ def get_retriever() -> FAQRetriever:
         ):
             result = retriever.retrieve(body.query, platform=body.platform)
     """
-    return FAQRetriever()
+    global _retriever_instance
+    if _retriever_instance is None or force_reload:
+        log.info("get_retriever() — %s FAQRetriever instance.",
+                 "reloading" if force_reload and _retriever_instance else "creating")
+        _retriever_instance = FAQRetriever()
+    return _retriever_instance

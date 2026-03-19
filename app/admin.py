@@ -5,36 +5,36 @@ Lance Admin API — Content Addition Endpoint
 CBU Campus Store
 
 Provides a single POST /admin/add-content endpoint that:
-  1. Receives a .txt file and optional PDF via multipart form
+  1. Receives a .txt file and optional multiple PDFs via multipart form
   2. Validates the .txt format (QUESTION: / ANSWER: headers)
   3. Copies the .txt to the correct data/ subfolder
   4. Runs FAISS ingestion (python -m app.rag.ingest)
-  5. (Optional) Uploads the PDF to Firebase Storage + Firestore
+  5. (Optional) Uploads each PDF to Firebase Storage + Firestore with its own label
 
-Mount this router in app/main.py:
+Mount this router in app/main.py AFTER app = FastAPI(...):
 
     from app.admin import admin_router
+    from fastapi.responses import FileResponse
+
     app.include_router(admin_router)
 
-Also serve the admin UI in main.py:
-
-    from fastapi.responses import FileResponse
     @app.get("/admin")
     def admin_ui():
         return FileResponse("lance_admin_ui.html")
 
 Security note:
-    This endpoint is intended for internal/local use only.
-    If the Lance backend is ever exposed publicly, add authentication
-    before this endpoint (e.g. HTTP Basic Auth via fastapi.security).
+    Protected by HTTP Basic Auth via app/admin_auth.py.
+    Credentials are set in .env as LANCE_ADMIN_USER and LANCE_ADMIN_PASSWORD.
 """
 
+import io
+import re
 import subprocess
 import sys
 import os
-import shutil
 from pathlib import Path
 from datetime import datetime
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
@@ -43,7 +43,6 @@ from app.admin_auth import verify_admin_credentials
 # ── Config ─────────────────────────────────────────────────────────────────────
 FAQ_DIR          = Path(os.environ.get("FAQ_DIR", "data/faqs"))
 INSTRUCTIONS_DIR = Path(os.environ.get("INSTRUCTIONS_DIR", "data/instructions"))
-SERVICE_ACCOUNT  = Path("serviceAccountKey.json")
 
 # All routes on this router require valid admin credentials
 admin_router = APIRouter(
@@ -55,7 +54,7 @@ admin_router = APIRouter(
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def _validate_txt_content(content: str) -> str | None:
+def _validate_txt_content(content: str) -> Optional[str]:
     """Return an error message string if the content is invalid, else None."""
     if "QUESTION:" not in content:
         return "Missing QUESTION: header. Every file must include a QUESTION: section."
@@ -79,130 +78,243 @@ def _run_ingestion() -> str:
         [sys.executable, "-m", "app.rag.ingest"],
         capture_output=True,
         text=True,
-        timeout=120  # 2 minute timeout
+        timeout=120
     )
     if result.returncode != 0:
         raise RuntimeError(
             f"Ingestion failed (exit {result.returncode}):\n"
             f"{result.stderr or result.stdout}"
         )
-    # Return last meaningful line of output as detail
     lines = [l.strip() for l in (result.stdout or "").splitlines() if l.strip()]
     return lines[-1] if lines else "Index rebuilt successfully."
 
 
-def _upload_pdf_to_firebase(
+def _upload_single_pdf(
     pdf_bytes: bytes,
     filename: str,
     label: str,
     content_type: str
-) -> str | None:
+) -> tuple:
     """
-    Upload PDF to Firebase Storage and save metadata to Firestore.
-    Returns the public download URL, or None if Firebase is not configured.
+    Upload one PDF to Firebase Storage and save its metadata to Firestore
+    collection pdf_documents.
+
+    Returns (url, doc_id) on success, or (None, None) if Firebase is not
+    configured or the upload fails.
     """
     try:
-        import firebase_admin
-        from firebase_admin import credentials, storage, firestore as fs
+        from app.firebase_config import get_storage_bucket, get_firestore_client
     except ImportError:
-        return None  # firebase-admin not installed — silently skip
+        return None, None
 
-    if not SERVICE_ACCOUNT.exists():
-        return None  # No credentials — silently skip
+    bucket = get_storage_bucket()
+    if bucket is None:
+        return None, None
 
-    bucket_name = os.environ.get("FIREBASE_STORAGE_BUCKET", "")
-    if not bucket_name:
-        return None  # No bucket configured — silently skip
-
-    # Initialize Firebase app (only once per process)
-    if not firebase_admin._apps:
-        cred = credentials.Certificate(str(SERVICE_ACCOUNT))
-        firebase_admin.initialize_app(cred, {"storageBucket": bucket_name})
-
-    # Upload to Storage
-    bucket = storage.bucket()
     blob_path = f"pdfs/{content_type}s/{filename}"
     blob = bucket.blob(blob_path)
-
-    import io
     blob.upload_from_file(io.BytesIO(pdf_bytes), content_type="application/pdf")
     blob.make_public()
     url = blob.public_url
 
-    # Save metadata to Firestore
-    db = fs.client()
-    db.collection("pdf_guides").document().set({
-        "label":         label,
-        "filename":      filename,
-        "type":          content_type,
-        "storage_path":  blob_path,
-        "download_url":  url,
-        "uploaded_at":   datetime.utcnow().isoformat(),
+    # Derive a stable, addressable document ID from the label.
+    # e.g. "Safari Clear Cache Guide" → "safari_clear_cache_guide"
+    doc_id = re.sub(r"[^a-z0-9_]", "", label.lower().replace(" ", "_"))
+
+    now = datetime.utcnow().isoformat()
+
+    db = get_firestore_client()
+    db.collection("pdf_documents").document(doc_id).set({
+        # Core identity
+        "doc_id":       doc_id,
+        "title":        label,
+        "filename":     filename,
+        "public_url":   url,
+        "storage_path": blob_path,
+
+        # Metadata read by get_pdf_from_firestore()
+        "description":  f"Guide: {label}",
+        "platform":     "general",
+        "type":         content_type,
+        "issue_type":   "",
+        "tags":         [],
+        "priority":     "medium",
+        "pages":        0,
+        "file_size_kb": 0,
+
+        # Timestamps
+        "created_at":   now,
+        "updated_at":   now,
+        "uploaded_via": "admin_ui",
     })
 
-    return url
+    return url, doc_id
+
+
+def _write_txt_to_pdf_map(txt_filename: str, doc_ids: List[str]) -> None:
+    """
+    Upsert the txt→pdf mapping in Firestore collection txt_to_pdf_map.
+
+    Merges new doc_ids with any that already exist for this .txt file so that
+    PDFs added across multiple admin submissions are all retained.
+    """
+    if not doc_ids:
+        return
+    try:
+        from app.firebase_config import get_firestore_client
+    except ImportError:
+        return
+
+    db = get_firestore_client()
+    if db is None:
+        return
+
+    ref = db.collection("txt_to_pdf_map").document(txt_filename)
+    existing = ref.get()
+    existing_ids: List[str] = existing.to_dict().get("pdf_doc_ids", []) if existing.exists else []
+
+    # Merge, preserving order and deduplicating.
+    merged = list(dict.fromkeys(existing_ids + [d for d in doc_ids if d]))
+
+    ref.set({
+        "txt_filename": txt_filename,
+        "pdf_doc_ids":  merged,
+        "updated_at":   datetime.utcnow().isoformat(),
+    })
+
+
+def _upload_all_pdfs(
+    pdf_files: List[UploadFile],
+    pdf_labels: List[str],
+    pdf_bytes_list: List[bytes],
+    content_type: str
+) -> List[dict]:
+    """
+    Upload all PDFs. Returns a list of result dicts, one per PDF.
+    Each dict includes a 'doc_id' field with the Firestore document ID so the
+    caller can write the txt_to_pdf_map after all uploads complete.
+    Never raises — individual failures are captured per-PDF.
+    """
+    results = []
+    for pdf_file, label, pdf_bytes in zip(pdf_files, pdf_labels, pdf_bytes_list):
+        try:
+            url, doc_id = _upload_single_pdf(pdf_bytes, pdf_file.filename, label, content_type)
+            results.append({
+                "filename": pdf_file.filename,
+                "label":    label,
+                "uploaded": url is not None,
+                "url":      url,
+                "doc_id":   doc_id,
+                "error":    None,
+            })
+        except Exception as e:
+            results.append({
+                "filename": pdf_file.filename,
+                "label":    label,
+                "uploaded": False,
+                "url":      None,
+                "doc_id":   None,
+                "error":    str(e),
+            })
+    return results
 
 
 # ── Endpoint ───────────────────────────────────────────────────────────────────
 
 @admin_router.post("/add-content")
 async def add_content(
-    content_type: str       = Form(...),
-    txt_file:     UploadFile = File(...),
-    pdf_file:     UploadFile = File(None),
-    pdf_label:    str        = Form(None),
+    content_type: str             = Form(...),
+    txt_file:     UploadFile      = File(...),
+    pdf_files:    List[UploadFile] = File(default=[]),
+    pdf_labels:   List[str]        = Form(default=[]),
 ):
     """
     Add a new FAQ or instruction .txt file to Lance, rebuild the FAISS index,
-    and optionally upload a PDF guide to Firebase Storage.
+    and optionally upload one or more PDF guides to Firebase Storage.
 
     Form fields:
         content_type  — "faq" or "instruction"
         txt_file      — the .txt file (required)
-        pdf_file      — a PDF guide (optional)
-        pdf_label     — human-readable label for the PDF (required if pdf_file provided)
+        pdf_files     — one or more PDF guides (optional, repeatable)
+        pdf_labels    — one label per PDF, in the same order (required if pdf_files provided)
+
+    Each PDF must have a corresponding label at the same index position.
+    Example: pdf_files[0] ↔ pdf_labels[0], pdf_files[1] ↔ pdf_labels[1], etc.
     """
 
     # ── Validate content_type ──────────────────────────────────────────────────
     if content_type not in ("faq", "instruction"):
-        raise HTTPException(status_code=400, detail="content_type must be 'faq' or 'instruction'.")
+        raise HTTPException(
+            status_code=400,
+            detail="content_type must be 'faq' or 'instruction'."
+        )
 
-    # ── Validate .txt file extension ───────────────────────────────────────────
+    # ── Validate .txt extension ────────────────────────────────────────────────
     if not txt_file.filename.lower().endswith(".txt"):
         return JSONResponse(status_code=400, content={
-            "success": False,
+            "success":     False,
             "failed_step": "upload_txt",
-            "message": f"Expected a .txt file, received: {txt_file.filename}"
+            "message":     f"Expected a .txt file, received: {txt_file.filename}"
         })
 
-    # ── Read .txt content ──────────────────────────────────────────────────────
+    # ── Read + decode .txt ─────────────────────────────────────────────────────
     txt_bytes = await txt_file.read()
     try:
         txt_content = txt_bytes.decode("utf-8")
     except UnicodeDecodeError:
         return JSONResponse(status_code=400, content={
-            "success": False,
+            "success":     False,
             "failed_step": "upload_txt",
-            "message": "Could not read the .txt file. Make sure it is saved as UTF-8."
+            "message":     "Could not read the .txt file. Make sure it is saved as UTF-8."
         })
 
     # ── Validate content format ────────────────────────────────────────────────
     format_error = _validate_txt_content(txt_content)
     if format_error:
         return JSONResponse(status_code=400, content={
-            "success": False,
+            "success":     False,
             "failed_step": "validate",
-            "message": format_error
+            "message":     format_error
         })
+
+    # ── Validate PDF / label pairing ───────────────────────────────────────────
+    # Filter out any empty file slots the browser may send
+    active_pdfs = [f for f in pdf_files if f and f.filename]
+
+    if active_pdfs:
+        if len(pdf_labels) != len(active_pdfs):
+            return JSONResponse(status_code=400, content={
+                "success":     False,
+                "failed_step": "upload_pdf",
+                "message":     (
+                    f"Mismatch: {len(active_pdfs)} PDF(s) uploaded "
+                    f"but {len(pdf_labels)} label(s) provided. "
+                    "Every PDF must have its own label."
+                )
+            })
+        for f in active_pdfs:
+            if not f.filename.lower().endswith(".pdf"):
+                return JSONResponse(status_code=400, content={
+                    "success":     False,
+                    "failed_step": "upload_pdf",
+                    "message":     f"Expected .pdf files only. Got: {f.filename}"
+                })
+        missing_labels = [i for i, lbl in enumerate(pdf_labels) if not lbl.strip()]
+        if missing_labels:
+            return JSONResponse(status_code=400, content={
+                "success":     False,
+                "failed_step": "upload_pdf",
+                "message":     f"PDF label(s) at position(s) {missing_labels} are empty."
+            })
 
     # ── Copy .txt to data/ subfolder ───────────────────────────────────────────
     try:
         txt_dest = _copy_txt(txt_bytes, txt_file.filename, content_type)
     except Exception as e:
         return JSONResponse(status_code=500, content={
-            "success": False,
+            "success":     False,
             "failed_step": "upload_txt",
-            "message": f"Failed to save file: {str(e)}"
+            "message":     f"Failed to save file: {str(e)}"
         })
 
     # ── Run FAISS ingestion ────────────────────────────────────────────────────
@@ -210,53 +322,148 @@ async def add_content(
         ingest_detail = _run_ingestion()
     except Exception as e:
         return JSONResponse(status_code=500, content={
-            "success": False,
+            "success":     False,
             "failed_step": "ingest",
-            "message": f"Ingestion failed: {str(e)}"
+            "message":     f"Ingestion failed: {str(e)}"
         })
 
-    # ── Upload PDF (optional) ──────────────────────────────────────────────────
-    pdf_url      = None
-    pdf_uploaded = False
+    # ── Upload PDFs (optional) ─────────────────────────────────────────────────
+    pdf_results = []
+    if active_pdfs:
+        pdf_bytes_list = [await f.read() for f in active_pdfs]
+        pdf_results = _upload_all_pdfs(
+            active_pdfs, pdf_labels, pdf_bytes_list, content_type
+        )
 
-    if pdf_file and pdf_file.filename:
-        if not pdf_file.filename.lower().endswith(".pdf"):
-            return JSONResponse(status_code=400, content={
-                "success": False,
-                "failed_step": "upload_pdf",
-                "message": f"Expected a .pdf file, received: {pdf_file.filename}"
-            })
-        if not pdf_label:
-            return JSONResponse(status_code=400, content={
-                "success": False,
-                "failed_step": "upload_pdf",
-                "message": "pdf_label is required when uploading a PDF."
-            })
+    pdfs_uploaded  = sum(1 for r in pdf_results if r["uploaded"])
+    pdfs_failed    = sum(1 for r in pdf_results if not r["uploaded"] and r["error"])
+    pdfs_skipped   = sum(1 for r in pdf_results if not r["uploaded"] and not r["error"])
 
-        pdf_bytes = await pdf_file.read()
-
+    # ── Write txt→pdf mapping in Firestore (if any PDFs were uploaded) ─────────
+    if pdfs_uploaded > 0:
+        successful_doc_ids = [r["doc_id"] for r in pdf_results if r.get("doc_id")]
         try:
-            pdf_url = _upload_pdf_to_firebase(
-                pdf_bytes, pdf_file.filename, pdf_label, content_type
-            )
-            pdf_uploaded = pdf_url is not None
+            _write_txt_to_pdf_map(txt_file.filename, successful_doc_ids)
         except Exception as e:
-            # PDF upload failure is non-fatal — .txt and ingestion already succeeded
-            return JSONResponse(content={
-                "success": True,
-                "txt_dest":      str(txt_dest),
-                "ingest_detail": ingest_detail,
-                "pdf_uploaded":  False,
-                "pdf_url":       None,
-                "message":       f"Content added and index rebuilt, but PDF upload failed: {str(e)}"
-            })
+            print(f"[WARN] txt_to_pdf_map write failed: {e}")
 
     # ── Success ────────────────────────────────────────────────────────────────
+    message = "Content added successfully."
+    if pdfs_failed:
+        message += f" Warning: {pdfs_failed} PDF(s) failed to upload — see pdf_results for details."
+    if pdfs_skipped:
+        message += f" Note: {pdfs_skipped} PDF(s) skipped (Firebase not configured)."
+
     return JSONResponse(content={
-        "success":       True,
-        "txt_dest":      str(txt_dest),
-        "ingest_detail": ingest_detail,
-        "pdf_uploaded":  pdf_uploaded,
-        "pdf_url":       pdf_url,
-        "message":       "Content added successfully."
+        "success":        True,
+        "txt_dest":       str(txt_dest),
+        "ingest_detail":  ingest_detail,
+        "pdf_results":    pdf_results,
+        "pdfs_uploaded":  pdfs_uploaded,
+        "message":        message,
     })
+
+
+# ── List content ────────────────────────────────────────────────────────────────
+
+@admin_router.get("/list-content")
+async def list_content():
+    """Return sorted lists of all .txt files in data/faqs/ and data/instructions/."""
+    faqs         = sorted([f.name for f in FAQ_DIR.glob("*.txt")])         if FAQ_DIR.exists()         else []
+    instructions = sorted([f.name for f in INSTRUCTIONS_DIR.glob("*.txt")]) if INSTRUCTIONS_DIR.exists() else []
+    return JSONResponse(content={"faqs": faqs, "instructions": instructions})
+
+
+# ── Remove content ──────────────────────────────────────────────────────────────
+
+@admin_router.delete("/remove-content")
+async def remove_content(
+    filename:     str = None,
+    content_type: str = None,
+):
+    """
+    Remove a .txt file from Lance, rebuild the FAISS index, and clean up
+    its Firestore txt_to_pdf_map entry.
+
+    Pass filename and content_type as query parameters:
+        DELETE /admin/remove-content?filename=ia_example.txt&content_type=faq
+    """
+    # ── Validate ───────────────────────────────────────────────────────────────
+    if not filename or not content_type:
+        return JSONResponse(status_code=400, content={
+            "success": False,
+            "message": "Both 'filename' and 'content_type' query parameters are required."
+        })
+
+    if content_type not in ("faq", "instruction"):
+        return JSONResponse(status_code=400, content={
+            "success": False,
+            "message": "content_type must be 'faq' or 'instruction'."
+        })
+
+    target_dir  = FAQ_DIR if content_type == "faq" else INSTRUCTIONS_DIR
+    target_file = target_dir / filename
+
+    if not target_file.exists():
+        return JSONResponse(status_code=404, content={
+            "success": False,
+            "message": f"'{filename}' not found in the {content_type} directory."
+        })
+
+    # ── Delete file from disk ──────────────────────────────────────────────────
+    target_file.unlink()
+
+    # ── Rebuild FAISS index ────────────────────────────────────────────────────
+    try:
+        ingest_detail = _run_ingestion()
+    except Exception as e:
+        return JSONResponse(status_code=500, content={
+            "success": False,
+            "message": f"File deleted but ingestion failed: {str(e)}"
+        })
+
+    # ── Remove txt_to_pdf_map entry from Firestore (non-fatal) ────────────────
+    firestore_map_deleted = False
+    try:
+        from app.firebase_config import get_firestore_client
+        db = get_firestore_client()
+        if db:
+            ref = db.collection("txt_to_pdf_map").document(filename)
+            if ref.get().exists:
+                ref.delete()
+                firestore_map_deleted = True
+    except Exception as e:
+        print(f"[WARN] Firestore txt_to_pdf_map delete failed: {e}")
+
+    return JSONResponse(content={
+        "success":               True,
+        "filename":              filename,
+        "content_type":          content_type,
+        "firestore_map_deleted": firestore_map_deleted,
+        "ingest_detail":         ingest_detail,
+        "message":               f"'{filename}' removed successfully.",
+    })
+
+
+# ── Hot-reload index ─────────────────────────────────────────────────────────
+
+@admin_router.post("/reload-index")
+async def reload_index():
+    """
+    Hot-reload the FAISS index into the running process without restarting uvicorn.
+    Call this after adding or removing content to make changes live immediately.
+    """
+    try:
+        from app.rag.retriever import get_retriever
+        get_retriever(force_reload=True)
+        return JSONResponse(content={
+            "success":     True,
+            "message":     "FAISS index reloaded successfully. New content is now live.",
+            "reloaded_at": datetime.utcnow().isoformat(),
+        })
+    except Exception as e:
+        return JSONResponse(status_code=500, content={
+            "success": False,
+            "message": f"Hot-reload failed: {str(e)}. Use the Restart Server button as a fallback.",
+        })
+

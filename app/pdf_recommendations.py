@@ -258,22 +258,49 @@ def get_pdf_recommendations(
     """
     recommendations = []
     seen_doc_ids = set()
-    
-    # ===== PRIMARY RECOMMENDATION (from retrieval) =====
+
+    # ===== PRIMARY RECOMMENDATIONS (from retrieval) =====
     if retrieval_result and retrieval_result.get("context"):
         source_filename = extract_source_filename(retrieval_result["context"])
-        
-        if source_filename and source_filename in TXT_TO_PDF_MAP:
-            doc_id = TXT_TO_PDF_MAP[source_filename]
-            pdf_data = get_pdf_from_firestore(doc_id)
-            
-            if pdf_data:
-                pdf_data["relevance"] = "Best Match"
-                pdf_data["score"] = retrieval_result.get("score", 0.0)
-                recommendations.append(pdf_data)
-                seen_doc_ids.add(doc_id)
-                
-                print(f"✅ Primary recommendation: {pdf_data['title']}")
+
+        if source_filename:
+            retrieval_score = retrieval_result.get("score", 0.0)
+            found_in_firestore = False
+
+            # 1. Dynamic Firestore mapping (set by admin UI uploads).
+            #    Supports multiple PDFs per .txt file.
+            try:
+                map_doc = db.collection("txt_to_pdf_map").document(source_filename).get()
+                if map_doc.exists:
+                    found_in_firestore = True
+                    pdf_doc_ids = map_doc.to_dict().get("pdf_doc_ids", [])
+                    for i, doc_id in enumerate(pdf_doc_ids):
+                        if not doc_id or doc_id in seen_doc_ids:
+                            continue
+                        if len(recommendations) >= max_recommendations:
+                            break
+                        pdf_data = get_pdf_from_firestore(doc_id)
+                        if pdf_data:
+                            pdf_data["relevance"] = "Best Match" if i == 0 else "Related"
+                            pdf_data["score"] = retrieval_score if i == 0 else 0.0
+                            recommendations.append(pdf_data)
+                            seen_doc_ids.add(doc_id)
+                            print(f"✅ Primary recommendation (Firestore map): {pdf_data['title']}")
+            except Exception as e:
+                print(f"[WARN] txt_to_pdf_map Firestore lookup failed: {e}")
+
+            # 2. Fall back to hardcoded TXT_TO_PDF_MAP for legacy entries that
+            #    predate the admin UI (only used when Firestore has no mapping).
+            if not found_in_firestore and source_filename in TXT_TO_PDF_MAP:
+                doc_id = TXT_TO_PDF_MAP[source_filename]
+                if doc_id not in seen_doc_ids:
+                    pdf_data = get_pdf_from_firestore(doc_id)
+                    if pdf_data:
+                        pdf_data["relevance"] = "Best Match"
+                        pdf_data["score"] = retrieval_score
+                        recommendations.append(pdf_data)
+                        seen_doc_ids.add(doc_id)
+                        print(f"✅ Primary recommendation (hardcoded map): {pdf_data['title']}")
     
     # ===== SECONDARY RECOMMENDATIONS (platform-specific) =====
     if platform and len(recommendations) < max_recommendations:
@@ -302,11 +329,24 @@ def get_pdf_recommendations(
         # Check if query mentions cookies or browser issues
         if retrieval_result and retrieval_result.get("context"):
             context_lower = retrieval_result["context"].lower()
-            
+
+            # Browser cache clearing ("0 Courses, 0 Materials" / no content available).
+            # Chrome guide is already the TXT_TO_PDF_MAP primary; add Safari and iPad Chrome.
+            if any(keyword in context_lower for keyword in ["cache", "clear browser", "clear history", "0 courses", "no content"]):
+                cache_pdfs = ["safari_clear_cache_guide", "ipad_chrome_clear_cache_guide", "chrome_clear_cache_guide"]
+                for doc_id in cache_pdfs:
+                    if doc_id not in seen_doc_ids and len(recommendations) < max_recommendations:
+                        pdf_data = get_pdf_from_firestore(doc_id)
+                        if pdf_data:
+                            pdf_data["relevance"] = "Relevant"
+                            pdf_data["score"] = 0.0
+                            recommendations.append(pdf_data)
+                            seen_doc_ids.add(doc_id)
+
             if any(keyword in context_lower for keyword in ["cookie", "browser", "chrome", "safari"]):
                 # Add cookie troubleshooting PDFs
                 cookie_pdfs = ["cookies_chrome", "cookies_safari", "cookies_ipad"]
-                
+
                 for doc_id in cookie_pdfs:
                     if doc_id not in seen_doc_ids and len(recommendations) < max_recommendations:
                         pdf_data = get_pdf_from_firestore(doc_id)

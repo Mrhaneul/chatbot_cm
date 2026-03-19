@@ -1,5 +1,7 @@
+from dotenv import load_dotenv
+load_dotenv()
 from email.mime import message
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.llm.llama_client import LlamaClient
 # from app.rag.retriever import FAQRetriever  # Deprecated import
@@ -28,16 +30,10 @@ from app.rag.config import cfg
 
 from app.utils.logging_config import configure_logging
 
-# Near the top with other imports
 from app.admin import admin_router
 from fastapi.responses import FileResponse
-
-# Near where other routers/routes are registered
-app.include_router(admin_router)
-
-@app.get("/admin")
-def admin_ui():
-    return FileResponse("lance_admin_ui.html")
+from app.admin_auth import verify_admin_credentials
+from fastapi import Depends
 
 # Configure logging once at startup
 def strip_meta_prefix(context: str) -> str:
@@ -52,6 +48,25 @@ def strip_meta_prefix(context: str) -> str:
         if newline_pos != -1:
             return cleaned[newline_pos + 1:].strip()
     return cleaned
+
+
+def extract_step_by_step(content: str) -> str:
+    """
+    Extract just the numbered step-by-step resolution from an instruction
+    file chunk, discarding boilerplate sections (PROBLEM, APPLIES TO,
+    BLACKBOARD LOCATION, EXPECTED RESULT, IF ISSUE PERSISTS).
+
+    Falls back to returning the full content if no STEP-BY-STEP section
+    is found (so the response is never empty).
+    """
+    match = re.search(
+        r"STEP-BY-STEP RESOLUTION:\s*\n(.*?)(?=\nEXPECTED RESULT:|\nIF ISSUE PERSISTS:|$)",
+        content,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if match:
+        return match.group(1).strip()
+    return content
 
 
 
@@ -72,6 +87,12 @@ class NgrokMiddleware(BaseHTTPMiddleware):
         return response
 
 app.add_middleware(NgrokMiddleware)
+
+app.include_router(admin_router)
+
+@app.get("/admin")
+def admin_ui(username: str = Depends(verify_admin_credentials)):
+    return FileResponse("lance_admin_ui.html")
 
 app.add_middleware(
     CORSMiddleware,
@@ -152,6 +173,38 @@ PLATFORM_DISPLAY_NAMES: Dict[str, str] = {
     "STUKENT": "Stukent",
     "VITALSOURCE": "VitalSource",
     "INQUIZITIVE": "InQuizitive",
+}
+
+# ── Unrecognized-platform publisher list ──────────────────────────────────────
+PUBLISHER_LIST_TEXT = (
+    "1. Bedford Bookshelf\n"
+    "2. Pearson (MyLab, Modified, Mastering)\n"
+    "3. Cengage (MindTap, CNowV2)\n"
+    "4. Norton (InQuizitive)\n"
+    "5. McGraw Hill (Connect)\n"
+    "6. Macmillan / Mac Higher (Achieve)\n"
+    "7. Stukent\n"
+    "8. SimuCase\n"
+    "9. Sage\n"
+    "10. VitalSource\n"
+    "11. WileyPlus\n"
+    "12. ZyBooks (ZyLabs)"
+)
+
+# Maps numeric answers (1–12) to platform keys recognised by detect_platform_from_text
+PUBLISHER_LIST_MAP: Dict[str, str] = {
+    "1": "bedford",
+    "2": "pearson",
+    "3": "cengage",
+    "4": "inquizitive",
+    "5": "mcgraw",
+    "6": "macmillan",
+    "7": "stukent",
+    "8": "simucase",
+    "9": "sage",
+    "10": "vitalsource",
+    "11": "wiley",
+    "12": "zybooks",
 }
 
 # Merge dynamic registry entries (added by add_instruction.py)
@@ -778,13 +831,14 @@ def classify_platform_type_reply(message: str) -> str:
     Negation-aware so phrases like "textbook not platform" are handled correctly.
     """
     m = message.lower()
-    textbook_terms = ["textbook", "ebook", "e-book", "etext", "e-text", "etextbook", "e-textbook", "book"]
+    textbook_terms = ["textbook", "ebook", "e-book", "etext", "e-text", "etextbook", "e-textbook"]
     courseware_terms = [
         "platform", "courseware", "mindtap", "connect", "mylab",
         "mastering", "inquizitive", "inquisitive"
     ]
 
-    has_textbook = any(t in m for t in textbook_terms)
+    # Use word boundary for bare "book"/"books" to avoid false matches on "QuickBooks" etc.
+    has_textbook = any(t in m for t in textbook_terms) or bool(re.search(r"\bbooks?\b", m))
     has_courseware = any(t in m for t in courseware_terms)
     has_not = "not" in m
 
@@ -1049,6 +1103,76 @@ def is_ia_overview_query(message: str) -> bool:
     return any(s in m for s in overview_signals)
 
 
+def is_browser_cache_issue(message: str) -> bool:
+    """
+    Detect browser/session cache issues that show '0 Courses, 0 Materials' or
+    'no content available' in Immediate Access. These are device-level issues, not
+    platform-specific, and should route to the FAQ cache-clearing instructions.
+    """
+    m = (message or "").lower()
+    cache_symptoms = [
+        "0 courses",
+        "0 materials",
+        "no content available",
+        "you currently have no content",
+        "currently have no content",
+        "no courses available",
+        "no materials available",
+        "content not loading",
+        "materials not loading",
+        "nothing shows up",
+        "nothing is showing",
+        "nothing showing up",
+        "shows nothing",
+        "page is blank",
+        "blank page",
+        "blank screen",
+        "empty page",
+        "it's blank",
+        "its blank",
+        "currently don't have content",
+        "don't have content available",
+        "no content",
+        "can't see my content",
+        "cannot see my content",
+        "content is not available",
+        "not showing my content",
+        "it says no content",
+    ]
+    ia_terms = [
+        "immediate access",
+        "blackboard",
+        "ia tab",
+        "access tab",
+        "my courses",
+        "my materials",
+        "the tab",
+        "my ia",
+        "immediate access tab",
+        "the link",
+        "blackboard link",
+        # Browser/device names in combination with a cache symptom confirm web-based IA context
+        "safari",
+        "firefox",
+        "chrome",
+        "ipad",
+        "tablet",
+    ]
+    # These are verbatim IA/VitalSource error strings — IA context is inherent,
+    # no second signal needed.
+    strong_ia_symptoms = [
+        "you currently have no content available",
+        "currently have no content available",
+        "you currently have no content",
+    ]
+    if any(s in m for s in strong_ia_symptoms):
+        return True
+
+    has_symptom = any(s in m for s in cache_symptoms)
+    has_ia_context = any(t in m for t in ia_terms)
+    return has_symptom and has_ia_context
+
+
 def is_bundle_admin_question(message: str) -> bool:
     """
     Detect questions about IA bundle composition (adding/missing textbooks in bundle).
@@ -1128,12 +1252,32 @@ def is_confirmed_materials_issue(message: str) -> bool:
         return False
 
     materials_terms = [
-        "material", "materials", "textbook", "textbooks", "book", "books",
+        "material", "materials", "textbook", "textbooks",
         "ebook", "ebooks", "immediate access", "platform", "cengage",
         "mcgraw", "pearson", "vitalsource", "homework", "assignment",
         "digital", "content",
     ]
-    return any(t in m for t in materials_terms)
+    # Use word boundary for bare "book"/"books" to avoid false matches on "QuickBooks" etc.
+    return any(t in m for t in materials_terms) or bool(re.search(r"\bbooks?\b", m))
+
+
+def extract_likely_platform_name(message: str) -> str:
+    """
+    Best-effort extraction of what looks like a platform name from a message.
+    Used only for display in the 'I don't recognize X' response — does not need
+    to be perfect.
+    """
+    _stop = {
+        "i", "my", "the", "a", "an", "is", "it", "its", "use", "using", "am",
+        "have", "has", "with", "for", "to", "of", "in", "on", "at", "by", "im",
+        "its", "its", "that", "this", "and", "or", "but", "so", "if", "do",
+        "textbook", "platform", "publisher", "app", "software", "program",
+        "course", "class", "access", "through", "via", "need", "help", "trying",
+        "get", "got", "can", "cant", "cannot", "see", "find", "open", "work",
+    }
+    words = message.strip().split()
+    candidates = [w.strip(".,!?\"'") for w in words if w.lower().strip(".,!?\"'") not in _stop and len(w) > 1]
+    return candidates[0] if candidates else message.strip()
 
 
 # Keep legacy function for backward compatibility
@@ -1458,7 +1602,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             )
 
         # Handle follow-up questions about class materials
-        if is_confirmed_materials_issue(message) and not session.get("awaiting_platform_type", False) and not session.get("awaiting_class_access_clarification", False) and platform is None:
+        if is_confirmed_materials_issue(message) and not is_browser_cache_issue(message) and not session.get("awaiting_platform_type", False) and not session.get("awaiting_publisher_list_response", False) and not session.get("awaiting_class_access_clarification", False) and platform is None:
             # User is asking about materials, trigger platform clarification
             clarification = (
                 "I can help you with textbook access! To give you the most accurate instructions, "
@@ -1471,6 +1615,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             session["awaiting_platform_type"] = True
             session["stored_publisher"] = "TEXTBOOK_GENERIC"
             session["stored_intent"] = "IA_ACCESS_ISSUE"
+            session["platform_clarification_count"] = session.get("platform_clarification_count", 0) + 1
             total_time = (time.time() - request_start) * 1000
             return ChatResponse(
                 reply=clarification,
@@ -1636,6 +1781,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 session["awaiting_platform_type"] = True
                 session["stored_publisher"] = "TEXTBOOK_GENERIC"
                 session["stored_intent"] = "IA_ACCESS_ISSUE"
+                session["platform_clarification_count"] = session.get("platform_clarification_count", 0) + 1
                 total_time = (time.time() - request_start) * 1000
                 return ChatResponse(
                     reply=clarification,
@@ -1666,9 +1812,107 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     llm_time_ms=0
                 )
 
+        # ── Publisher list response handler ───────────────────────────────────────
+        # Fires when the student is responding to the numbered publisher list.
+        if session.get("awaiting_publisher_list_response", False):
+            print("[STATE DEBUG] Processing publisher list response")
+            msg_lower = message.lower().strip()
+            unrecognized_name = session.get("unrecognized_platform_name", "your platform")
+
+            # 3a — Student picked a number
+            numeric_answer = msg_lower.strip(".,!? ")
+            platform_from_number = PUBLISHER_LIST_MAP.get(numeric_answer)
+
+            # 3b — Student named a publisher (detect via existing aliases)
+            platform_from_text = detect_platform_from_text(msg_lower)
+
+            # 3c — Student doesn't know / not on the list
+            not_on_list_phrases = [
+                "not on the list", "not on list", "don't know", "dont know",
+                "not sure", "none of these", "none of them", "not listed",
+                "other", "different publisher", "not listed", "no",
+                "nope", "i'm not sure", "im not sure", "no idea", "idk",
+            ]
+            is_not_on_list = any(p in msg_lower for p in not_on_list_phrases)
+
+            resolved_platform = platform_from_number or platform_from_text
+
+            if resolved_platform and not is_not_on_list:
+                # Routes 3a / 3b — valid platform identified, fall through to normal IA flow
+                platform = resolved_platform
+                intent = "IA_ACCESS_ISSUE"
+                session["awaiting_publisher_list_response"] = False
+                session.pop("platform_clarification_count", None)
+                session["awaiting_platform_type"] = False
+                session["stored_publisher"] = None
+                session["stored_intent"] = "IA_ACCESS_ISSUE"
+                session["stored_platform"] = platform
+                print(f"[PUBLISHER LIST] Resolved platform: {platform}")
+                # Fall through — let the normal retrieval path handle it below.
+
+            else:
+                # Route 3c — general IA fallback with contact prompt
+                retrieval_start = time.time()
+                general_retrieval = await retrieve_async(
+                    "general Immediate Access etextbook access steps Blackboard opted in cannot access",
+                    collection="instructions"
+                )
+                retrieval_ms = (time.time() - retrieval_start) * 1000
+
+                if general_retrieval and general_retrieval.get("context"):
+                    raw_context = strip_meta_prefix(general_retrieval["context"])
+                    prefix = (
+                        f"We don't have specific instructions for {unrecognized_name} through "
+                        f"Immediate Access, but here are the general steps to access your materials:\n\n"
+                    )
+                    suffix = (
+                        "\n\nIf you continue to have trouble accessing your materials, please contact us "
+                        "directly at ImmediateAccess@calbaptist.edu and we'll be happy to help."
+                    )
+                    reply = prefix + raw_context + suffix
+                else:
+                    reply = (
+                        f"We don't have specific instructions for {unrecognized_name} through "
+                        f"Immediate Access. For general access, log in to Blackboard, open your course, "
+                        f"and look for the Immediate Access tab on the left navigation panel. "
+                        f"If you continue to have trouble, please contact us at "
+                        f"ImmediateAccess@calbaptist.edu."
+                    )
+
+                route3c_pdfs = []
+                try:
+                    route3c_pdfs = get_recommendations_for_chat(
+                        retrieval_result=general_retrieval,
+                        platform=None,
+                        query=message
+                    )
+                except Exception:
+                    pass
+
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": reply})
+                session["awaiting_publisher_list_response"] = False
+                session.pop("platform_clarification_count", None)
+                session.pop("unrecognized_platform_name", None)
+                session["awaiting_platform_type"] = False
+                session["stored_publisher"] = None
+                session["stored_intent"] = None
+
+                total_time = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=reply,
+                    source=general_retrieval.get("source_id", "FAQ_SOURCE_GENERAL") if general_retrieval else "FAQ_SOURCE_GENERAL",
+                    article_link=None,
+                    confidence=general_retrieval.get("score", 0.0) if general_retrieval else 0.0,
+                    total_time_ms=round(total_time, 2),
+                    retrieval_time_ms=round(retrieval_ms, 2),
+                    llm_time_ms=0,
+                    recommended_pdfs=route3c_pdfs
+                )
+
         if session.get("awaiting_platform_type", False):
             print("[STATE DEBUG] Processing platform type clarification")
-            
+
             msg_lower = message.lower()
             publisher = session.get("stored_publisher")
             original_query = session.get("stored_original_query", "")  # ✨ Get original query
@@ -1923,6 +2167,38 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 # continue with general instructions retrieval.
                 if platform_type_reply == "TEXTBOOK_EBOOK":
                     print("🔍 [STATE DEBUG] Textbook/Ebook clarification detected; using general instructions")
+                elif session.get("platform_clarification_count", 0) >= 1 and not is_low_info_response:
+                    # Student gave a response that didn't match any known platform after
+                    # we already asked once — show the numbered publisher list.
+                    unrecognized_name = extract_likely_platform_name(message)
+                    session["unrecognized_platform_name"] = unrecognized_name
+                    print(f"[PUBLISHER LIST] Unrecognized platform: {unrecognized_name!r}")
+
+                    publisher_list_reply = (
+                        f"I don't recognize \"{unrecognized_name}\" as one of our supported platforms.\n\n"
+                        f"Is your textbook from one of these publishers?\n\n"
+                        f"{PUBLISHER_LIST_TEXT}\n\n"
+                        f"You can reply with the number or the name. If your publisher is not on this list, "
+                        f"or you're not sure, just let me know and I'll share the general steps to access "
+                        f"your Immediate Access materials."
+                    )
+                    session["history"].append({"role": "user", "content": message})
+                    session["history"].append({"role": "assistant", "content": publisher_list_reply})
+                    session["awaiting_publisher_list_response"] = True
+                    session["awaiting_platform_type"] = False
+                    session["platform_clarification_count"] = session.get("platform_clarification_count", 0) + 1
+
+                    total_time = (time.time() - request_start) * 1000
+                    return ChatResponse(
+                        reply=publisher_list_reply,
+                        source="CLARIFICATION_NEEDED",
+                        article_link=None,
+                        confidence=0.0,
+                        total_time_ms=round(total_time, 2),
+                        retrieval_time_ms=0,
+                        llm_time_ms=0,
+                        recommended_pdfs=[]
+                    )
                 else:
                     followup_reply = (
                         "I still need the platform name to give the correct steps. "
@@ -1954,6 +2230,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 session["awaiting_platform_type"] = False
                 session["stored_publisher"] = None
                 session["stored_original_query"] = None  # ✨ Clear stored query
+                session.pop("platform_clarification_count", None)
+                session.pop("unrecognized_platform_name", None)
             course_code = extract_course_code(message)
             
             if platform is None:
@@ -2000,6 +2278,9 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     "norton textbook or norton inquizitive",
                     "which platform do you see in blackboard",
                     "platform name on your blackboard course page under the immediate access tab",
+                    # Publisher list — numeric/short answers must not reset intent to GENERAL_FAQ
+                    "is your textbook from one of these publishers",
+                    "you can reply with the number or the name",
                 ]
                 
                 if any(pattern in last_bot_message for pattern in platform_clarification_patterns):
@@ -2074,6 +2355,13 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         if is_missing_read_now_button(message) and platform is not None and intent != "IA_ACCESS_ISSUE":
             intent = "IA_ACCESS_ISSUE"
             print(f"[INTENT DEBUG] Read Now missing override → IA_ACCESS_ISSUE (platform={platform})")
+
+        # Browser/session cache issues ("0 Courses, 0 Materials", "no content available")
+        # are device-level problems, not platform-specific. Force GENERAL_FAQ so they
+        # route to the FAQ cache-clearing instructions rather than platform clarification.
+        if is_browser_cache_issue(message) and intent != "GENERAL_FAQ":
+            intent = "GENERAL_FAQ"
+            print(f"[INTENT DEBUG] Browser cache issue override → GENERAL_FAQ")
 
         # NOW the intent is set!
         # 1. Intent detection happens somewhere up here
@@ -2247,6 +2535,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 and not is_opt_out_policy_question(message)
                 and not is_bundle_admin_question(message)
                 and not is_merchandise_query(message)
+                and not is_browser_cache_issue(message)
             ):
                 intent = "IA_ACCESS_ISSUE"
                 platform = session.get("stored_platform") or detect_recent_platform_from_history(session["history"])
@@ -2439,7 +2728,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 retrieval = None
                 context = ""
             elif intent == "IA_ACCESS_ISSUE":
-                enhanced_query = enhance_query_with_conversation_context(message, session["history"])
+                # Preserve query set in awaiting_platform_type TEXTBOOK_EBOOK handler —
+                # do not let conversation context pollute it (causes MacMillan false-match).
+                if not explicit_textbook_selection:
+                    enhanced_query = enhance_query_with_conversation_context(message, session["history"])
 
                 # Deterministic override: "Read Now button missing" is a general
                 # Immediate Access concept — not platform-specific. Retrieve from the
@@ -2495,6 +2787,16 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     faq_query = "CBU Campus Store merchandise apparel clothing mugs gifts supplies"
                 elif is_ia_overview_query(message):
                     faq_query = "Immediate Access program overview day-one digital course materials student account CBU definition"
+                elif is_browser_cache_issue(message):
+                    _m = message.lower()
+                    if "safari" in _m:
+                        faq_query = "clear browser cache cookies Immediate Access Safari Mac no content available"
+                    elif "ipad" in _m or "tablet" in _m:
+                        faq_query = "clear browser cache cookies Immediate Access iPad Chrome no content available"
+                    elif "firefox" in _m:
+                        faq_query = "clear browser cache cookies Immediate Access Firefox Mac no content available"
+                    else:
+                        faq_query = "clear browser cache cookies Immediate Access Chrome no content available"
                 retrieval = await retrieve_async(
                     faq_query,
                     collection="faqs"
@@ -2544,6 +2846,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     "content": no_hours_reply
                 })
                 total_time_ms = (time.time() - request_start) * 1000
+                print("\n[PERF] PERFORMANCE METRICS:")
+                print(f"   Retrieval: {retrieval_time_ms:.2f}ms")
+                print(f"   LLM: 0.00ms (no verified hours)")
+                print(f"   Total: {total_time_ms:.2f}ms\n")
                 return ChatResponse(
                     reply=no_hours_reply,
                     source="LLM_ONLY",
@@ -2566,6 +2872,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     "content": low_conf_reply
                 })
                 total_time_ms = (time.time() - request_start) * 1000
+                print("\n[PERF] PERFORMANCE METRICS:")
+                print(f"   Retrieval: {retrieval_time_ms:.2f}ms")
+                print(f"   LLM: 0.00ms (low confidence FAQ)")
+                print(f"   Total: {total_time_ms:.2f}ms\n")
                 return ChatResponse(
                     reply=low_conf_reply,
                     source="LLM_ONLY",
@@ -2599,6 +2909,17 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 source = retrieval["source_id"]
                 article_link = retrieval.get("article_link")
 
+                recommended_pdfs = []
+                try:
+                    recommended_pdfs = get_recommendations_for_chat(
+                        retrieval_result=retrieval,
+                        platform=platform,
+                        query=message
+                    )
+                    print(f"[PDF] Recommending {len(recommended_pdfs)} PDFs")
+                except Exception as e:
+                    print(f"[WARN] PDF recommendation failed: {e}")
+
                 print("\n[PERF] PERFORMANCE METRICS:")
                 print(f"   Retrieval: {retrieval_time_ms:.2f}ms")
                 print(f"   LLM: 0.00ms (FAQ direct answer)")
@@ -2612,7 +2933,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     retrieval_time_ms=round(retrieval_time_ms, 2),
                     llm_time_ms=0,
                     total_time_ms=round(total_time_ms, 2),
-                    recommended_pdfs=[]
+                    recommended_pdfs=recommended_pdfs
                 )
 
             no_verified_faq_reply = (
@@ -2624,6 +2945,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 "content": no_verified_faq_reply
             })
             total_time_ms = (time.time() - request_start) * 1000
+            print("\n[PERF] PERFORMANCE METRICS:")
+            print(f"   Retrieval: {retrieval_time_ms:.2f}ms")
+            print(f"   LLM: 0.00ms (no verified FAQ answer)")
+            print(f"   Total: {total_time_ms:.2f}ms\n")
             return ChatResponse(
                 reply=no_verified_faq_reply,
                 source="LLM_ONLY",
@@ -2675,6 +3000,11 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     recommended_pdfs = []
 
                 total_time_ms = (time.time() - request_start) * 1000
+                print("\n[PERF] PERFORMANCE METRICS:")
+                print(f"   Retrieval: {retrieval_time_ms:.2f}ms")
+                print(f"   LLM: 0.00ms (direct instruction)")
+                print(f"   Platform: {platform}")
+                print(f"   Total: {total_time_ms:.2f}ms\n")
                 return ChatResponse(
                     reply=direct_instruction,
                     source=retrieval["source_id"],
@@ -2685,7 +3015,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     total_time_ms=round(total_time_ms, 2),
                     recommended_pdfs=recommended_pdfs
                 )
-            
+
         # ===== LLM CALL (TIMED) =====
         system_hint = ""
 
@@ -2814,6 +3144,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         print(f"   LLM Queue Wait: {llm_queue_wait_ms:.2f}ms")
         print(f"   Retrieval: {retrieval_time_ms:.2f}ms")
         print(f"   LLM: {llm_time_ms:.2f}ms")
+        print(f"   Platform: {platform}")
         print(f"   Total: {total_time_ms:.2f}ms\n")
 
         return ChatResponse(

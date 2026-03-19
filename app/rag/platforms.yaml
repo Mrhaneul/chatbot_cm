@@ -81,3 +81,9 @@ platforms:
       - norton
       - seagull handbook
       - seagull
+
+  - key: stukent
+    display_name: Stukent
+    keywords:
+      - stukent
+      - simternship

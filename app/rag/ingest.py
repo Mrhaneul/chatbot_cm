@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import time # Added this line
+from pathlib import Path
 
 import faiss
 import numpy as np
@@ -160,6 +161,58 @@ def _split_faq_file(text: str, file_name: str) -> list:
     return chunks
 
 
+def _compact_text(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
+def _content_keyword_regex(keyword: str) -> re.Pattern[str]:
+    return re.compile(rf"(?<![a-z0-9]){re.escape(keyword.lower())}(?![a-z0-9])")
+
+
+def _match_platforms_for_file(file_name: str, text: str, platforms: list[dict]) -> list[str]:
+    """
+    Assign a file to platform-specific indexes conservatively.
+
+    Priority:
+      1. Filename matches win outright because filenames are curated.
+      2. Content matches use word/phrase boundaries only.
+      3. Ambiguous multi-platform content matches fall back to general indexing.
+    """
+    filename_compact = _compact_text(Path(file_name).stem)
+    filename_matches: list[str] = []
+
+    for platform in platforms:
+        for keyword in platform["keywords"]:
+            keyword_compact = _compact_text(keyword)
+            if keyword_compact and keyword_compact in filename_compact:
+                filename_matches.append(platform["key"])
+                break
+
+    if filename_matches:
+        return sorted(set(filename_matches))
+
+    content_matches: list[str] = []
+    lowered_text = text.lower()
+    for platform in platforms:
+        for keyword in platform["keywords"]:
+            if _content_keyword_regex(keyword).search(lowered_text):
+                content_matches.append(platform["key"])
+                break
+
+    unique_content_matches = sorted(set(content_matches))
+    if len(unique_content_matches) == 1:
+        return unique_content_matches
+
+    if len(unique_content_matches) > 1:
+        log.warning(
+            "Ambiguous content-only platform match for %s -> %s. Indexing as general only.",
+            file_name,
+            ", ".join(unique_content_matches),
+        )
+
+    return []
+
+
 # ── FAISS index builder ───────────────────────────────────────────────────────
 
 def _build_and_save_index(chunks: list, index_path: str, chunks_path: str, label: str):
@@ -254,11 +307,6 @@ def ingest_instructions():
 
     platforms = _load_platforms()
 
-    keyword_to_platform: dict = {}
-    for p in platforms:
-        for kw in p["keywords"]:
-            keyword_to_platform[kw.lower()] = p["key"]
-
     file_names = sorted(
         f for f in os.listdir(cfg.INSTRUCTIONS_DIR)
         if f.lower().endswith(".txt") and not f.startswith("instructions_chunks")
@@ -281,12 +329,7 @@ def ingest_instructions():
             log.warning("Skipped empty file: %s", file_name)
             continue
 
-        combined = (text + " " + file_name).lower()
-        matched_platforms = {
-            plat_key
-            for kw, plat_key in keyword_to_platform.items()
-            if kw in combined
-        }
+        matched_platforms = _match_platforms_for_file(file_name, text, platforms)
 
         raw_chunks = _split_instruction_file(text, file_name)
         log.info("  %s  ->  %d section chunk(s)  [platforms: %s]",

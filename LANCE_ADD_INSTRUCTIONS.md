@@ -1,195 +1,130 @@
-# Lance — Add New Platform Instruction Document
+# Lance Instruction Content Guide
 
-## Task Overview
-You are helping maintain the **Lance chatbot** at CBU's Campus Store. When a new PDF containing platform-specific troubleshooting instructions arrives, your job is to:
+## 1. Overview
 
-1. **Parse the PDF** and extract its instructional content
-2. **Write a clean `.txt` file** into `data/instructions/` following the naming convention
-3. **Upload the PDF** to the Firestore database so it can be served as a recommendation
+This guide explains how to add or update platform-specific instruction content for Lance. Use it when CBU adopts a new publisher platform, when an existing instruction file is outdated, or when a new issue type needs step-by-step resolution content.
 
----
+## 2. When to Use This Guide
 
-## Step 1 — Identify the PDF
+Use this guide when:
+- A new publisher platform is being added to Immediate Access
+- Existing instructions for a platform are outdated or incorrect
+- A new issue type needs instructions, such as "no Read Now button" or "launch courseware button missing"
 
-The user will provide one or more PDF file paths. For each PDF:
+## 3. Step 1: Write the `.txt` Instruction File
 
-- Read the filename and/or ask the user to confirm:
-  - **Platform name** (e.g., `cengage`, `pearson`, `mcgrawhill`, `wileyplus`, `macmillan`, `sage`, `bedford`, `cliftonstrengths`, `simucace`, `zybooks`, `stukent`)
-  - **Issue type** (e.g., `access`, `login`, `payment`, `opt_out`, `refund`, `technical`)
-- The output `.txt` filename must follow this pattern exactly:
-  ```
-  ia_{platform}_{issue_type}.txt
-  ```
-  Example: `ia_cengage_access.txt`, `ia_pearson_login.txt`
+Create a plain-text file using this required structure:
 
----
+```text
+PROBLEM:
+<one sentence describing the student's issue>
 
-## Step 2 — Parse the PDF
+APPLIES TO:
+<platform name>
 
-Use Python with `pdfplumber` or `pymupdf` (whichever is available) to extract all text from the PDF.
+STEP-BY-STEP RESOLUTION:
+1. Step one
+2. Step two
+3. Step three
 
-```python
-import pdfplumber
-
-with pdfplumber.open("path/to/file.pdf") as pdf:
-    text = "\n".join(page.extract_text() for page in pdf.pages if page.extract_text())
+EXPECTED RESULT:
+<what the student should see when the issue is resolved>
 ```
 
-Clean the extracted text:
-- Remove excessive blank lines (max 2 consecutive newlines)
-- Strip leading/trailing whitespace per line
-- Preserve numbered steps and bullet points
-- Do **not** remove headers — they provide context for the RAG system
+File naming convention:
 
----
-
-## Step 3 — Write the `.txt` Instruction File
-
-Save the cleaned text to:
-```
-data/instructions/ia_{platform}_{issue_type}.txt
+```text
+ia_{platform}_{issue_type}.txt
 ```
 
-Structure the file with this header block at the top (add it if not already present in the PDF):
+Examples:
+- `ia_mcgraw_no_read_now.txt`
+- `ia_bedford_account_merge.txt`
 
-```
-Platform: {Platform Display Name}
-Issue Type: {Issue Type Display Name}
-Program: Immediate Access
-Last Updated: {today's date YYYY-MM-DD}
----
+Keep the filename aligned with the real platform name. This helps Lance place the content into the correct platform index.
 
-{extracted and cleaned text content}
-```
+## 4. Step 2: Submit Through the Admin UI
 
-Confirm the file was written and print the first 20 lines for review.
+1. Go to `http://localhost:8000/admin`
+2. Log in with your admin credentials
+3. Select `Platform Instruction` as the content type
+4. Upload your `.txt` file
+5. Optionally attach PDF guides with labels
+6. Click `Add Content to Lance`
+7. Wait for all steps to show green checkmarks
+8. Click `Apply Changes` to reload the index
 
----
+The Admin UI saves the `.txt` file, rebuilds the FAISS index, uploads attached PDFs to Firebase Storage, and creates the `txt_to_pdf_map` entry in Firestore automatically.
 
-## Step 4 — Upload to Firestore
+## 5. Step 3: Test in the Chat
 
-Use the existing Firebase/Firestore setup in the project. Locate the Firebase config in:
-- `src/firebase.js` or `backend/firebase_config.py` (use whichever exists)
+1. Open the Lance chat interface
+2. Ask a question that matches the new instruction
+3. Verify the correct steps are returned
+4. If PDF guides were attached, verify they appear in the right-side recommendations panel
 
-Upload the **original PDF** to Firebase Storage and store a **metadata document** in Firestore.
+If the answer does not appear, first confirm the file format and filename are correct, then try the question again with clearer platform wording.
 
-### Firestore Document Structure
+## 6. Adding a New Platform Entirely
 
-Collection: `instructions`  
-Document ID: `ia_{platform}_{issue_type}` (same as the txt filename without extension)
+Adding content for an existing platform does not require code changes. Adding a brand-new platform requires one extra technical step:
 
-```json
-{
-  "platform": "{platform}",
-  "issue_type": "{issue_type}",
-  "display_name": "{Platform Display Name} — {Issue Type Display Name}",
-  "program": "Immediate Access",
-  "filename": "ia_{platform}_{issue_type}.txt",
-  "pdf_filename": "{original_pdf_filename}",
-  "pdf_url": "{firebase_storage_download_url}",
-  "last_updated": "{ISO 8601 timestamp}",
-  "active": true
-}
-```
+1. Edit `app/rag/platforms.yaml`
+2. Add a new entry with:
+   - `key`
+   - `display_name`
+   - `keywords`
+3. Save the file
+4. Then follow the normal content addition steps through the Admin UI
 
-### Python Upload Script
+Example:
 
-```python
-import firebase_admin
-from firebase_admin import credentials, firestore, storage
-from datetime import datetime, timezone
-import os
-
-# Initialize (skip if already initialized in the project)
-if not firebase_admin._apps:
-    cred = credentials.Certificate("path/to/serviceAccountKey.json")
-    firebase_admin.initialize_app(cred, {
-        "storageBucket": "{your-project-id}.appspot.com"
-    })
-
-db = firestore.client()
-bucket = storage.bucket()
-
-def upload_instruction_pdf(pdf_path: str, platform: str, issue_type: str):
-    filename = f"ia_{platform}_{issue_type}"
-    pdf_filename = os.path.basename(pdf_path)
-    storage_path = f"instructions/{filename}.pdf"
-
-    # Upload PDF to Firebase Storage
-    blob = bucket.blob(storage_path)
-    blob.upload_from_filename(pdf_path, content_type="application/pdf")
-    blob.make_public()
-    pdf_url = blob.public_url
-
-    # Write Firestore document
-    doc_data = {
-        "platform": platform,
-        "issue_type": issue_type,
-        "display_name": f"{platform.title()} — {issue_type.replace('_', ' ').title()}",
-        "program": "Immediate Access",
-        "filename": f"{filename}.txt",
-        "pdf_filename": pdf_filename,
-        "pdf_url": pdf_url,
-        "last_updated": datetime.now(timezone.utc).isoformat(),
-        "active": True,
-    }
-
-    db.collection("instructions").document(filename).set(doc_data)
-    print(f"✅ Firestore document written: instructions/{filename}")
-    print(f"✅ PDF uploaded to: {pdf_url}")
-    return pdf_url
+```yaml
+- key: stukent
+  display_name: Stukent
+  keywords:
+    - stukent
+    - simternship
 ```
 
----
+This step requires technical access to the server or repository.
 
-## Step 5 — Rebuild the FAISS Index
+## 7. CLI Alternative
 
-After writing the new `.txt` file, re-run the ingestion script to update the vector index so Lance can retrieve from the new document immediately:
+Technical users can also use the CLI scripts instead of the Admin UI.
+
+Examples:
 
 ```bash
-python backend/ingest.py
-# or whatever the project's ingestion entrypoint is
+python lance_add_content.py --type instruction --txt data/instructions/ia_platform_issue.txt
 ```
 
-Confirm the new file appears in the index output.
+```bash
+python lance_add_content.py --type instruction \
+    --txt data/instructions/ia_platform_issue.txt \
+    --pdf docs/guide1.pdf --pdf-label "Guide 1"
+```
 
----
+There is also a platform-focused helper script:
 
-## Step 6 — Verification Checklist
+```bash
+python add_instruction.py
+```
 
-Before finishing, confirm all of the following:
+The Admin UI is the preferred workflow for non-technical staff.
 
-- [ ] `data/instructions/ia_{platform}_{issue_type}.txt` exists and has readable content
-- [ ] First 20 lines of the `.txt` file look correct (header + content)
-- [ ] Firestore document `instructions/ia_{platform}_{issue_type}` exists with correct fields
-- [ ] PDF is publicly accessible via the `pdf_url`
-- [ ] FAISS index was rebuilt successfully
-- [ ] No existing document for this platform/issue_type was overwritten unintentionally (warn the user if it was)
+## 8. Troubleshooting
 
----
+`Apply Changes failed`
+- Restart the server and try again.
+- If the page shows restart instructions, press `Enter` first, then `Ctrl + C`, then run `uvicorn app.main:app --reload`.
 
-## Supported Platforms Reference
+Instructions not appearing
+- Check that the file contains the required headers: `PROBLEM:` and `STEP-BY-STEP RESOLUTION:`
+- Confirm the file was uploaded as `Platform Instruction`
+- Re-test with a query that clearly mentions the platform and issue
 
-| Platform Key      | Display Name         |
-|-------------------|----------------------|
-| `cengage`         | Cengage              |
-| `mcgrawhill`      | McGraw Hill          |
-| `pearson`         | Pearson              |
-| `wileyplus`       | WileyPlus            |
-| `macmillan`       | Macmillan            |
-| `sage`            | Sage                 |
-| `bedford`         | Bedford              |
-| `cliftonstrengths`| CliftonStrengths     |
-| `simucace`        | SimuCase             |
-| `zybooks`         | ZyBooks              |
-| `stukent`         | Stukent              |
-
----
-
-## Notes for the Agent
-
-- **FERPA compliance**: Do not log or print any student-identifiable information from PDFs.
-- **Idempotency**: If a document for this platform/issue_type already exists in Firestore, prompt the user before overwriting.
-- **Error handling**: If the PDF text extraction returns empty or very short text (< 100 chars), warn the user — the PDF may be image-based and require OCR (`pytesseract`).
-- **File encoding**: Always write `.txt` files as UTF-8.
-- **Service account key path**: If the path to `serviceAccountKey.json` is unknown, ask the user before proceeding.
+Wrong platform getting matched
+- Check that the filename follows the `ia_{platform}_...` naming pattern
+- Make sure the `APPLIES TO:` section names the correct platform
+- If this is a new platform, confirm it was added to `app/rag/platforms.yaml`

@@ -1047,3 +1047,51 @@ Note: The email says "McGraw Hill Bookshelf" but this is actually VitalSource Bo
 
 ---
 
+## Case 014 - VitalSource "0 Courses, 0 Materials" - No Content Available
+
+- Date: 2026-03-19
+- Subject: `VitalSource "0 Courses, 0 Materials" - No Content Available`
+- Student: Devina Renee Robles
+
+### Issue Summary
+
+Student clicked the Immediate Access link in Blackboard but landed on a VitalSource page showing `0 Courses, 0 Materials` and the message:
+
+`You currently have no content available, please contact your faculty or digital program manager for assistance.`
+
+The student also reported that content flashed briefly and then disappeared.
+
+### Root Cause
+
+Stale browser cookies and cached session data interfered with the VitalSource session load through the Blackboard Immediate Access link.
+
+### Resolution
+
+Clear browser cookies, cache, and history, then retry the Immediate Access link from Blackboard.
+
+### Content Added
+
+New FAQ content added:
+- `data/faqs/ia_browser_cache_clear_chrome.txt`
+- `data/faqs/ia_browser_cache_clear_chrome_ipad.txt`
+- `data/faqs/ia_browser_cache_clear_firefox.txt`
+- `data/faqs/ia_browser_cache_clear_safari.txt`
+
+PDF guides uploaded to Firebase:
+- Safari Clear Cache Guide
+- Chrome & Firefox Clear Cache Guide
+- iPad Chrome Clear Cache Guide
+
+### Routing Fixes Implemented
+
+- Added `is_browser_cache_issue()` detection function
+- Added intent override to `GENERAL_FAQ`
+- Excluded browser-cache cases from the IA continuity guard
+- Excluded browser-cache cases from the platform clarification gate
+- Added browser-aware FAISS query routing using browser-name signals
+
+### Status
+
+- Status: Complete
+
+---

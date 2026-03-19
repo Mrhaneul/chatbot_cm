@@ -25,12 +25,18 @@ import re
 import argparse
 from datetime import datetime, timezone
 from pathlib import Path
+from dotenv import load_dotenv
 from app.platform_registry import load_registry, save_registry, canonical_platform_key
+
+load_dotenv()
 
 # ── Path setup ───────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).parent
 DATA_INSTRUCTIONS = PROJECT_ROOT / "data" / "instructions"
-SERVICE_ACCOUNT   = PROJECT_ROOT / "app" / "firebase-service-account.json"
+_service_account_value = os.environ.get("FIREBASE_SERVICE_ACCOUNT_PATH", "app/firebase-service-account.json")
+SERVICE_ACCOUNT   = Path(_service_account_value)
+if not SERVICE_ACCOUNT.is_absolute():
+    SERVICE_ACCOUNT = PROJECT_ROOT / SERVICE_ACCOUNT
 INGEST_SCRIPT     = PROJECT_ROOT / "app" / "rag" / "ingest.py"
 
 PLATFORM_DISPLAY = {
@@ -182,8 +188,8 @@ def upload_to_firebase(pdf_path: Path, platform: str, issue_type: str,
     sa_data = json.loads(SERVICE_ACCOUNT.read_text())
     project_id = sa_data.get("project_id", "")
 
-    # Hardcoded bucket name from app/firebase_config.py
-    storage_bucket = "lance-cbu.firebasestorage.app"
+    # Match app/firebase_config.py defaults unless env overrides them.
+    storage_bucket = os.environ.get("FIREBASE_STORAGE_BUCKET", "lance-cbu.firebasestorage.app")
     print(f"  Using storage bucket: {storage_bucket}")
 
     # Initialize Firebase (only once)

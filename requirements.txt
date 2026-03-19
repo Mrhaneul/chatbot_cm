@@ -9,3 +9,6 @@ pyyaml
 faiss-cpu
 sentence-transformers
 python-dotenv
+firebase-admin
+python-multipart
+colorama
