@@ -3,6 +3,7 @@ import { ChatHeader } from './components/ChatHeader';
 import { WelcomeState } from './components/WelcomeState';
 import { ChatMessage } from './components/ChatMessage';
 import { ChatInput } from './components/ChatInput';
+import { FAQSidebar } from './components/FAQSidebar';
 import { PDFSidebar } from './components/PDFSidebar';
 import { sendChatMessage, checkApiHealth } from './services/api';
 import { PDFRecommendation, Message } from './types';
@@ -12,9 +13,11 @@ export default function App() {
   const [pdfRecommendations, setPdfRecommendations] = useState<PDFRecommendation[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [sessionId, setSessionId] = useState<string>('');
+  const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [apiStatus, setApiStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
   // Generate session ID on mount
   useEffect(() => {
@@ -46,6 +49,7 @@ export default function App() {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    setInputValue('');
     setIsLoading(true);
 
     try {
@@ -116,8 +120,29 @@ export default function App() {
     handleSendMessage(prompt);
   };
 
+  const focusChatInput = () => {
+    requestAnimationFrame(() => {
+      chatInputRef.current?.focus();
+      const length = chatInputRef.current?.value.length ?? 0;
+      chatInputRef.current?.setSelectionRange(length, length);
+      chatInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  };
+
+  const handleOtherSelect = () => {
+    focusChatInput();
+  };
+
   return (
     <div className="flex h-screen bg-white">
+      <FAQSidebar
+        onSendMessage={(text) => {
+          setInputValue(text);
+          handleSendMessage(text);
+        }}
+        onOtherSelect={handleOtherSelect}
+      />
+
       {/* Left Panel - Chat Interface */}
       <div className="flex flex-col flex-1 min-w-0">
         <ChatHeader apiStatus={apiStatus} />
@@ -148,7 +173,13 @@ export default function App() {
           )}
         </div>
 
-        <ChatInput onSendMessage={handleSendMessage} disabled={isLoading} />
+        <ChatInput
+          onSendMessage={handleSendMessage}
+          value={inputValue}
+          onChange={setInputValue}
+          disabled={isLoading}
+          inputRef={chatInputRef}
+        />
       </div>
 
       {/* Right Panel - PDF Sidebar */}

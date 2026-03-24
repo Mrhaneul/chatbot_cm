@@ -1,6 +1,14 @@
 """
-Upload PDFs to Firebase Storage and Metadata to Firestore
-Uploads all Lance CBU Immediate Access platform PDFs
+DEPRECATED - moved to research/ 2026-03-19
+
+This script predates the current admin UI and Firestore schema.
+It targets the old 'instructions' Firestore collection which is no longer used.
+
+Current PDF upload path: use the Lance Admin UI at http://localhost:8000/admin
+or the lance_add_content.py CLI script.
+
+This file is kept for historical reference only.
+Do not use for new uploads.
 """
 
 from firebase_config import bucket, db

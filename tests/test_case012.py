@@ -1,6 +1,7 @@
-import asyncio
 import os
 import uuid
+
+import pytest
 
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
@@ -9,7 +10,8 @@ from app.main import process_chat_request
 from app.schemas.chat import ChatRequest
 
 
-async def run():
+@pytest.mark.asyncio
+async def test_case012():
     sid = f"case012-{uuid.uuid4()}"
 
     # Sierra Cannon's exact scenario
@@ -26,6 +28,3 @@ async def run():
     print(f"T1 source: {r1.source}")
     print(f"T1 reply: {r1.reply[:350]}")
     print()
-
-
-asyncio.run(run())
