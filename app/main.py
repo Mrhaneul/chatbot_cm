@@ -1114,11 +1114,10 @@ def is_textbook_return_query(message: str) -> bool:
     textbook return/refund policy at the Campus Store.
     """
     m = (message or "").lower()
-    return any(s in m for s in [
+    direct_signals = [
         "return a textbook",
         "return my textbook",
         "return textbook",
-        "how do i return",
         "textbook return",
         "textbook return policy",
         "return policy textbook",
@@ -1135,6 +1134,68 @@ def is_textbook_return_query(message: str) -> bool:
         "immediate access refund",
         "immediate access charge",
         "charged for immediate access",
+    ]
+    if any(s in m for s in direct_signals):
+        return True
+
+    return "how do i return" in m and any(
+        term in m for term in ["textbook", "book", "immediate access"]
+    )
+
+
+def is_merchandise_return_query(message: str) -> bool:
+    """
+    Detect questions about returning general merchandise, clothing,
+    trade books, or other non-textbook Campus Store items.
+    """
+    m = (message or "").lower()
+    return any(s in m for s in [
+        "return merchandise",
+        "return a hoodie",
+        "return clothing",
+        "return apparel",
+        "return trade book",
+        "merchandise return",
+        "return general merchandise",
+        "return policy merchandise",
+        "return policy for merchandise",
+        "refund merchandise",
+        "exchange merchandise",
+        "return something from the store",
+        "return an item",
+        "return my purchase",
+        "30 day return",
+        "restocking fee merchandise",
+    ])
+
+
+def is_technology_return_query(message: str) -> bool:
+    """
+    Detect questions about returning technology or Apple products
+    from the CBU Campus Store.
+    """
+    m = (message or "").lower()
+    return any(s in m for s in [
+        "return technology",
+        "return apple",
+        "return laptop",
+        "return computer",
+        "return tablet",
+        "return ipad",
+        "return headphones",
+        "return printer",
+        "return camera",
+        "return monitor",
+        "technology return",
+        "apple return",
+        "return policy technology",
+        "return policy for technology",
+        "return policy apple",
+        "tech return",
+        "restocking fee technology",
+        "10% restocking",
+        "defective technology",
+        "defective apple",
     ])
 
 
@@ -1875,7 +1936,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             )
 
         # Handle follow-up questions about class materials
-        if is_confirmed_materials_issue(message) and not is_browser_cache_issue(message) and not is_textbook_return_query(message) and not is_vague_books_missing_query(message) and not session.get("awaiting_vitalsource_screen_confirm", False) and not session.get("awaiting_platform_type", False) and not session.get("awaiting_publisher_list_response", False) and not session.get("awaiting_class_access_clarification", False) and platform is None:
+        if is_confirmed_materials_issue(message) and not is_browser_cache_issue(message) and not is_textbook_return_query(message) and not is_merchandise_return_query(message) and not is_technology_return_query(message) and not is_vague_books_missing_query(message) and not session.get("awaiting_vitalsource_screen_confirm", False) and not session.get("awaiting_platform_type", False) and not session.get("awaiting_publisher_list_response", False) and not session.get("awaiting_class_access_clarification", False) and platform is None:
             # User is asking about materials, trigger platform clarification
             clarification = (
                 "I can help you with textbook access! To give you the most accurate instructions, "
@@ -2808,6 +2869,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 and not is_opt_out_policy_question(message)
                 and not is_ia_enrollment_query(message)
                 and not is_bundle_admin_question(message)
+                and not is_merchandise_return_query(message)
+                and not is_technology_return_query(message)
                 and not is_merchandise_query(message)
                 and not is_textbook_return_query(message)
                 and not is_browser_cache_issue(message)
@@ -3086,11 +3149,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 )
             elif intent == "GENERAL_FAQ":
                 faq_query = message
-                if is_merchandise_query(message):
-                    faq_query = "CBU Campus Store merchandise apparel clothing mugs gifts supplies"
-                elif is_ia_overview_query(message):
-                    faq_query = "Immediate Access program overview day-one digital course materials student account CBU definition"
-                elif is_textbook_return_query(message):
+                if is_textbook_return_query(message):
                     if any(
                         signal in (message or "").lower()
                         for signal in [
@@ -3104,6 +3163,14 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                         faq_query = "Immediate Access refund policy opt out deadline charge final sale student account"
                     else:
                         faq_query = "how to return textbook shipping in person CBU Campus Store deadlines refund policy Immediate Access"
+                elif is_merchandise_return_query(message):
+                    faq_query = "merchandise clothing apparel trade books 30 day return window 25 percent restocking fee tags receipt required original condition altered laundered"
+                elif is_technology_return_query(message):
+                    faq_query = "return technology Apple laptop computer tablet 5 days restocking fee defective original packaging"
+                elif is_merchandise_query(message):
+                    faq_query = "CBU Campus Store merchandise apparel clothing mugs gifts supplies"
+                elif is_ia_overview_query(message):
+                    faq_query = "Immediate Access program overview day-one digital course materials student account CBU definition"
                 elif is_browser_cache_issue(message):
                     faq_query = build_browser_cache_faq_query(message)
                 retrieval = await retrieve_async(
