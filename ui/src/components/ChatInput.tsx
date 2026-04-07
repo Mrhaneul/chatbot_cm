@@ -1,19 +1,20 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Send } from 'lucide-react';
 
 interface ChatInputProps {
   onSendMessage: (content: string) => void;
+  value: string;
+  onChange: (value: string) => void;
   disabled?: boolean;
+  inputRef?: React.RefObject<HTMLTextAreaElement | null>;
 }
 
-export function ChatInput({ onSendMessage, disabled = false }: ChatInputProps) {
-  const [message, setMessage] = useState('');
-
+export function ChatInput({ onSendMessage, value, onChange, disabled = false, inputRef }: ChatInputProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (message.trim() && !disabled) {
-      onSendMessage(message);
-      setMessage('');
+    if (value.trim() && !disabled) {
+      onSendMessage(value);
+      onChange('');
     }
   };
 
@@ -30,8 +31,9 @@ export function ChatInput({ onSendMessage, disabled = false }: ChatInputProps) {
         <div className="flex gap-2 items-end">
           <div className="flex-1 relative">
             <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              ref={inputRef}
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={disabled}
               placeholder={disabled ? "Waiting for response..." : "Ask about textbook access, platform issues, or Immediate Access..."}
@@ -47,7 +49,7 @@ export function ChatInput({ onSendMessage, disabled = false }: ChatInputProps) {
 
           <button
             type="submit"
-            disabled={!message.trim() || disabled}
+            disabled={!value.trim() || disabled}
             className="p-3 bg-[#A07400] text-white rounded-lg hover:bg-[#002554] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
             aria-label="Send message"
           >

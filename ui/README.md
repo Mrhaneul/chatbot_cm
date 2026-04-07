@@ -1,11 +1,17 @@
+# Lance Chat UI
 
-  # Campus Store Assistant Chatbot UI
+React frontend for the Lance CBU Campus Store chatbot.
 
-  This is a code bundle for Campus Store Assistant Chatbot UI. The original project is available at https://www.figma.com/design/quI5vwLv5P0pBsiB8J7iT8/Campus-Store-Assistant-Chatbot-UI.
+## Development
 
-  ## Running the code
+```bash
+cd ui
+npm install
+npm run dev
+```
 
-  Run `npm i` to install the dependencies.
+## Deployment
 
-  Run `npm run dev` to start the development server.
-  
+Built and deployed to Firebase Hosting. See `firebase.json` in the project root.
+
+The backend API URL is configured in `ui/src/config.ts` or the relevant config file.

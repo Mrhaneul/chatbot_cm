@@ -47,6 +47,7 @@ Thumbs.db
 
 # Node.js / Frontend
 ui/node_modules/
+ui/build/
 ui/dist/
 ui/.vite/
 ui/.cache/

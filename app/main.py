@@ -383,9 +383,11 @@ def get_or_create_session(session_id: str) -> Dict[str, Any]:
             "history": [],
             "awaiting_course_code": False,
             "awaiting_platform_type": False,
+            "awaiting_vitalsource_screen_confirm": False,
             "awaiting_class_access_clarification": False,
             "stored_intent": None,
             "stored_platform": None,
+            "ia_context": False,
             "stored_publisher": None,
             "ia_tab_missing_escalated": False,
             "last_activity": datetime.now(),
@@ -441,6 +443,9 @@ def detect_intent(message: str) -> str:
 
     # Bundle admin questions are FAQ, not access troubleshooting.
     if is_bundle_admin_question(message):
+        return "GENERAL_FAQ"
+
+    if is_ia_enrollment_query(message):
         return "GENERAL_FAQ"
 
     # ✨ Check for informational questions FIRST
@@ -1103,6 +1108,97 @@ def is_ia_overview_query(message: str) -> bool:
     return any(s in m for s in overview_signals)
 
 
+def is_textbook_return_query(message: str) -> bool:
+    """
+    Detect questions about returning textbooks or understanding the
+    textbook return/refund policy at the Campus Store.
+    """
+    m = (message or "").lower()
+    direct_signals = [
+        "return a textbook",
+        "return my textbook",
+        "return textbook",
+        "textbook return",
+        "textbook return policy",
+        "return policy textbook",
+        "return policy for textbook",
+        "get a refund for my textbook",
+        "get a refund on my textbook",
+        "refund on my textbook",
+        "refund on textbook",
+        "refund my textbook",
+        "refund for textbook",
+        "textbook refund",
+        "refund policy for immediate access",
+        "refund policy immediate access",
+        "immediate access refund",
+        "immediate access charge",
+        "charged for immediate access",
+    ]
+    if any(s in m for s in direct_signals):
+        return True
+
+    return "how do i return" in m and any(
+        term in m for term in ["textbook", "book", "immediate access"]
+    )
+
+
+def is_merchandise_return_query(message: str) -> bool:
+    """
+    Detect questions about returning general merchandise, clothing,
+    trade books, or other non-textbook Campus Store items.
+    """
+    m = (message or "").lower()
+    return any(s in m for s in [
+        "return merchandise",
+        "return a hoodie",
+        "return clothing",
+        "return apparel",
+        "return trade book",
+        "merchandise return",
+        "return general merchandise",
+        "return policy merchandise",
+        "return policy for merchandise",
+        "refund merchandise",
+        "exchange merchandise",
+        "return something from the store",
+        "return an item",
+        "return my purchase",
+        "30 day return",
+        "restocking fee merchandise",
+    ])
+
+
+def is_technology_return_query(message: str) -> bool:
+    """
+    Detect questions about returning technology or Apple products
+    from the CBU Campus Store.
+    """
+    m = (message or "").lower()
+    return any(s in m for s in [
+        "return technology",
+        "return apple",
+        "return laptop",
+        "return computer",
+        "return tablet",
+        "return ipad",
+        "return headphones",
+        "return printer",
+        "return camera",
+        "return monitor",
+        "technology return",
+        "apple return",
+        "return policy technology",
+        "return policy for technology",
+        "return policy apple",
+        "tech return",
+        "restocking fee technology",
+        "10% restocking",
+        "defective technology",
+        "defective apple",
+    ])
+
+
 def is_browser_cache_issue(message: str) -> bool:
     """
     Detect browser/session cache issues that show '0 Courses, 0 Materials' or
@@ -1173,6 +1269,55 @@ def is_browser_cache_issue(message: str) -> bool:
     return has_symptom and has_ia_context
 
 
+def is_vague_books_missing_query(message: str) -> bool:
+    """
+    Detect vague 'books not showing / can't see my materials' queries that
+    need a targeted clarification before routing to browser cache fix or
+    platform-specific instructions.
+    """
+    m = (message or "").lower()
+    vague_signals = [
+        "have not been able to see",
+        "haven't been able to see",
+        "not been able to see",
+        "not able to see",
+        "cannot see",
+        "can't see",
+        "not showing",
+        "not showing up",
+        "not visible",
+        "not appearing",
+        "don't see",
+        "doesn't show",
+        "no books",
+        "books are missing",
+        "book is missing",
+        "books not there",
+        "can't find my book",
+        "cannot find my book",
+        "not there",
+        "not coming up",
+        "won't show",
+        "not loading",
+    ]
+    ia_terms = [
+        "immediate access",
+        "blackboard",
+        "ia tab",
+        "my side",
+        "my account",
+        "opt in",
+        "opt out",
+        "book",
+        "books",
+        "materials",
+        "textbook",
+    ]
+    has_vague = any(s in m for s in vague_signals)
+    has_ia = any(t in m for t in ia_terms)
+    return has_vague and has_ia
+
+
 def is_bundle_admin_question(message: str) -> bool:
     """
     Detect questions about IA bundle composition (adding/missing textbooks in bundle).
@@ -1230,6 +1375,30 @@ def is_opt_out_policy_question(message: str) -> bool:
     return any(s in m for s in signals)
 
 
+def is_ia_enrollment_query(message: str) -> bool:
+    """
+    Detect questions about whether a course/textbook is included in Immediate
+    Access. These require manual enrollment verification, not platform support.
+    """
+    m = (message or "").lower()
+    if not m:
+        return False
+
+    signals = [
+        "available for free",
+        "available through the bookstore",
+        "is it free",
+        "is this book free",
+        "does my course have immediate access",
+        "is my book part of immediate access",
+        "is this part of immediate access",
+        "not part of immediate access",
+        "included in immediate access",
+        "covered by immediate access",
+    ]
+    return any(s in m for s in signals)
+
+
 def is_confirmed_materials_issue(message: str) -> bool:
     """Detect when user confirms they're having MATERIALS (textbook/IA) issues."""
     m = (message or "").lower()
@@ -1238,7 +1407,12 @@ def is_confirmed_materials_issue(message: str) -> bool:
 
     # Policy/FAQ questions about opting out, physical availability, or bundle
     # admin are not access troubleshooting issues — exclude them.
-    if is_opt_out_policy_question(message) or is_bundle_admin_question(message):
+    if (
+        is_opt_out_policy_question(message)
+        or is_bundle_admin_question(message)
+        or is_ia_enrollment_query(message)
+        or is_textbook_return_query(message)
+    ):
         return False
 
     # Informational "what is / how does" questions are FAQ lookups, not access issues.
@@ -1259,6 +1433,38 @@ def is_confirmed_materials_issue(message: str) -> bool:
     ]
     # Use word boundary for bare "book"/"books" to avoid false matches on "QuickBooks" etc.
     return any(t in m for t in materials_terms) or bool(re.search(r"\bbooks?\b", m))
+
+
+def ia_enrollment_reply() -> str:
+    return (
+        "Whether a specific textbook is included in Immediate Access depends on your course enrollment. "
+        "If your book is not appearing in your Immediate Access tab in Blackboard, it may not be part of the "
+        "program for that course section.\n\n"
+        "For confirmation, please contact us directly at ImmediateAccess@calbaptist.edu. Include your name, "
+        "student ID number, and course information (course code, section, and instructor name) and we will "
+        "check your enrollment."
+    )
+
+
+def vitalsource_screen_clarification_reply() -> str:
+    return (
+        "When you open Immediate Access in Blackboard, do you see a VitalSource page that says "
+        "\"0 Courses, 0 Materials\" or \"You currently have no content available\"?\n\n"
+        "- If yes, reply \"yes\" and I can help you fix it.\n"
+        "- If no, let me know which publisher or platform your textbook uses "
+        "(for example: Pearson, Cengage, McGraw Hill, Bedford, etc.) and I'll get you the right steps."
+    )
+
+
+def build_browser_cache_faq_query(message: str) -> str:
+    _m = (message or "").lower()
+    if "safari" in _m:
+        return "clear browser cache cookies Immediate Access Safari Mac no content available"
+    if "ipad" in _m or "tablet" in _m:
+        return "clear browser cache cookies Immediate Access iPad Chrome no content available"
+    if "firefox" in _m:
+        return "clear browser cache cookies Immediate Access Firefox Mac no content available"
+    return "clear browser cache cookies Immediate Access Chrome no content available"
 
 
 def extract_likely_platform_name(message: str) -> str:
@@ -1578,6 +1784,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         platform = detect_platform_from_text(message)
         intent = None
         explicit_textbook_selection = False
+        skip_platform_ambiguity_clarification = False
         
         # Check for ambiguous class access queries (need clarification)
         if is_ambiguous_class_access_query(message):
@@ -1601,8 +1808,135 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 recommended_pdfs=[]
             )
 
+        if session.get("awaiting_vitalsource_screen_confirm", False):
+            msg_lower = message.lower().strip()
+            yes_signals = [
+                "yes", "yeah", "yep", "it does", "i see it", "that's what i see",
+                "thats what i see", "that's the one", "thats the one", "0 courses",
+                "no content", "you currently have no content",
+            ]
+            no_signals = [
+                "no", "nope", "not that", "different", "something else",
+            ]
+            detected_followup_platform = detect_platform_from_text(message)
+
+            if detected_followup_platform:
+                session["awaiting_vitalsource_screen_confirm"] = False
+                session["awaiting_platform_type"] = False
+                session["stored_intent"] = "IA_ACCESS_ISSUE"
+                session["stored_platform"] = detected_followup_platform
+                session["ia_context"] = True
+                platform = detected_followup_platform
+                intent = "IA_ACCESS_ISSUE"
+                skip_platform_ambiguity_clarification = True
+                print(f"[STATE DEBUG] Vague-books clarification resolved to platform: {platform}")
+                # Fall through to normal platform instruction retrieval.
+            elif any(s in msg_lower for s in yes_signals):
+                faq_query = build_browser_cache_faq_query(message)
+                retrieval_start = time.time()
+                retrieval = await retrieve_async(
+                    faq_query,
+                    collection="faqs"
+                )
+                retrieval_time_ms = (time.time() - retrieval_start) * 1000
+                context = strip_meta_prefix(retrieval["context"]) if retrieval and retrieval.get("context") else ""
+                reply = extract_faq_answer(context, message) if context else None
+                if not reply:
+                    reply = (
+                        "Please clear your browser cookies, cache, and history, then try the Immediate Access link again."
+                    )
+                reply = strip_article_link_lines(reply)
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": reply})
+                session["awaiting_vitalsource_screen_confirm"] = False
+                recommended_pdfs = []
+                try:
+                    recommended_pdfs = get_recommendations_for_chat(
+                        retrieval_result=retrieval,
+                        platform=None,
+                        query=message
+                    )
+                    print(f"[PDF] Recommending {len(recommended_pdfs)} PDFs")
+                except Exception as e:
+                    print(f"[WARN] PDF recommendation failed: {e}")
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=reply,
+                    source=retrieval.get("source_id", "GENERAL_FAQ") if retrieval else "GENERAL_FAQ",
+                    article_link=retrieval.get("article_link") if retrieval else None,
+                    confidence=float(retrieval.get("score") or 0.0) if retrieval else 1.0,
+                    retrieval_time_ms=round(retrieval_time_ms, 2),
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=recommended_pdfs
+                )
+            elif any(s in msg_lower for s in no_signals):
+                clarification = (
+                    "I can help you with textbook access! To give you the most accurate instructions, "
+                    "could you please specify which platform or publisher your textbook uses? "
+                    "Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, "
+                    "Sage, SimuCase, etc."
+                )
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": clarification})
+                session["awaiting_vitalsource_screen_confirm"] = False
+                session["awaiting_platform_type"] = True
+                session["stored_publisher"] = "TEXTBOOK_GENERIC"
+                session["stored_intent"] = "IA_ACCESS_ISSUE"
+                session["stored_platform"] = None
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=clarification,
+                    source="CLARIFICATION_NEEDED",
+                    article_link=None,
+                    confidence=0.0,
+                    retrieval_time_ms=0,
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[]
+                )
+            else:
+                clarification = vitalsource_screen_clarification_reply()
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": clarification})
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=clarification,
+                    source="CLARIFICATION_NEEDED",
+                    article_link=None,
+                    confidence=0.0,
+                    retrieval_time_ms=0,
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[]
+                )
+
+        if (
+            is_vague_books_missing_query(message)
+            and not is_browser_cache_issue(message)
+            and not session.get("awaiting_platform_type", False)
+            and not session.get("awaiting_publisher_list_response", False)
+            and not session.get("awaiting_class_access_clarification", False)
+            and not session.get("awaiting_vitalsource_screen_confirm", False)
+        ):
+            clarification = vitalsource_screen_clarification_reply()
+            session["history"].append({"role": "user", "content": message})
+            session["history"].append({"role": "assistant", "content": clarification})
+            session["awaiting_vitalsource_screen_confirm"] = True
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=clarification,
+                source="CLARIFICATION_NEEDED",
+                article_link=None,
+                confidence=0.0,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[]
+            )
+
         # Handle follow-up questions about class materials
-        if is_confirmed_materials_issue(message) and not is_browser_cache_issue(message) and not session.get("awaiting_platform_type", False) and not session.get("awaiting_publisher_list_response", False) and not session.get("awaiting_class_access_clarification", False) and platform is None:
+        if is_confirmed_materials_issue(message) and not is_browser_cache_issue(message) and not is_textbook_return_query(message) and not is_merchandise_return_query(message) and not is_technology_return_query(message) and not is_vague_books_missing_query(message) and not session.get("awaiting_vitalsource_screen_confirm", False) and not session.get("awaiting_platform_type", False) and not session.get("awaiting_publisher_list_response", False) and not session.get("awaiting_class_access_clarification", False) and platform is None:
             # User is asking about materials, trigger platform clarification
             clarification = (
                 "I can help you with textbook access! To give you the most accurate instructions, "
@@ -1666,7 +2000,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # ===== EARLY CHECK: Ambiguous Platform Queries =====
         publisher, needs_clarification = is_ambiguous_platform_query(message)
 
-        if needs_clarification and not is_missing_read_now_button(message):
+        if needs_clarification and not is_missing_read_now_button(message) and not skip_platform_ambiguity_clarification:
             print(f"[CLARIFICATION DEBUG] Detected ambiguous query for {publisher}")
             
             session["history"].append({
@@ -2533,13 +2867,40 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 looks_like_ia_followup
                 and not any(t in msg_lower for t in non_ia_store_terms)
                 and not is_opt_out_policy_question(message)
+                and not is_ia_enrollment_query(message)
                 and not is_bundle_admin_question(message)
+                and not is_merchandise_return_query(message)
+                and not is_technology_return_query(message)
                 and not is_merchandise_query(message)
+                and not is_textbook_return_query(message)
                 and not is_browser_cache_issue(message)
+                and not is_vague_books_missing_query(message)
             ):
                 intent = "IA_ACCESS_ISSUE"
                 platform = session.get("stored_platform") or detect_recent_platform_from_history(session["history"])
                 print(f"[INTENT DEBUG] IA continuity applied: platform={platform}")
+
+        if intent == "GENERAL_FAQ" and is_ia_enrollment_query(message):
+            enrollment_reply = ia_enrollment_reply()
+            session["history"].append({
+                "role": "user",
+                "content": message
+            })
+            session["history"].append({
+                "role": "assistant",
+                "content": enrollment_reply
+            })
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=enrollment_reply,
+                source="GENERAL_FAQ",
+                article_link=None,
+                confidence=1.0,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[]
+            )
 
         # Out-of-scope guard for obvious non-campus-store topics.
         if intent == "GENERAL_FAQ" and is_out_of_scope_query(message):
@@ -2649,6 +3010,9 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             session["awaiting_course_code"] = False
             session["stored_intent"] = "IA_ACCESS_ISSUE"
             session["ia_tab_missing_escalated"] = False
+            if platform is None and session.get("ia_context") and session.get("stored_platform"):
+                platform = session.get("stored_platform")
+                print(f"[INTENT DEBUG] Reusing stored IA platform context: {platform}")
 
         # Only re-detect platform if it was not already set by the IA continuity
         # guard or other earlier logic.  Overwriting here would lose the session
@@ -2690,6 +3054,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
         if intent == "IA_ACCESS_ISSUE" and platform is not None:
             session["stored_platform"] = platform
+            session["ia_context"] = True
+            session["awaiting_platform_type"] = False
             session["ia_tab_missing_escalated"] = False
 
         print(f"[VAGUE QUERY DEBUG] intent={intent}, platform={platform}")
@@ -2783,20 +3149,30 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 )
             elif intent == "GENERAL_FAQ":
                 faq_query = message
-                if is_merchandise_query(message):
+                if is_textbook_return_query(message):
+                    if any(
+                        signal in (message or "").lower()
+                        for signal in [
+                            "refund policy for immediate access",
+                            "refund policy immediate access",
+                            "immediate access refund",
+                            "immediate access charge",
+                            "charged for immediate access",
+                        ]
+                    ):
+                        faq_query = "Immediate Access refund policy opt out deadline charge final sale student account"
+                    else:
+                        faq_query = "how to return textbook shipping in person CBU Campus Store deadlines refund policy Immediate Access"
+                elif is_merchandise_return_query(message):
+                    faq_query = "merchandise clothing apparel trade books 30 day return window 25 percent restocking fee tags receipt required original condition altered laundered"
+                elif is_technology_return_query(message):
+                    faq_query = "return technology Apple laptop computer tablet 5 days restocking fee defective original packaging"
+                elif is_merchandise_query(message):
                     faq_query = "CBU Campus Store merchandise apparel clothing mugs gifts supplies"
                 elif is_ia_overview_query(message):
                     faq_query = "Immediate Access program overview day-one digital course materials student account CBU definition"
                 elif is_browser_cache_issue(message):
-                    _m = message.lower()
-                    if "safari" in _m:
-                        faq_query = "clear browser cache cookies Immediate Access Safari Mac no content available"
-                    elif "ipad" in _m or "tablet" in _m:
-                        faq_query = "clear browser cache cookies Immediate Access iPad Chrome no content available"
-                    elif "firefox" in _m:
-                        faq_query = "clear browser cache cookies Immediate Access Firefox Mac no content available"
-                    else:
-                        faq_query = "clear browser cache cookies Immediate Access Chrome no content available"
+                    faq_query = build_browser_cache_faq_query(message)
                 retrieval = await retrieve_async(
                     faq_query,
                     collection="faqs"

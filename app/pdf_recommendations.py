@@ -157,7 +157,7 @@ def get_pdf_from_firestore(doc_id: str) -> Optional[Dict]:
     """Fetch a single PDF document from Firestore by doc_id"""
     try:
         doc_ref = db.collection('pdf_documents').document(doc_id)
-        doc = doc_ref.get()
+        doc = doc_ref.get(timeout=5.0)
         
         if doc.exists:
             data = doc.to_dict()
@@ -192,14 +192,14 @@ def get_related_pdfs_by_platform(platform: str, limit: int = 3) -> List[Dict]:
         docs = db.collection('pdf_documents')\
             .where('platform', '==', normalized_platform)\
             .limit(limit)\
-            .get()
+            .get(timeout=5.0)
 
         # Fallback for deployments storing instruction metadata in a different collection.
         if not docs:
             docs = db.collection('instructions')\
                 .where('platform', '==', normalized_platform)\
                 .limit(limit)\
-                .get()
+                .get(timeout=5.0)
         
         pdfs = []
         for doc in docs:
@@ -270,7 +270,7 @@ def get_pdf_recommendations(
             # 1. Dynamic Firestore mapping (set by admin UI uploads).
             #    Supports multiple PDFs per .txt file.
             try:
-                map_doc = db.collection("txt_to_pdf_map").document(source_filename).get()
+                map_doc = db.collection("txt_to_pdf_map").document(source_filename).get(timeout=5.0)
                 if map_doc.exists:
                     found_in_firestore = True
                     pdf_doc_ids = map_doc.to_dict().get("pdf_doc_ids", [])
