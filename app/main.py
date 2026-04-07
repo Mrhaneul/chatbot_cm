@@ -448,6 +448,9 @@ def detect_intent(message: str) -> str:
     if is_ia_enrollment_query(message):
         return "GENERAL_FAQ"
 
+    if is_general_ia_question(message) or is_access_code_question(message):
+        return "GENERAL_FAQ"
+
     # ✨ Check for informational questions FIRST
     informational_patterns = [
         "what is",
@@ -762,6 +765,8 @@ def is_meta_or_greeting_misfire(reply: str) -> bool:
             "i will give a greeting",
             "what can i help you with today",
             "hi! i'm lance",
+            "absolute rule #1",
+            "documentation context appears below",
         ]
     )
 
@@ -1261,6 +1266,9 @@ def is_browser_cache_issue(message: str) -> bool:
         "currently have no content available",
         "you currently have no content",
     ]
+    if is_blank_page_query(message):
+        return False
+
     if any(s in m for s in strong_ia_symptoms):
         return True
 
@@ -1399,6 +1407,185 @@ def is_ia_enrollment_query(message: str) -> bool:
     return any(s in m for s in signals)
 
 
+def is_general_ia_question(message: str) -> bool:
+    """
+    Detect questions about the Immediate Access program itself
+    that don't require platform-specific instructions.
+    These should fall through to grounded LLM fallback, not
+    platform clarification.
+    """
+    m = (message or "").lower()
+    ia_signals = [
+        "immediate access",
+        "access code",
+        "the code",
+        "a code",
+        "my code",
+        "used textbook",
+        "used book",
+        "second hand",
+        "opted out",
+        "opt back in",
+        "charged",
+        "charge on my",
+        "financial aid",
+        "after the semester",
+        "end of semester",
+        "mid-semester",
+        "expired",
+        "disappeared from my account",
+        "lost access",
+        "print pages",
+        "download my textbook",
+        "offline",
+        "wrong language",
+        "professor said",
+        "professor gave",
+        "professor mentioned",
+        "don't have a code",
+        "i don't have the code",
+        "i need a code",
+        "missing the code",
+        "where can i get",
+        "where do i get",
+        "how do i get the code",
+        "will it work",
+        "already been used",
+        "code expired",
+        "share my access",
+    ]
+    troubleshooting_exclusions = [
+        "can't access",
+        "cant access",
+        "cannot access",
+        "unable to access",
+        "not able to access",
+        "not showing",
+        "not populating",
+        "missing",
+        "can't find",
+        "cant find",
+        "cannot find",
+        "no immediate access tab",
+        "there is no immediate access tab",
+        "tab is missing",
+        "blank page",
+        "blank screen",
+        "link doesn't work",
+        "link isnt working",
+        "broken link",
+        "error",
+        "issue",
+        "problem",
+        "won't load",
+        "doesn't load",
+        "doesnt load",
+    ]
+    platform_mentions = [
+        "cengage", "mindtap", "mcgraw", "connect", "pearson",
+        "mylab", "mastering", "wiley", "bedford", "vitalsource",
+        "sage", "vantage", "macmillan", "achieve", "simucase",
+        "zybooks", "inquizitive", "norton", "stukent",
+    ]
+    has_ia_signal = any(s in m for s in ia_signals)
+    has_platform = any(p in m for p in platform_mentions)
+    has_troubleshooting = any(s in m for s in troubleshooting_exclusions)
+    return has_ia_signal and not has_platform and not has_troubleshooting
+
+
+def is_access_code_question(message: str) -> bool:
+    """
+    Detect general questions about access codes that don't require
+    platform-specific instructions. These should reach the grounded
+    LLM fallback, not platform clarification.
+    """
+    m = (message or "").lower()
+    return any(s in m for s in [
+        "where can i get the code",
+        "where do i get the code",
+        "how do i get the code",
+        "where is the code",
+        "i don't have the code",
+        "i don't have a code",
+        "don't have a code",
+        "i need a code",
+        "need the code",
+        "missing the code",
+        "code for immediate access",
+        "get the code",
+        "find the code",
+        "where to find the code",
+        "professor said use a code",
+        "professor gave a code",
+        "professor mentioned a code",
+        "professor said to use a code",
+        "came with a code",
+        "used textbook",
+        "used book",
+        "code already used",
+        "already been used",
+        "code isn't working",
+        "code doesn't work",
+        "code not working",
+        "redeem a code",
+        "how to redeem",
+        "where to redeem",
+    ])
+
+
+def is_login_account_issue(message: str) -> bool:
+    """
+    Detect account-specific login issues that are not browser cache
+    problems and not general platform access issues.
+    """
+    m = (message or "").lower()
+    account_signals = [
+        "shared my account",
+        "sharing my account",
+        "someone else used",
+        "someone logged in",
+        "locked out",
+        "account locked",
+        "forgot my password",
+        "reset my password",
+        "wrong email",
+        "wrong account",
+        "can't log in",
+        "cannot log in",
+        "can't login",
+        "cannot login",
+        "won't let me log in",
+        "won't let me login",
+        "login not working",
+        "log in not working",
+        "account not working",
+        "duplicate account",
+        "two accounts",
+        "multiple accounts",
+    ]
+    ia_terms = [
+        "immediate access",
+        "vitalsource",
+        "cengage",
+        "pearson",
+        "mcgraw",
+        "wiley",
+        "bedford",
+        "bookshelf",
+        "textbook",
+        "my account",
+        "my book",
+        "my materials",
+        "platform",
+        "publisher",
+        "mindtap",
+        "mylab",
+    ]
+    has_account = any(s in m for s in account_signals)
+    has_ia = any(t in m for t in ia_terms)
+    return has_account and has_ia
+
+
 def is_confirmed_materials_issue(message: str) -> bool:
     """Detect when user confirms they're having MATERIALS (textbook/IA) issues."""
     m = (message or "").lower()
@@ -1412,6 +1599,10 @@ def is_confirmed_materials_issue(message: str) -> bool:
         or is_bundle_admin_question(message)
         or is_ia_enrollment_query(message)
         or is_textbook_return_query(message)
+        or is_general_ia_question(message)
+        or is_access_code_question(message)
+        or is_blank_page_query(message)
+        or is_login_account_issue(message)
     ):
         return False
 
@@ -1480,10 +1671,54 @@ def extract_likely_platform_name(message: str) -> str:
         "textbook", "platform", "publisher", "app", "software", "program",
         "course", "class", "access", "through", "via", "need", "help", "trying",
         "get", "got", "can", "cant", "cannot", "see", "find", "open", "work",
+        "link", "links", "button", "buttons", "page", "pages", "blank",
+        "error", "errors", "message", "messages", "screen", "window",
+        "takes", "took", "goes", "went", "opens", "opened", "shows",
+        "showing", "clicking", "clicked", "tap", "tapped", "loading",
+        "loaded", "redirect", "redirected", "nothing",
     }
     words = message.strip().split()
     candidates = [w.strip(".,!?\"'") for w in words if w.lower().strip(".,!?\"'") not in _stop and len(w) > 1]
     return candidates[0] if candidates else message.strip()
+
+
+def is_blank_page_query(message: str) -> bool:
+    """
+    Detect queries about blank pages, broken links, or error screens
+    in Blackboard/Immediate Access that are not platform-specific.
+    """
+    m = (message or "").lower()
+    blank_signals = [
+        "blank page",
+        "blank screen",
+        "takes me to a blank",
+        "goes to a blank",
+        "white page",
+        "nothing loads",
+        "page won't load",
+        "page doesn't load",
+        "link doesn't work",
+        "link isn't working",
+        "link takes me to",
+        "link goes to",
+        "broken link",
+        "error page",
+        "page not found",
+        "404",
+        "just a blank",
+        "only a blank",
+    ]
+    ia_terms = [
+        "blackboard",
+        "immediate access",
+        "ia tab",
+        "the link",
+        "my link",
+        "course link",
+    ]
+    has_blank = any(s in m for s in blank_signals)
+    has_ia = any(t in m for t in ia_terms)
+    return has_blank and has_ia
 
 
 # Keep legacy function for backward compatibility
@@ -1560,10 +1795,24 @@ def is_out_of_scope_query(message: str) -> bool:
         "dorm",
         "meal plan",
         "financial aid",
+        "library",
+        "library hours",
+        "library close",
+        "library open",
+        "what time does the library",
+        "when does the library",
+        "library building",
+        "financial aid office",
         "scholarship",
         "transcript",
         "registrar",
         "admissions",
+        "bursar",
+        "student accounts office",
+        "it help desk",
+        "tech support cbu",
+        "canvas",
+        "moodle",
         "tuition payment",
     ]
     return any(k in m for k in out_of_scope_keywords)
@@ -1912,7 +2161,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 )
 
         if (
-            is_vague_books_missing_query(message)
+            (is_vague_books_missing_query(message) or is_blank_page_query(message))
             and not is_browser_cache_issue(message)
             and not session.get("awaiting_platform_type", False)
             and not session.get("awaiting_publisher_list_response", False)
@@ -1935,8 +2184,34 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 recommended_pdfs=[]
             )
 
+        if is_login_account_issue(message) and not session.get("awaiting_platform_type", False) and platform is None:
+            reply = (
+                "I can help with account access issues. To give you the right steps, "
+                "could you let me know which platform or publisher your textbook uses?\n\n"
+                "For example: VitalSource, Cengage MindTap, Pearson MyLab, McGraw Hill Connect, "
+                "Bedford, Sage, WileyPlus, etc.\n\n"
+                "If you're not sure, check the Immediate Access tab in Blackboard — "
+                "it should show the name of the publisher."
+            )
+            session["history"].append({"role": "user", "content": message})
+            session["history"].append({"role": "assistant", "content": reply})
+            session["awaiting_platform_type"] = True
+            session["stored_publisher"] = "TEXTBOOK_GENERIC"
+            session["stored_intent"] = "IA_ACCESS_ISSUE"
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=reply,
+                source="CLARIFICATION_NEEDED",
+                article_link=None,
+                confidence=0.0,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[]
+            )
+
         # Handle follow-up questions about class materials
-        if is_confirmed_materials_issue(message) and not is_browser_cache_issue(message) and not is_textbook_return_query(message) and not is_merchandise_return_query(message) and not is_technology_return_query(message) and not is_vague_books_missing_query(message) and not session.get("awaiting_vitalsource_screen_confirm", False) and not session.get("awaiting_platform_type", False) and not session.get("awaiting_publisher_list_response", False) and not session.get("awaiting_class_access_clarification", False) and platform is None:
+        if is_confirmed_materials_issue(message) and not is_browser_cache_issue(message) and not is_textbook_return_query(message) and not is_merchandise_return_query(message) and not is_technology_return_query(message) and not is_vague_books_missing_query(message) and not is_blank_page_query(message) and not session.get("awaiting_vitalsource_screen_confirm", False) and not session.get("awaiting_platform_type", False) and not session.get("awaiting_publisher_list_response", False) and not session.get("awaiting_class_access_clarification", False) and platform is None:
             # User is asking about materials, trigger platform clarification
             clarification = (
                 "I can help you with textbook access! To give you the most accurate instructions, "
@@ -2868,6 +3143,9 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 and not any(t in msg_lower for t in non_ia_store_terms)
                 and not is_opt_out_policy_question(message)
                 and not is_ia_enrollment_query(message)
+                and not is_general_ia_question(message)
+                and not is_access_code_question(message)
+                and not is_login_account_issue(message)
                 and not is_bundle_admin_question(message)
                 and not is_merchandise_return_query(message)
                 and not is_technology_return_query(message)
@@ -2875,6 +3153,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 and not is_textbook_return_query(message)
                 and not is_browser_cache_issue(message)
                 and not is_vague_books_missing_query(message)
+                and not is_blank_page_query(message)
             ):
                 intent = "IA_ACCESS_ISSUE"
                 platform = session.get("stored_platform") or detect_recent_platform_from_history(session["history"])
@@ -2929,7 +3208,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 recommended_pdfs=[]
             )
 
-        if intent == "GENERAL_FAQ" and is_blackboard_location_query(message):
+        if intent == "GENERAL_FAQ" and is_blackboard_location_query(message) and not is_blank_page_query(message):
             blackboard_reply = (
                 "Blackboard is a web-based learning platform — it doesn't have a physical location. "
                 "You can access it through your web browser by searching for \"CBU Blackboard\" or "
@@ -3149,7 +3428,11 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 )
             elif intent == "GENERAL_FAQ":
                 faq_query = message
-                if is_textbook_return_query(message):
+                if is_access_code_question(message):
+                    faq_query = "Immediate Access access code Blackboard code not needed professor said use a code used textbook code"
+                elif is_general_ia_question(message):
+                    faq_query = "Immediate Access program overview billing opt out student account digital materials Blackboard"
+                elif is_textbook_return_query(message):
                     if any(
                         signal in (message or "").lower()
                         for signal in [
@@ -3210,7 +3493,13 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
         # Deterministic FAQ response path: return the retrieved FAQ answer directly
         # to avoid hallucinated policy/instruction steps.
-        if intent == "GENERAL_FAQ" and retrieval and retrieval.get("source_id", "").startswith("FAQ_SOURCE_"):
+        if (
+            intent == "GENERAL_FAQ"
+            and retrieval
+            and retrieval.get("source_id", "").startswith("FAQ_SOURCE_")
+            and not is_general_ia_question(message)
+            and not is_access_code_question(message)
+        ):
             faq_confidence = float(retrieval.get("score") or 0.0)
             if is_store_hours_query(message) and not context_contains_store_hours(context):
                 no_hours_reply = (
@@ -3478,6 +3767,17 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             if fallback_reply:
                 print("[WARN] [LLM GUARD] Detected greeting/meta misfire; using context-derived fallback")
                 reply = fallback_reply
+
+        if (
+            intent == "GENERAL_FAQ"
+            and retrieval
+            and retrieval.get("source_id", "").startswith("FAQ_SOURCE_")
+            and is_meta_or_greeting_misfire(reply)
+        ):
+            fallback_reply = extract_faq_answer(context, message) or strip_article_link_lines(context)
+            if fallback_reply:
+                print("[WARN] [LLM GUARD] Detected FAQ prompt/meta misfire; using FAQ fallback")
+                reply = strip_article_link_lines(fallback_reply)
         
         # ✨ END LLM TIMER
         llm_time_ms = (time.time() - llm_start) * 1000
