@@ -1,11 +1,13 @@
 import React from 'react';
 import lanceAvatar from '../assets/lance.png';
+import { linkify } from '../utils/linkify';
 
 interface Message {
   id: string;
   type: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Date;
+  debug_mode?: boolean;
 }
 
 interface ChatMessageProps {
@@ -14,19 +16,19 @@ interface ChatMessageProps {
 
 export function ChatMessage({ message }: ChatMessageProps) {
   const formatContent = (content: string) => {
-    // Split by line breaks and format
     const lines = content.split('\n');
-    
     return lines.map((line, index) => {
       // Check for bold text (**text**)
       const boldRegex = /\*\*(.*?)\*\*/g;
-      const parts = [];
+      const parts: React.ReactNode[] = [];
       let lastIndex = 0;
       let match;
 
       while ((match = boldRegex.exec(line)) !== null) {
         if (match.index > lastIndex) {
-          parts.push(line.substring(lastIndex, match.index));
+          // Apply linkify to the plain text segment before the bold match
+          const plainText = line.substring(lastIndex, match.index);
+          parts.push(...linkify(plainText));
         }
         parts.push(
           <strong key={`bold-${index}-${match.index}`} className="font-bold text-[#002554]">
@@ -37,33 +39,36 @@ export function ChatMessage({ message }: ChatMessageProps) {
       }
 
       if (lastIndex < line.length) {
-        parts.push(line.substring(lastIndex));
+        // Apply linkify to remaining plain text after last bold match
+        const remaining = line.substring(lastIndex);
+        parts.push(...linkify(remaining));
       }
 
       if (parts.length === 0 && line.trim() === '') {
         return <br key={index} />;
       }
 
-      // Check if it's a list item
+      // Numbered list item
       if (line.trim().match(/^[\d]+\./)) {
         return (
           <div key={index} className="ml-4">
-            {parts.length > 0 ? parts : line}
+            {parts.length > 0 ? parts : linkify(line)}
           </div>
         );
       }
 
-      if (line.trim().startsWith('•')) {
+      // Bullet list item
+      if (line.trim().startsWith('•') || line.trim().startsWith('-')) {
         return (
           <div key={index} className="ml-4">
-            {parts.length > 0 ? parts : line}
+            {parts.length > 0 ? parts : linkify(line)}
           </div>
         );
       }
 
       return (
         <div key={index}>
-          {parts.length > 0 ? parts : line}
+          {parts.length > 0 ? parts : linkify(line)}
         </div>
       );
     });
@@ -94,15 +99,27 @@ export function ChatMessage({ message }: ChatMessageProps) {
     <div className="flex gap-3 mb-4">
       <div className="flex-shrink-0">
         <div className="w-10 h-10 rounded-full overflow-hidden shadow-sm">
-          <img 
-            src={lanceAvatar} 
-            alt="Lance Assistant" 
+          <img
+            src={lanceAvatar}
+            alt="Lance Assistant"
             className="w-full h-full object-cover"
           />
         </div>
       </div>
-      
       <div className="bg-[#FFFAEB] border border-[#165FB3]/30 text-[#002554] px-6 py-3 rounded-2xl rounded-tl-sm max-w-[75%] shadow-sm">
+        {message.debug_mode && (
+          <span style={{
+            fontSize: '10px',
+            color: '#A07400',
+            border: '1px solid #A07400',
+            borderRadius: '4px',
+            padding: '1px 4px',
+            marginBottom: '6px',
+            display: 'inline-block',
+          }}>
+            LLM
+          </span>
+        )}
         <div className="whitespace-pre-wrap space-y-2">
           {formatContent(message.content)}
         </div>

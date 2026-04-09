@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 from email.mime import message
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Query
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.llm.llama_client import LlamaClient
 # from app.rag.retriever import FAQRetriever  # Deprecated import
@@ -34,6 +34,7 @@ from app.admin import admin_router
 from fastapi.responses import FileResponse
 from app.admin_auth import verify_admin_credentials
 from fastapi import Depends
+from fastapi.security import HTTPBasicCredentials
 
 # Configure logging once at startup
 def strip_meta_prefix(context: str) -> str:
@@ -129,6 +130,8 @@ llm_semaphore = asyncio.Semaphore(MAX_CONCURRENT_LLM_REQUESTS)
 chat_request_queue: asyncio.Queue[str] = asyncio.Queue()
 chat_jobs: Dict[str, Dict[str, Any]] = {}
 chat_workers: list[asyncio.Task] = []
+# Global default debug mode — set via Admin UI, inherited by new sessions
+GLOBAL_DEBUG_MODE_DEFAULT = False
 
 PLATFORM_ALIASES: Dict[str, list[str]] = {
     "CENGAGE": ["cengage", "mindtap", "cnow", "cnowv2"],
@@ -373,26 +376,33 @@ async def stop_chat_queue_workers():
     chat_workers.clear()
 
 
+def init_session() -> Dict[str, Any]:
+    """Create a new session state object with global defaults."""
+    now = datetime.now()
+    return {
+        "history": [],
+        "awaiting_course_code": False,
+        "awaiting_platform_type": False,
+        "awaiting_vitalsource_screen_confirm": False,
+        "awaiting_class_access_clarification": False,
+        "stored_intent": None,
+        "stored_platform": None,
+        "ia_context": False,
+        "stored_publisher": None,
+        "ia_tab_missing_escalated": False,
+        "debug_mode": GLOBAL_DEBUG_MODE_DEFAULT,
+        "last_activity": now,
+        "created_at": now,
+    }
+
+
 def get_or_create_session(session_id: str) -> Dict[str, Any]:
     """
     Get existing session or create new one.
     Returns session data dictionary.
     """
     if session_id not in sessions:
-        sessions[session_id] = {
-            "history": [],
-            "awaiting_course_code": False,
-            "awaiting_platform_type": False,
-            "awaiting_vitalsource_screen_confirm": False,
-            "awaiting_class_access_clarification": False,
-            "stored_intent": None,
-            "stored_platform": None,
-            "ia_context": False,
-            "stored_publisher": None,
-            "ia_tab_missing_escalated": False,
-            "last_activity": datetime.now(),
-            "created_at": datetime.now()
-        }
+        sessions[session_id] = init_session()
     
     # Update last activity timestamp
     sessions[session_id]["last_activity"] = datetime.now()
@@ -412,6 +422,50 @@ def cleanup_expired_sessions():
     
     if expired:
         print(f"[SESSION] Removed {len(expired)} expired sessions. Active: {len(sessions)}")
+
+
+@app.post("/session/debug-mode")
+async def set_debug_mode(
+    session_id: str = Query(...),
+    enabled: bool = Query(...),
+):
+    """Toggle LLM-only debug mode for a specific session."""
+    if session_id not in sessions:
+        sessions[session_id] = init_session()
+    sessions[session_id]["debug_mode"] = enabled
+    sessions[session_id]["last_activity"] = datetime.now()
+    print(f"[DEBUG MODE] Session {session_id[:8]}... debug_mode set to {enabled}")
+    return {"session_id": session_id, "debug_mode": enabled}
+
+
+@app.get("/session/debug-mode")
+async def get_debug_mode(session_id: str = Query(...)):
+    """Get current debug mode state for a session."""
+    if session_id not in sessions:
+        return {"session_id": session_id, "debug_mode": False}
+    return {
+        "session_id": session_id,
+        "debug_mode": sessions[session_id].get("debug_mode", False),
+    }
+
+
+@app.post("/admin/debug-mode")
+async def set_global_debug_mode(
+    enabled: bool = Query(...),
+    credentials: HTTPBasicCredentials = Depends(verify_admin_credentials),
+):
+    """Set the global default debug mode for all new sessions."""
+    global GLOBAL_DEBUG_MODE_DEFAULT
+    GLOBAL_DEBUG_MODE_DEFAULT = enabled
+    print(f"[ADMIN] Global debug mode default set to {enabled}")
+    return {"global_debug_mode": enabled}
+
+
+@app.get("/admin/debug-mode")
+async def get_global_debug_mode(
+    credentials: HTTPBasicCredentials = Depends(verify_admin_credentials),
+):
+    return {"global_debug_mode": GLOBAL_DEBUG_MODE_DEFAULT}
 
 
 def detect_intent(message: str) -> str:
@@ -2013,12 +2067,16 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
     request_start = time.time()
     retrieval_time_ms = 0
     llm_time_ms = 0
+    debug_mode = False
     
     try:
         cleanup_expired_sessions()
         
         session_id = payload.session_id or str(uuid.uuid4())
         session = get_or_create_session(session_id)
+        debug_mode = session.get("debug_mode", False)
+        if debug_mode:
+            print(f"[DEBUG MODE] Active for session {session_id[:8]}... - skipping deterministic routing")
 
         # Reset clarification flags for a fresh user query unless we are already awaiting clarification
         if not session.get("awaiting_platform_type", False):
@@ -2032,11 +2090,13 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # Detect platform early for direct mentions
         platform = detect_platform_from_text(message)
         intent = None
+        course_code = None
+        is_vague_query = False
         explicit_textbook_selection = False
         skip_platform_ambiguity_clarification = False
         
         # Check for ambiguous class access queries (need clarification)
-        if is_ambiguous_class_access_query(message):
+        if not debug_mode and is_ambiguous_class_access_query(message):
             clarification = (
                 "I'd be happy to help! Just to clarify, are you having trouble accessing **the class itself** "
                 "(logging in, finding your course), or accessing **the class materials** "
@@ -2054,10 +2114,11 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 retrieval_time_ms=0,
                 llm_time_ms=0,
                 total_time_ms=round(total_time_ms, 2),
-                recommended_pdfs=[]
+                recommended_pdfs=[],
+                debug_mode=debug_mode
             )
 
-        if session.get("awaiting_vitalsource_screen_confirm", False):
+        if not debug_mode and session.get("awaiting_vitalsource_screen_confirm", False):
             msg_lower = message.lower().strip()
             yes_signals = [
                 "yes", "yeah", "yep", "it does", "i see it", "that's what i see",
@@ -2117,7 +2178,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     retrieval_time_ms=round(retrieval_time_ms, 2),
                     llm_time_ms=0,
                     total_time_ms=round(total_time_ms, 2),
-                    recommended_pdfs=recommended_pdfs
+                    recommended_pdfs=recommended_pdfs,
+                    debug_mode=debug_mode
                 )
             elif any(s in msg_lower for s in no_signals):
                 clarification = (
@@ -2142,7 +2204,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     retrieval_time_ms=0,
                     llm_time_ms=0,
                     total_time_ms=round(total_time_ms, 2),
-                    recommended_pdfs=[]
+                    recommended_pdfs=[],
+                    debug_mode=debug_mode
                 )
             else:
                 clarification = vitalsource_screen_clarification_reply()
@@ -2157,11 +2220,13 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     retrieval_time_ms=0,
                     llm_time_ms=0,
                     total_time_ms=round(total_time_ms, 2),
-                    recommended_pdfs=[]
+                    recommended_pdfs=[],
+                    debug_mode=debug_mode
                 )
 
         if (
-            (is_vague_books_missing_query(message) or is_blank_page_query(message))
+            not debug_mode
+            and (is_vague_books_missing_query(message) or is_blank_page_query(message))
             and not is_browser_cache_issue(message)
             and not session.get("awaiting_platform_type", False)
             and not session.get("awaiting_publisher_list_response", False)
@@ -2181,10 +2246,11 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 retrieval_time_ms=0,
                 llm_time_ms=0,
                 total_time_ms=round(total_time_ms, 2),
-                recommended_pdfs=[]
+                recommended_pdfs=[],
+                debug_mode=debug_mode
             )
 
-        if is_login_account_issue(message) and not session.get("awaiting_platform_type", False) and platform is None:
+        if not debug_mode and is_login_account_issue(message) and not session.get("awaiting_platform_type", False) and platform is None:
             reply = (
                 "I can help with account access issues. To give you the right steps, "
                 "could you let me know which platform or publisher your textbook uses?\n\n"
@@ -2207,11 +2273,12 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 retrieval_time_ms=0,
                 llm_time_ms=0,
                 total_time_ms=round(total_time_ms, 2),
-                recommended_pdfs=[]
+                recommended_pdfs=[],
+                debug_mode=debug_mode
             )
 
         # Handle follow-up questions about class materials
-        if is_confirmed_materials_issue(message) and not is_browser_cache_issue(message) and not is_textbook_return_query(message) and not is_merchandise_return_query(message) and not is_technology_return_query(message) and not is_vague_books_missing_query(message) and not is_blank_page_query(message) and not session.get("awaiting_vitalsource_screen_confirm", False) and not session.get("awaiting_platform_type", False) and not session.get("awaiting_publisher_list_response", False) and not session.get("awaiting_class_access_clarification", False) and platform is None:
+        if not debug_mode and is_confirmed_materials_issue(message) and not is_browser_cache_issue(message) and not is_textbook_return_query(message) and not is_merchandise_return_query(message) and not is_technology_return_query(message) and not is_vague_books_missing_query(message) and not is_blank_page_query(message) and not session.get("awaiting_vitalsource_screen_confirm", False) and not session.get("awaiting_platform_type", False) and not session.get("awaiting_publisher_list_response", False) and not session.get("awaiting_class_access_clarification", False) and platform is None:
             # User is asking about materials, trigger platform clarification
             clarification = (
                 "I can help you with textbook access! To give you the most accurate instructions, "
@@ -2233,7 +2300,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 confidence=0.0,
                 total_time_ms=round(total_time, 2),
                 retrieval_time_ms=0,
-                llm_time_ms=0
+                llm_time_ms=0,
+                debug_mode=debug_mode
             )
 
         # ===== EARLY CHECK: Ambiguous Platforms =====
@@ -2241,7 +2309,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         
         print(f"[PLATFORM DEBUG] is_ambiguous = {is_ambiguous}")
         
-        if is_ambiguous:
+        if not debug_mode and is_ambiguous:
             print("[PLATFORM DEBUG] ENTERING ambiguity block")
             session["history"].append({
                 "role": "user",
@@ -2269,13 +2337,14 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 confidence=0.0,
                 total_time_ms=round(total_time, 2),
                 retrieval_time_ms=0,
-                llm_time_ms=0
+                llm_time_ms=0,
+                debug_mode=debug_mode
             )
         
         # ===== EARLY CHECK: Ambiguous Platform Queries =====
         publisher, needs_clarification = is_ambiguous_platform_query(message)
 
-        if needs_clarification and not is_missing_read_now_button(message) and not skip_platform_ambiguity_clarification:
+        if not debug_mode and needs_clarification and not is_missing_read_now_button(message) and not skip_platform_ambiguity_clarification:
             print(f"[CLARIFICATION DEBUG] Detected ambiguous query for {publisher}")
             
             session["history"].append({
@@ -2343,7 +2412,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 confidence=0.0,
                 total_time_ms=round(total_time, 2),
                 retrieval_time_ms=0,
-                llm_time_ms=0
+                llm_time_ms=0,
+                debug_mode=debug_mode
             )
         
         platform = platform_temp
@@ -2353,7 +2423,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
 
         # Handle class access clarification state
-        if session.get("awaiting_class_access_clarification", False):
+        if not debug_mode and session.get("awaiting_class_access_clarification", False):
             print("[STATE DEBUG] Processing class access clarification response")
             
             if is_confirmed_class_access_issue(message):
@@ -2374,7 +2444,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     confidence=0.0,
                     total_time_ms=round(total_time, 2),
                     retrieval_time_ms=0,
-                    llm_time_ms=0
+                    llm_time_ms=0,
+                    debug_mode=debug_mode
                 )
             elif is_confirmed_materials_issue(message):
                 # User confirmed it's about materials/textbook
@@ -2399,7 +2470,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     confidence=0.0,
                     total_time_ms=round(total_time, 2),
                     retrieval_time_ms=0,
-                    llm_time_ms=0
+                    llm_time_ms=0,
+                    debug_mode=debug_mode
                 )
             else:
                 # User didn't clearly answer - re-prompt
@@ -2418,12 +2490,13 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     confidence=0.0,
                     total_time_ms=round(total_time, 2),
                     retrieval_time_ms=0,
-                    llm_time_ms=0
+                    llm_time_ms=0,
+                    debug_mode=debug_mode
                 )
 
         # ── Publisher list response handler ───────────────────────────────────────
         # Fires when the student is responding to the numbered publisher list.
-        if session.get("awaiting_publisher_list_response", False):
+        if not debug_mode and session.get("awaiting_publisher_list_response", False):
             print("[STATE DEBUG] Processing publisher list response")
             msg_lower = message.lower().strip()
             unrecognized_name = session.get("unrecognized_platform_name", "your platform")
@@ -2516,10 +2589,11 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     total_time_ms=round(total_time, 2),
                     retrieval_time_ms=round(retrieval_ms, 2),
                     llm_time_ms=0,
-                    recommended_pdfs=route3c_pdfs
+                    recommended_pdfs=route3c_pdfs,
+                    debug_mode=debug_mode
                 )
 
-        if session.get("awaiting_platform_type", False):
+        if not debug_mode and session.get("awaiting_platform_type", False):
             print("[STATE DEBUG] Processing platform type clarification")
 
             msg_lower = message.lower()
@@ -2599,7 +2673,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                         confidence=0.0,
                         total_time_ms=round(total_time, 2),
                         retrieval_time_ms=0,
-                        llm_time_ms=0
+                        llm_time_ms=0,
+                        debug_mode=debug_mode
                     )
 
                 if book_format_reply == "IMMEDIATE_ACCESS_DIGITAL":
@@ -2628,7 +2703,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                         confidence=0.0,
                         total_time_ms=round(total_time, 2),
                         retrieval_time_ms=0,
-                        llm_time_ms=0
+                        llm_time_ms=0,
+                        debug_mode=debug_mode
                     )
 
                 format_clarification = (
@@ -2651,7 +2727,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     confidence=0.0,
                     total_time_ms=round(total_time, 2),
                     retrieval_time_ms=0,
-                    llm_time_ms=0
+                    llm_time_ms=0,
+                    debug_mode=debug_mode
                 )
 
             # Keep clarification state open and do not run retrieval when the student
@@ -2684,7 +2761,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     confidence=0.0,
                     total_time_ms=round(total_time, 2),
                     retrieval_time_ms=0,
-                    llm_time_ms=0
+                    llm_time_ms=0,
+                    debug_mode=debug_mode
                 )
 
             if is_cannot_find_immediate_access:
@@ -2715,7 +2793,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     confidence=0.0,
                     total_time_ms=round(total_time, 2),
                     retrieval_time_ms=0,
-                    llm_time_ms=0
+                    llm_time_ms=0,
+                    debug_mode=debug_mode
                 )
 
             # Avoid repeating a rigid fallback when the student acknowledges help
@@ -2742,7 +2821,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     confidence=0.0,
                     total_time_ms=round(total_time, 2),
                     retrieval_time_ms=0,
-                    llm_time_ms=0
+                    llm_time_ms=0,
+                    debug_mode=debug_mode
                 )
             
             # Handle textbook/platform clarification replies
@@ -2806,7 +2886,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                         total_time_ms=round(total_time, 2),
                         retrieval_time_ms=0,
                         llm_time_ms=0,
-                        recommended_pdfs=[]
+                        recommended_pdfs=[],
+                        debug_mode=debug_mode
                     )
                 else:
                     followup_reply = (
@@ -2831,7 +2912,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                         confidence=0.0,
                         total_time_ms=round(total_time, 2),
                         retrieval_time_ms=0,
-                        llm_time_ms=0
+                        llm_time_ms=0,
+                        debug_mode=debug_mode
                     )
 
             # Only clear platform-clarification state once we actually have a platform.
@@ -2849,7 +2931,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             print(f"[PLATFORM DEBUG] Detected platform: {platform}")
 
             # ✨ ADD THIS ELIF BLOCK FOR COURSE CODE HANDLING
-        elif session.get("awaiting_course_code", False):
+        elif not debug_mode and session.get("awaiting_course_code", False):
             if detect_topic_switch(message, session["stored_intent"], session.get("stored_platform")):
                 session["awaiting_course_code"] = False
                 session["stored_intent"] = None
@@ -2909,7 +2991,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             print(f"🔍 [PLATFORM DEBUG] Detected platform: {platform}")
 
         # Check for ambiguous class access queries (need clarification)
-        if is_ambiguous_class_access_query(message):
+        if not debug_mode and is_ambiguous_class_access_query(message):
             clarification = (
                 "I'd be happy to help! Just to clarify, are you having trouble accessing **the class itself** "
                 "(logging in, finding your course), or accessing **the class materials** "
@@ -2927,11 +3009,12 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 retrieval_time_ms=0,
                 llm_time_ms=0,
                 total_time_ms=round(total_time_ms, 2),
-                recommended_pdfs=[]
+                recommended_pdfs=[],
+                debug_mode=debug_mode
             )
 
         # Check for explicit login issues (not ambiguous)
-        if is_explicit_login_issue(message):
+        if not debug_mode and is_explicit_login_issue(message):
             login_reply = (
                 "It sounds like this is a Blackboard/InsideCBU login or class-access issue. "
                 "Please contact CBU IT support (or the Pre-College support team) to restore account/class access first. "
@@ -2955,7 +3038,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 retrieval_time_ms=0,
                 llm_time_ms=0,
                 total_time_ms=round(total_time_ms, 2),
-                recommended_pdfs=[]
+                recommended_pdfs=[],
+                debug_mode=debug_mode
             )
 
         # Force IA_ACCESS_ISSUE when a Read Now button is clearly missing and
@@ -2990,7 +3074,9 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             "still can't find it",
             "still cant find it",
         ]
-        if is_cannot_find_immediate_access_query(message) or (
+        if (not debug_mode and is_cannot_find_immediate_access_query(message)) or (
+            not debug_mode
+            and
             session.get("ia_tab_missing_escalated")
             and any(t in message.lower() for t in missing_ia_followup_terms)
         ):
@@ -3022,7 +3108,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 retrieval_time_ms=0,
                 llm_time_ms=0,
                 total_time_ms=round(total_time_ms, 2),
-                recommended_pdfs=[]
+                recommended_pdfs=[],
+                debug_mode=debug_mode
             )
 
         # If user provides a platform follow-up while already in IA flow,
@@ -3038,6 +3125,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # Deterministic handoff: if user provides only a platform name while we are
         # already in IA flow, return platform instructions directly.
         if (
+            not debug_mode
+            and
             intent == "IA_ACCESS_ISSUE"
             and platform is not None
             and len(message.split()) <= 5
@@ -3086,7 +3175,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                         retrieval_time_ms=round(retrieval_time_ms, 2),
                         llm_time_ms=0,
                         total_time_ms=round(total_time_ms, 2),
-                        recommended_pdfs=handoff_pdfs
+                        recommended_pdfs=handoff_pdfs,
+                        debug_mode=debug_mode
                     )
             except Exception as e:
                 print(f"[WARN] IA platform handoff retrieval failed: {e}")
@@ -3094,6 +3184,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # IA continuity guard: keep short troubleshooting follow-ups in IA flow
         # when the previous intent was IA and the platform is implied from context.
         if (
+            not debug_mode
+            and
             intent == "GENERAL_FAQ"
             and platform is None
             and session.get("stored_intent") == "IA_ACCESS_ISSUE"
@@ -3159,7 +3251,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 platform = session.get("stored_platform") or detect_recent_platform_from_history(session["history"])
                 print(f"[INTENT DEBUG] IA continuity applied: platform={platform}")
 
-        if intent == "GENERAL_FAQ" and is_ia_enrollment_query(message):
+        if not debug_mode and intent == "GENERAL_FAQ" and is_ia_enrollment_query(message):
             enrollment_reply = ia_enrollment_reply()
             session["history"].append({
                 "role": "user",
@@ -3178,7 +3270,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 retrieval_time_ms=0,
                 llm_time_ms=0,
                 total_time_ms=round(total_time_ms, 2),
-                recommended_pdfs=[]
+                recommended_pdfs=[],
+                debug_mode=debug_mode
             )
 
         # Out-of-scope guard for obvious non-campus-store topics.
@@ -3205,10 +3298,11 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 retrieval_time_ms=0,
                 llm_time_ms=0,
                 total_time_ms=round(total_time_ms, 2),
-                recommended_pdfs=[]
+                recommended_pdfs=[],
+                debug_mode=debug_mode
             )
 
-        if intent == "GENERAL_FAQ" and is_blackboard_location_query(message) and not is_blank_page_query(message):
+        if not debug_mode and intent == "GENERAL_FAQ" and is_blackboard_location_query(message) and not is_blank_page_query(message):
             blackboard_reply = (
                 "Blackboard is a web-based learning platform — it doesn't have a physical location. "
                 "You can access it through your web browser by searching for \"CBU Blackboard\" or "
@@ -3226,10 +3320,11 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 retrieval_time_ms=0,
                 llm_time_ms=0,
                 total_time_ms=round(total_time_ms, 2),
-                recommended_pdfs=[]
+                recommended_pdfs=[],
+                debug_mode=debug_mode
             )
 
-        if intent == "GENERAL_FAQ" and is_vague_campus_store_query(message):
+        if not debug_mode and intent == "GENERAL_FAQ" and is_vague_campus_store_query(message):
             clarification_reply = (
                 "I can help with Campus Store information. What do you need specifically: "
                 "store hours, location/address, phone, directions, or textbook return policy?"
@@ -3251,9 +3346,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 retrieval_time_ms=0,
                 llm_time_ms=0,
                 total_time_ms=round(total_time_ms, 2),
-                recommended_pdfs=[]
+                recommended_pdfs=[],
+                debug_mode=debug_mode
             )
-        if intent == "GENERAL_FAQ" and is_book_finding_discovery_query(message):
+        if not debug_mode and intent == "GENERAL_FAQ" and is_book_finding_discovery_query(message):
             format_question = (
                 "I can help with that. Are you trying to find a **physical textbook** "
                 "or **Immediate Access digital materials**?"
@@ -3280,7 +3376,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 retrieval_time_ms=0,
                 llm_time_ms=0,
                 total_time_ms=round(total_time_ms, 2),
-                recommended_pdfs=[]
+                recommended_pdfs=[],
+                debug_mode=debug_mode
             )
 
         # Do not require course code up front for IA troubleshooting.
@@ -3304,7 +3401,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             platform is None and
             not explicit_textbook_selection
         )
-        if needs_platform_clarification:
+        if not debug_mode and needs_platform_clarification:
             clarification = (
                 "I can help you with textbook access! To give you the most accurate instructions, "
                 "could you please specify which platform or publisher your textbook uses? "
@@ -3326,7 +3423,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 confidence=0.0,
                 total_time_ms=round(total_time, 2),
                 retrieval_time_ms=0,
-                llm_time_ms=0
+                llm_time_ms=0,
+                debug_mode=debug_mode
             )
 
         is_vague_query = needs_platform_clarification
@@ -3494,6 +3592,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # Deterministic FAQ response path: return the retrieved FAQ answer directly
         # to avoid hallucinated policy/instruction steps.
         if (
+            not debug_mode
+            and
             intent == "GENERAL_FAQ"
             and retrieval
             and retrieval.get("source_id", "").startswith("FAQ_SOURCE_")
@@ -3523,7 +3623,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     retrieval_time_ms=round(retrieval_time_ms, 2),
                     llm_time_ms=0,
                     total_time_ms=round(total_time_ms, 2),
-                    recommended_pdfs=[]
+                    recommended_pdfs=[],
+                    debug_mode=debug_mode
                 )
 
             if faq_confidence < FAQ_DIRECT_MIN_CONFIDENCE:
@@ -3549,7 +3650,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     retrieval_time_ms=round(retrieval_time_ms, 2),
                     llm_time_ms=0,
                     total_time_ms=round(total_time_ms, 2),
-                    recommended_pdfs=[]
+                    recommended_pdfs=[],
+                    debug_mode=debug_mode
                 )
 
             faq_answer = extract_faq_answer(context, message)
@@ -3598,7 +3700,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     retrieval_time_ms=round(retrieval_time_ms, 2),
                     llm_time_ms=0,
                     total_time_ms=round(total_time_ms, 2),
-                    recommended_pdfs=recommended_pdfs
+                    recommended_pdfs=recommended_pdfs,
+                    debug_mode=debug_mode
                 )
 
             no_verified_faq_reply = (
@@ -3622,12 +3725,15 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 retrieval_time_ms=round(retrieval_time_ms, 2),
                 llm_time_ms=0,
                 total_time_ms=round(total_time_ms, 2),
-                recommended_pdfs=[]
+                recommended_pdfs=[],
+                debug_mode=debug_mode
             )
 
         # Deterministic instruction response path for instruction retrieval.
         # This avoids LLM variability (greeting/meta leakage, meta commentary) when docs are available.
         if (
+            not debug_mode
+            and
             intent == "IA_ACCESS_ISSUE"
             and retrieval
             and retrieval.get("source_id", "").startswith("INSTR_")
@@ -3678,8 +3784,11 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     retrieval_time_ms=round(retrieval_time_ms, 2),
                     llm_time_ms=0,
                     total_time_ms=round(total_time_ms, 2),
-                    recommended_pdfs=recommended_pdfs
+                    recommended_pdfs=recommended_pdfs,
+                    debug_mode=debug_mode
                 )
+
+        print("[LLM FALLBACK] No deterministic route matched - attempting grounded RAG fallback")
 
         # ===== LLM CALL (TIMED) =====
         system_hint = ""
@@ -3831,7 +3940,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             retrieval_time_ms=round(retrieval_time_ms, 2),
             llm_time_ms=round(llm_time_ms, 2),
             total_time_ms=round(total_time_ms, 2),
-            recommended_pdfs=recommended_pdfs
+            recommended_pdfs=recommended_pdfs,
+            debug_mode=debug_mode
         )
 
     except Exception as e:

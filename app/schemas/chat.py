@@ -10,10 +10,14 @@ class ChatResponse(BaseModel):
     source: str
     article_link: Optional[str] = None
     confidence: float
-    
+
     # Performance metrics
     response_time_ms: Optional[float] = None
     retrieval_time_ms: Optional[float] = None
     llm_time_ms: Optional[float] = None
     total_time_ms: Optional[float] = None
     recommended_pdfs: List[Dict] = []
+
+    # Debug mode flag — True when session is in LLM-only mode
+    # Used by the frontend to show the LLM badge on responses
+    debug_mode: bool = False
