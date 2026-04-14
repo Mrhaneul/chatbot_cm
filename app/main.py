@@ -3598,8 +3598,6 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             intent == "GENERAL_FAQ"
             and retrieval
             and retrieval.get("source_id", "").startswith("FAQ_SOURCE_")
-            and not is_general_ia_question(message)
-            and not is_access_code_question(message)
         ):
             faq_confidence = float(retrieval.get("score") or 0.0)
             if is_store_hours_query(message) and not context_contains_store_hours(context):
@@ -3971,6 +3969,15 @@ async def chat_stream(payload: ChatRequest):
     async def event_stream():
         try:
             debug_mode = session.get("debug_mode", False)
+            if not debug_mode:
+                result = await process_chat_request(payload)
+                yield f"data: {json.dumps({'token': result.reply, 'done': False})}\n\n"
+                yield (
+                    "data: "
+                    f"{json.dumps({'token': '', 'done': True, 'session_id': session_id, 'source': result.source, 'confidence': result.confidence, 'recommended_pdfs': result.recommended_pdfs, 'debug_mode': result.debug_mode})}\n\n"
+                )
+                return
+
             platform = detect_platform_from_text(message)
             intent = detect_intent(message)
 
