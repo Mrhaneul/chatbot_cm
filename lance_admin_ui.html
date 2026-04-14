@@ -962,6 +962,23 @@
 
   </div><!-- /panel-remove -->
 
+  <div class="card" id="debug-mode-card">
+    <h3 style="font-size:18px; font-weight:600; color:var(--cbu-blue); margin-bottom:8px;">Debug Mode</h3>
+    <p style="font-size:13px; color:#666; margin-bottom:12px;">
+      When enabled, all new sessions skip deterministic routing and use the
+      grounded LLM for every query. Useful for comparing Auto vs LLM response
+      quality. Does not affect sessions already in progress.
+    </p>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin:0;">
+        <input type="checkbox" id="debug-mode-toggle"
+               onchange="setGlobalDebugMode(this.checked)"
+               style="width:16px; height:16px; cursor:pointer;">
+        <span id="debug-mode-label" style="font-size:14px;">Loading...</span>
+      </label>
+    </div>
+  </div>
+
 </div><!-- /page -->
 
 <!-- Page-level success toast (fixed, top centre) -->
@@ -1000,6 +1017,48 @@
   let txtFileData = null;
   let pdfEntries  = [];   // [{ id, file, label }]
   let entryCounter = 0;
+
+  function getAdminHeaders() {
+    // Same-origin admin requests rely on the browser's active Basic Auth session.
+    return {};
+  }
+
+  async function loadDebugModeState() {
+    try {
+      const res = await fetch('/admin/debug-mode', {
+        headers: getAdminHeaders()
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const toggle = document.getElementById('debug-mode-toggle');
+      const label = document.getElementById('debug-mode-label');
+      if (toggle) toggle.checked = data.global_debug_mode;
+      if (label) label.textContent = data.global_debug_mode
+        ? 'LLM mode active — new sessions will use LLM fallback'
+        : 'Auto mode — new sessions will use normal routing';
+    } catch (e) {
+      const label = document.getElementById('debug-mode-label');
+      if (label) label.textContent = 'Could not load debug mode state';
+    }
+  }
+
+  async function setGlobalDebugMode(enabled) {
+    try {
+      const res = await fetch(`/admin/debug-mode?enabled=${enabled}`, {
+        method: 'POST',
+        headers: getAdminHeaders()
+      });
+      if (!res.ok) throw new Error('Request failed');
+      const label = document.getElementById('debug-mode-label');
+      if (label) label.textContent = enabled
+        ? 'LLM mode active — new sessions will use LLM fallback'
+        : 'Auto mode — new sessions will use normal routing';
+    } catch (e) {
+      alert('Failed to update debug mode. Make sure the server is running.');
+      const toggle = document.getElementById('debug-mode-toggle');
+      if (toggle) toggle.checked = !enabled;
+    }
+  }
 
   // ── TXT drop zone ──────────────────────────────────────────────────────────
   setupDropZone('txtDropZone', 'txtFile', 'txtFileChosen', '.txt', f => { txtFileData = f; });
@@ -1234,7 +1293,7 @@
         formData.append('pdf_labels', e.label.trim());
       });
 
-      const response = await fetch('/admin/add-content', { method:'POST', body: formData });
+      const response = await fetch('/admin/add-content', { method:'POST', headers: getAdminHeaders(), body: formData });
       const result   = await response.json();
 
       if (!response.ok || !result.success) {
@@ -1300,7 +1359,7 @@
 
   async function loadContentList() {
     try {
-      const resp = await fetch('/admin/list-content');
+      const resp = await fetch('/admin/list-content', { headers: getAdminHeaders() });
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       contentList = await resp.json();
       populateRemoveDropdown();
@@ -1393,7 +1452,7 @@
 
     try {
       const params   = new URLSearchParams({ filename, content_type: contentType });
-      const response = await fetch(`/admin/remove-content?${params}`, { method: 'DELETE' });
+      const response = await fetch(`/admin/remove-content?${params}`, { method: 'DELETE', headers: getAdminHeaders() });
       const result   = await response.json();
 
       if (!response.ok || !result.success) {
@@ -1461,7 +1520,7 @@
     btn.innerHTML = '<span>⏳</span><span>Reloading…</span>';
 
     try {
-      const response = await fetch('/admin/reload-index', { method: 'POST' });
+      const response = await fetch('/admin/reload-index', { method: 'POST', headers: getAdminHeaders() });
       const result   = await response.json();
 
       if (result.success) {
@@ -1485,6 +1544,10 @@
       setTimeout(() => { btn.textContent = 'Copy command'; }, 2000);
     });
   }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    loadDebugModeState();
+  });
 </script>
 </body>
 </html>
