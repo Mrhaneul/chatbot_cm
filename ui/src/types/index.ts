@@ -21,4 +21,6 @@ export interface Message {
   confidence?: number;
   source?: string;
   articleLink?: string | null;
+  debug_mode?: boolean;
+  isStreaming?: boolean;
 }

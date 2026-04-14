@@ -6,10 +6,11 @@
  */
 
 // API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+export const STREAM_ENDPOINT = `${API_BASE_URL}/chat/stream`;
 
 // Add ngrok header when using ngrok URL
-const getHeaders = () => {
+export const getHeaders = () => {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -30,13 +31,14 @@ export interface ChatRequest {
 
 export interface ChatResponse {
   reply: string;
-  source: string; 
+  source: string;
   article_link: string | null;
   confidence: number;
   recommended_pdfs?: PDFRecommendation[];
   retrieval_time_ms?: number;
   llm_time_ms?: number;
   total_time_ms?: number;
+  debug_mode?: boolean;
 }
 
 import { PDFRecommendation } from '../types';

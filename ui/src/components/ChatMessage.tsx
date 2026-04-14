@@ -1,14 +1,7 @@
 import React from 'react';
 import lanceAvatar from '../assets/lance.png';
+import { Message } from '../types';
 import { linkify } from '../utils/linkify';
-
-interface Message {
-  id: string;
-  type: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: Date;
-  debug_mode?: boolean;
-}
 
 interface ChatMessageProps {
   message: Message;
@@ -122,6 +115,18 @@ export function ChatMessage({ message }: ChatMessageProps) {
         )}
         <div className="whitespace-pre-wrap space-y-2">
           {formatContent(message.content)}
+          {message.isStreaming && (
+            <span
+              style={{
+                display: 'inline-block',
+                width: '2px',
+                height: '1em',
+                backgroundColor: '#A07400',
+                marginLeft: '2px',
+                animation: 'blink 1s step-end infinite',
+              }}
+            />
+          )}
         </div>
       </div>
     </div>

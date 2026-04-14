@@ -5,7 +5,7 @@ import { ChatMessage } from './components/ChatMessage';
 import { ChatInput } from './components/ChatInput';
 import { FAQSidebar } from './components/FAQSidebar';
 import { PDFSidebar } from './components/PDFSidebar';
-import { sendChatMessage, checkApiHealth } from './services/api';
+import { STREAM_ENDPOINT, checkApiHealth, getHeaders } from './services/api';
 import { PDFRecommendation, Message } from './types';
 
 export default function App() {
@@ -39,81 +39,159 @@ export default function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSendMessage = async (content: string) => {
-    // Add user message immediately
+  const formatPdfRecommendations = (pdfs: PDFRecommendation[] | any[]): PDFRecommendation[] =>
+    pdfs.map(pdf => ({
+      doc_id: pdf.doc_id,
+      title: pdf.title,
+      description: pdf.description,
+      filename: pdf.filename,
+      url: pdf.url,
+      pages: pdf.pages,
+      relevance: pdf.relevance || 'Relevant',
+      platform: pdf.platform ? pdf.platform.charAt(0).toUpperCase() + pdf.platform.slice(1) : 'General',
+      file_size_kb: pdf.file_size_kb,
+      tags: pdf.tags || [],
+      created_at: pdf.created_at ?? null,
+      updated_at: pdf.updated_at ?? null,
+    }));
+
+  const sendMessageStreaming = async (messageText: string) => {
     const userMessage: Message = {
       id: Date.now().toString(),
       type: 'user',
-      content,
+      content: messageText,
       timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    const assistantPlaceholder: Message = {
+      id: (Date.now() + 1).toString(),
+      type: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      isStreaming: true,
+    };
+
+    setMessages(prev => [...prev, userMessage, assistantPlaceholder]);
+    setPdfRecommendations([]);
     setInputValue('');
     setIsLoading(true);
 
     try {
-      // Send to backend
-      const response = await sendChatMessage(content, sessionId);
+      const response = await fetch(STREAM_ENDPOINT, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({
+          message: messageText,
+          session_id: sessionId,
+        }),
+      });
 
-      // Add assistant response
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: response.reply,
-        timestamp: new Date(),
-        confidence: response.confidence,
-        source: response.source,
-        articleLink: response.article_link,
-      };
-
-      setMessages(prev => [...prev, assistantMessage]);
-
-      // ✨ PDF recommendations from backend
-      if (response.recommended_pdfs && response.recommended_pdfs.length > 0) {
-        const formattedPDFs: PDFRecommendation[] = response.recommended_pdfs.map(pdf => ({
-          doc_id: pdf.doc_id,
-          title: pdf.title,
-          description: pdf.description,
-          filename: pdf.filename,
-          url: pdf.url,
-          pages: pdf.pages,
-          relevance: pdf.relevance || 'Relevant',
-          platform: pdf.platform.charAt(0).toUpperCase() + pdf.platform.slice(1),
-          file_size_kb: pdf.file_size_kb,
-          tags: pdf.tags || [],
-          created_at: pdf.created_at ?? null,
-          updated_at: pdf.updated_at ?? null
-        }));
-        
-        setPdfRecommendations(formattedPDFs);
-        console.log('📄 PDF Recommendations loaded:', formattedPDFs.length);
-        console.log('📄 First PDF URL:', formattedPDFs[0]?.url);
-      } else {
-        setPdfRecommendations([]);
+      if (!response.ok) {
+        throw new Error(`Stream request failed: ${response.status}`);
       }
 
-      // Update API status on successful response
-      if (apiStatus !== 'connected') {
-        setApiStatus('connected');
+      if (!response.body) {
+        throw new Error('No response body');
       }
 
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let completed = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) {
+            continue;
+          }
+
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) {
+            continue;
+          }
+
+          try {
+            const event = JSON.parse(jsonStr);
+
+            if (event.done) {
+              completed = true;
+              setMessages(prev =>
+                prev.map(m =>
+                  m.id === assistantPlaceholder.id
+                    ? {
+                        ...m,
+                        isStreaming: false,
+                        source: event.source ?? m.source,
+                        confidence: event.confidence ?? m.confidence,
+                        debug_mode: event.debug_mode ?? m.debug_mode,
+                      }
+                    : m
+                )
+              );
+
+              if (event.recommended_pdfs && event.recommended_pdfs.length > 0) {
+                const formattedPDFs = formatPdfRecommendations(event.recommended_pdfs);
+                setPdfRecommendations(formattedPDFs);
+                console.log('📄 PDF Recommendations loaded:', formattedPDFs.length);
+                console.log('📄 First PDF URL:', formattedPDFs[0]?.url);
+              } else {
+                setPdfRecommendations([]);
+              }
+
+              setApiStatus('connected');
+              setIsLoading(false);
+              return;
+            }
+
+            if (event.token) {
+              setMessages(prev =>
+                prev.map(m =>
+                  m.id === assistantPlaceholder.id
+                    ? { ...m, content: m.content + event.token }
+                    : m
+                )
+              );
+            }
+          } catch {
+            // Ignore malformed SSE fragments
+          }
+        }
+      }
+
+      if (!completed) {
+        throw new Error('Stream closed before completion');
+      }
     } catch (error) {
-      console.error('Error sending message:', error);
-      
-      // Add error message
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'system',
-        content: '⚠️ Sorry, I\'m having trouble connecting to the server. Please try again.',
-        timestamp: new Date(),
-      };
-
-      setMessages(prev => [...prev, errorMessage]);
+      console.error('Stream error:', error);
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === assistantPlaceholder.id
+            ? {
+                ...m,
+                content: 'Something went wrong. Please try again.',
+                isStreaming: false,
+              }
+            : m
+        )
+      );
+      setPdfRecommendations([]);
       setApiStatus('disconnected');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSendMessage = async (content: string) => {
+    await sendMessageStreaming(content);
   };
 
   const handlePromptClick = (prompt: string) => {
@@ -132,6 +210,8 @@ export default function App() {
   const handleOtherSelect = () => {
     focusChatInput();
   };
+
+  const hasStreamingMessage = messages.some(message => message.isStreaming);
 
   return (
     <div className="flex h-screen bg-white">
@@ -157,7 +237,7 @@ export default function App() {
               ))}
               
               {/* Loading indicator */}
-              {isLoading && (
+              {isLoading && !hasStreamingMessage && (
                 <div className="flex items-center gap-2 text-gray-500 pl-4">
                   <div className="flex gap-1">
                     <div className="w-2 h-2 bg-[#165FB3] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />

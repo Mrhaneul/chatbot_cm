@@ -1,9 +1,10 @@
 from dotenv import load_dotenv
 load_dotenv()
+import json
 from email.mime import message
 from fastapi import FastAPI, HTTPException, Depends, Query
 from app.schemas.chat import ChatRequest, ChatResponse
-from app.llm.llama_client import LlamaClient
+from app.llm.llama_client import LlamaClient, build_system_prompt, stream_llm_response
 # from app.rag.retriever import FAQRetriever  # Deprecated import
 from app.rag.retriever import get_retriever  # New singleton accessor
 from app.platform_registry import load_registry, internal_platform_key, canonical_platform_key
@@ -15,7 +16,7 @@ from typing import Dict, Any
 import uuid
 import time
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 try:
     from app.pdf_recommendations import get_recommendations_for_chat
 except Exception:
@@ -3956,6 +3957,173 @@ async def chat(payload: ChatRequest):
     return await process_chat_request(payload)
 
 
+@app.post("/chat/stream")
+async def chat_stream(payload: ChatRequest):
+    """
+    Streaming chat endpoint. Returns Server-Sent Events (SSE).
+    This leaves /chat and /chat/submit unchanged while providing
+    token-by-token responses for the streaming UI path.
+    """
+    session_id = payload.session_id or str(uuid.uuid4())
+    session = get_or_create_session(session_id)
+    message = payload.message.strip()
+
+    async def event_stream():
+        try:
+            debug_mode = session.get("debug_mode", False)
+            platform = detect_platform_from_text(message)
+            intent = detect_intent(message)
+
+            retrieval_start = time.time()
+            retrieval = None
+            try:
+                if platform and intent == "IA_ACCESS_ISSUE":
+                    retrieval = await retrieve_async(
+                        message,
+                        collection="instructions",
+                        platform=platform,
+                    )
+                else:
+                    retrieval = await retrieve_async(
+                        message,
+                        collection="auto",
+                        platform=platform,
+                    )
+            except Exception as retrieval_error:
+                print(f"[STREAM WARN] Primary retrieval failed: {retrieval_error}")
+                try:
+                    retrieval = await retrieve_async(
+                        message,
+                        collection="auto",
+                        platform=None,
+                    )
+                except Exception as fallback_error:
+                    print(f"[STREAM WARN] Fallback retrieval failed: {fallback_error}")
+                    retrieval = None
+
+            retrieval_ms = (time.time() - retrieval_start) * 1000
+            context = (
+                strip_meta_prefix(retrieval["context"])
+                if retrieval and retrieval.get("context")
+                else ""
+            )
+            confidence = float(retrieval.get("score") or 0.0) if retrieval else 0.0
+
+            if confidence < CONFIDENCE_THRESHOLD or not context:
+                escalation = (
+                    "I'm not able to find specific information about that in my knowledge base. "
+                    "Please contact the Campus Store directly at ImmediateAccess@calbaptist.edu "
+                    "or call 951-343-4259 for assistance."
+                )
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": escalation})
+                session["last_activity"] = datetime.now()
+                yield f"data: {json.dumps({'token': escalation, 'done': False})}\n\n"
+                yield (
+                    "data: "
+                    f"{json.dumps({'token': '', 'done': True, 'session_id': session_id, 'source': 'ESCALATION', 'confidence': confidence, 'recommended_pdfs': [], 'debug_mode': debug_mode})}\n\n"
+                )
+                return
+
+            system_hint = ""
+            if intent == "IA_ACCESS_ISSUE":
+                system_hint = (
+                    "The user is asking about Immediate Access digital course materials. "
+                    "Do NOT suggest purchasing or renting physical textbooks unless the user explicitly asks. "
+                    "If required information is missing, ask for the platform or publisher first. "
+                    "Only provide instructions for the specific platform mentioned in the documentation."
+                )
+            elif intent == "GENERAL_FAQ":
+                system_hint = (
+                    "The user is asking a general Campus Store or Immediate Access question. "
+                    "If the retrieved content is a FAQ, answer directly from it with no greeting."
+                )
+
+            system = build_system_prompt(context=context, system_hint=system_hint)
+            full_response = ""
+            stream_visible_text = ""
+            pending_tail = ""
+
+            def extract_safe_stream_text(text: str) -> tuple[str, str]:
+                """
+                Hold back a short trailing buffer so partial `Article link:` markers
+                can be detected before anything is yielded to the client.
+                """
+                if not text:
+                    return "", ""
+
+                sanitized = re.sub(r"(?im)^\s*Article link:\s*\"?[^\n\"]*\"?\s*(?:\n|$)", "", text)
+                hold_chars = 32
+                if len(sanitized) <= hold_chars:
+                    return "", sanitized
+                return sanitized[:-hold_chars], sanitized[-hold_chars:]
+
+            async with llm_semaphore:
+                async for token in stream_llm_response(message, system):
+                    full_response += token
+                    safe_chunk, pending_tail = extract_safe_stream_text(pending_tail + token)
+                    if safe_chunk:
+                        stream_visible_text += safe_chunk
+                        yield f"data: {json.dumps({'token': safe_chunk, 'done': False})}\n\n"
+
+            cleaned_full_response = strip_article_link_lines(full_response).strip()
+            final_safe_chunk, pending_tail = extract_safe_stream_text(pending_tail)
+            if final_safe_chunk:
+                stream_visible_text += final_safe_chunk
+                yield f"data: {json.dumps({'token': final_safe_chunk, 'done': False})}\n\n"
+
+            pending_tail = strip_article_link_lines(pending_tail).strip()
+            if pending_tail:
+                stream_visible_text += pending_tail
+                yield f"data: {json.dumps({'token': pending_tail, 'done': False})}\n\n"
+
+            full_response = cleaned_full_response
+            source = retrieval.get("source_id", "LLM_GROUNDED_STREAM") if retrieval else "LLM_GROUNDED_STREAM"
+            recommended_pdfs = []
+            try:
+                if retrieval:
+                    recommended_pdfs = get_recommendations_for_chat(
+                        retrieval_result=retrieval,
+                        platform=platform,
+                        query=message,
+                    )
+                    print(f"[STREAM PDF] Recommending {len(recommended_pdfs)} PDFs")
+            except Exception as pdf_error:
+                print(f"[STREAM WARN] PDF recommendation failed: {pdf_error}")
+                recommended_pdfs = []
+
+            session["history"].append({"role": "user", "content": message})
+            session["history"].append({"role": "assistant", "content": full_response})
+            if len(session["history"]) > MAX_HISTORY_TURNS * 2:
+                session["history"] = session["history"][-MAX_HISTORY_TURNS * 2:]
+            session["last_activity"] = datetime.now()
+
+            print(
+                f"[STREAM] Completed response in {retrieval_ms:.2f}ms retrieval "
+                f"with source={source} confidence={confidence:.3f}"
+            )
+            yield (
+                "data: "
+                f"{json.dumps({'token': '', 'done': True, 'session_id': session_id, 'source': source, 'confidence': confidence, 'recommended_pdfs': recommended_pdfs, 'debug_mode': debug_mode})}\n\n"
+            )
+
+        except Exception as e:
+            print(f"[STREAM ERROR] {e}")
+            yield (
+                "data: "
+                f"{json.dumps({'token': '[Error generating response]', 'done': True, 'session_id': session_id, 'recommended_pdfs': [], 'debug_mode': session.get('debug_mode', False)})}\n\n"
+            )
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.post("/chat/submit", status_code=202)
 async def chat_submit(payload: ChatRequest):
     """
@@ -4132,7 +4300,7 @@ def compare_models(payload: ChatRequest):
     avg_time = sum(r["elapsed_ms"] for r in results) / len(results)
     
     return {
-        "model": "llama3.2",  # Update this when you change models
+        "model": "gemma4:e2b",
         "message": payload.message,
         "runs": results,
         "average_ms": round(avg_time, 2),
