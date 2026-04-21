@@ -294,15 +294,35 @@ def resolve_platform_correction(text: str) -> str | None:
     return None
 
 
-async def retrieve_async(query: str, collection: str = "auto", platform: str = None, k: int = 1):
+async def retrieve_async(query: str, collection: str = "auto", platform: str = None, top_k: int = 1):
     """Run sync FAISS retrieval in a worker thread to avoid blocking the event loop."""
     return await asyncio.to_thread(
         retriever.retrieve,
         query,
-        k,
+        top_k,
         collection,
         platform
     )
+
+
+async def retrieve_faq_candidates(query: str, top_k: int = 5) -> list[dict]:
+    """
+    Retrieve top-k FAQ candidates for reranking.
+    Returns a list of result dicts, each with at least:
+        source_id, context, score
+    Falls back to empty list on any error.
+    """
+    try:
+        result = await retrieve_async(query, collection="faqs", platform=None, top_k=top_k)
+        if not result:
+            return []
+        # retriever.retrieve may return a single dict or a list depending on top_k
+        if isinstance(result, list):
+            return result
+        return [result]
+    except Exception as e:
+        print(f"[WARN] retrieve_faq_candidates failed: {e}")
+        return []
 
 
 async def call_llm_with_semaphore(
@@ -3641,144 +3661,6 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             retrieval = None
             context = ""
             retrieval_time_ms = (time.time() - retrieval_start) * 1000
-
-        # Deterministic FAQ response path: return the retrieved FAQ answer directly
-        # to avoid hallucinated policy/instruction steps.
-        if (
-            not debug_mode
-            and
-            intent == "GENERAL_FAQ"
-            and retrieval
-            and retrieval.get("source_id", "").startswith("FAQ_SOURCE_")
-        ):
-            faq_confidence = float(retrieval.get("score") or 0.0)
-            if is_store_hours_query(message) and not context_contains_store_hours(context):
-                no_hours_reply = (
-                    "I don't have verified Campus Store hours in my current knowledge base, so I don't want to guess. "
-                    "Please check the Campus Store website or call the store directly for the most current hours."
-                )
-                session["history"].append({
-                    "role": "assistant",
-                    "content": no_hours_reply
-                })
-                total_time_ms = (time.time() - request_start) * 1000
-                print("\n[PERF] PERFORMANCE METRICS:")
-                print(f"   Retrieval: {retrieval_time_ms:.2f}ms")
-                print(f"   LLM: 0.00ms (no verified hours)")
-                print(f"   Total: {total_time_ms:.2f}ms\n")
-                return ChatResponse(
-                    reply=no_hours_reply,
-                    source="LLM_ONLY",
-                    article_link=None,
-                    confidence=faq_confidence,
-                    retrieval_time_ms=round(retrieval_time_ms, 2),
-                    llm_time_ms=0,
-                    total_time_ms=round(total_time_ms, 2),
-                    recommended_pdfs=[],
-                    debug_mode=debug_mode
-                )
-
-            if faq_confidence < FAQ_DIRECT_MIN_CONFIDENCE:
-                low_conf_reply = (
-                    "I want to make sure I give you accurate Campus Store information. "
-                    "Could you clarify your question in terms of Immediate Access, textbook access, "
-                    "returns, or course-material policies?"
-                )
-                session["history"].append({
-                    "role": "assistant",
-                    "content": low_conf_reply
-                })
-                total_time_ms = (time.time() - request_start) * 1000
-                print("\n[PERF] PERFORMANCE METRICS:")
-                print(f"   Retrieval: {retrieval_time_ms:.2f}ms")
-                print(f"   LLM: 0.00ms (low confidence FAQ)")
-                print(f"   Total: {total_time_ms:.2f}ms\n")
-                return ChatResponse(
-                    reply=low_conf_reply,
-                    source="LLM_ONLY",
-                    article_link=None,
-                    confidence=faq_confidence,
-                    retrieval_time_ms=round(retrieval_time_ms, 2),
-                    llm_time_ms=0,
-                    total_time_ms=round(total_time_ms, 2),
-                    recommended_pdfs=[],
-                    debug_mode=debug_mode
-                )
-
-            faq_answer = extract_faq_answer(context, message)
-            if faq_answer:
-                reply = strip_article_link_lines(faq_answer)
-
-                session["history"].append({
-                    "role": "assistant",
-                    "content": reply
-                })
-                if faq_suggests_platform_clarification(reply):
-                    session["awaiting_platform_type"] = True
-                    session["stored_publisher"] = "TEXTBOOK_GENERIC"
-                    session["stored_original_query"] = message
-                    session["stored_intent"] = "IA_ACCESS_ISSUE"
-                    session["stored_platform"] = None
-                if len(session["history"]) > MAX_HISTORY_TURNS * 2:
-                    session["history"] = session["history"][-MAX_HISTORY_TURNS * 2:]
-
-                total_time_ms = (time.time() - request_start) * 1000
-                confidence = retrieval["score"]
-                source = retrieval["source_id"]
-                article_link = retrieval.get("article_link")
-
-                recommended_pdfs = []
-                try:
-                    recommended_pdfs = get_recommendations_for_chat(
-                        retrieval_result=retrieval,
-                        platform=platform,
-                        query=message
-                    )
-                    print(f"[PDF] Recommending {len(recommended_pdfs)} PDFs")
-                except Exception as e:
-                    print(f"[WARN] PDF recommendation failed: {e}")
-
-                print("\n[PERF] PERFORMANCE METRICS:")
-                print(f"   Retrieval: {retrieval_time_ms:.2f}ms")
-                print(f"   LLM: 0.00ms (FAQ direct answer)")
-                print(f"   Total: {total_time_ms:.2f}ms\n")
-
-                return ChatResponse(
-                    reply=reply,
-                    source=source,
-                    article_link=article_link,
-                    confidence=confidence,
-                    retrieval_time_ms=round(retrieval_time_ms, 2),
-                    llm_time_ms=0,
-                    total_time_ms=round(total_time_ms, 2),
-                    recommended_pdfs=recommended_pdfs,
-                    debug_mode=debug_mode
-                )
-
-            no_verified_faq_reply = (
-                "I couldn't find a verified answer for that in the current Campus Store FAQ documents. "
-                "Please contact the CBU Campus Store directly so you get the correct information."
-            )
-            session["history"].append({
-                "role": "assistant",
-                "content": no_verified_faq_reply
-            })
-            total_time_ms = (time.time() - request_start) * 1000
-            print("\n[PERF] PERFORMANCE METRICS:")
-            print(f"   Retrieval: {retrieval_time_ms:.2f}ms")
-            print(f"   LLM: 0.00ms (no verified FAQ answer)")
-            print(f"   Total: {total_time_ms:.2f}ms\n")
-            return ChatResponse(
-                reply=no_verified_faq_reply,
-                source="LLM_ONLY",
-                article_link=None,
-                confidence=faq_confidence,
-                retrieval_time_ms=round(retrieval_time_ms, 2),
-                llm_time_ms=0,
-                total_time_ms=round(total_time_ms, 2),
-                recommended_pdfs=[],
-                debug_mode=debug_mode
-            )
 
         # Deterministic instruction response path for instruction retrieval.
         # This avoids LLM variability (greeting/meta leakage, meta commentary) when docs are available.
