@@ -1,0 +1,113 @@
+// ============================================================
+// FRONTEND PARENT COMPONENT PATCH
+// File: wherever onSendMessage is defined (App.tsx or ChatWindow.tsx)
+// ============================================================
+//
+// This shows every change needed in your parent component.
+// Three spots to update:
+//
+//   1.  ChatInput prop type / call signature
+//   2.  onSendMessage handler
+//   3.  The fetch/SSE body sent to /chat/stream
+//
+// ─────────────────────────────────────────────────────────────
+
+
+// ── CHANGE 1: Update the handler signature ───────────────────
+//
+// BEFORE:
+//   const handleSendMessage = (content: string) => {
+//
+// AFTER:
+//   const handleSendMessage = (content: string, imageBase64?: string) => {
+
+
+// ── CHANGE 2: Build the user message with preview URL ────────
+//
+// BEFORE (inside handleSendMessage, where you push the user message):
+//   const userMessage: Message = {
+//     id: ...,
+//     type: 'user',
+//     content: content,
+//     timestamp: new Date(),
+//   };
+//
+// AFTER:
+//   const userMessage: Message = {
+//     id: ...,
+//     type: 'user',
+//     content: content,
+//     timestamp: new Date(),
+//     // Store a data-URL for the thumbnail. We recreate it from base64
+//     // because ChatInput already stripped the prefix.
+//     imagePreviewUrl: imageBase64
+//       ? `data:image/png;base64,${imageBase64}`
+//       : undefined,
+//   };
+
+
+// ── CHANGE 3: Add image_base64 to the POST body ──────────────
+//
+// Find where you call fetch('/chat/stream') or fetch('/chat').
+// It will look something like:
+//
+//   const response = await fetch(`${API_BASE}/chat/stream`, {
+//     method: 'POST',
+//     headers: { 'Content-Type': 'application/json' },
+//     body: JSON.stringify({
+//       message: content,
+//       session_id: sessionId,
+//     }),
+//   });
+//
+// AFTER — just add image_base64 to the JSON body:
+//
+//   const response = await fetch(`${API_BASE}/chat/stream`, {
+//     method: 'POST',
+//     headers: { 'Content-Type': 'application/json' },
+//     body: JSON.stringify({
+//       message: content,
+//       session_id: sessionId,
+//       image_base64: imageBase64 ?? null,    // ← ADD THIS LINE
+//     }),
+//   });
+//
+//
+// ── CHANGE 4: Pass the handler to <ChatInput> ────────────────
+//
+// Your JSX already does:
+//   <ChatInput onSendMessage={handleSendMessage} ... />
+//
+// No change needed here — ChatInput now calls onSendMessage with
+// two arguments, and your updated handler accepts both.
+//
+//
+// ── COMPLETE EXAMPLE (condensed) ────────────────────────────
+//
+// const handleSendMessage = async (content: string, imageBase64?: string) => {
+//   if (!content.trim() && !imageBase64) return;
+//
+//   const userMessage: Message = {
+//     id: crypto.randomUUID(),
+//     type: 'user',
+//     content: content,
+//     timestamp: new Date(),
+//     imagePreviewUrl: imageBase64
+//       ? `data:image/png;base64,${imageBase64}`
+//       : undefined,
+//   };
+//   setMessages(prev => [...prev, userMessage]);
+//   setIsLoading(true);
+//
+//   const response = await fetch(`${API_BASE}/chat/stream`, {
+//     method: 'POST',
+//     headers: { 'Content-Type': 'application/json' },
+//     body: JSON.stringify({
+//       message: content,
+//       session_id: sessionId,
+//       image_base64: imageBase64 ?? null,
+//     }),
+//   });
+//
+//   // ... rest of your existing SSE reader is unchanged ...
+// };

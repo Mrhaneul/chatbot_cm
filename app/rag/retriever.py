@@ -102,12 +102,15 @@ class FAQRetriever:
         return "faqs"
 
     @staticmethod
-    def _search(index, chunks: list, query_vector, k: int):
-        """Run FAISS search; return (best_chunk, best_score, best_index)."""
+    def _search(index, chunks: list, query_vector, k: int) -> list[tuple[str, float, int]]:
+        """Run FAISS search; return up to k (chunk, score, index) tuples, best first."""
         scores, indices = index.search(query_vector, k)
-        best_idx   = int(indices[0][0])
-        best_score = float(scores[0][0])
-        return chunks[best_idx], best_score, best_idx
+        results = []
+        for i in range(min(k, len(indices[0]))):
+            idx = int(indices[0][i])
+            if 0 <= idx < len(chunks):
+                results.append((chunks[idx], float(scores[0][i]), idx))
+        return results
 
     @staticmethod
     def _extract_article_link(chunk: str):
@@ -196,12 +199,14 @@ class FAQRetriever:
             if index is None:
                 raise RuntimeError("General instructions index is not loaded.")
 
-            chunk, score, idx = self._search(index, chunks, query_vector, k)
+            results = self._search(index, chunks, query_vector, k)
+            chunk, score, idx = results[0]
             source_id = f"{source_prefix}_SOURCE_{idx}"
             log.info("  -> %s  score=%.4f  chunk_idx=%d", source_prefix, score, idx)
 
+            context = "\n\n---\n\n".join(r[0] for r in results) if len(results) > 1 else chunk
             return {
-                "context":      chunk,
+                "context":      context,
                 "score":        score,
                 "source_id":    source_id,
                 "article_link": self._extract_article_link(chunk),
@@ -212,12 +217,14 @@ class FAQRetriever:
         if self.faq_index is None:
             raise RuntimeError("FAQ index is not loaded.")
 
-        chunk, score, idx = self._search(self.faq_index, self.faq_chunks, query_vector, k)
+        results = self._search(self.faq_index, self.faq_chunks, query_vector, k)
+        chunk, score, idx = results[0]
         source_id = f"FAQ_SOURCE_{idx}"
         log.info("  -> FAQ  score=%.4f  chunk_idx=%d", score, idx)
 
+        context = "\n\n---\n\n".join(r[0] for r in results) if len(results) > 1 else chunk
         return {
-            "context":      chunk,
+            "context":      context,
             "score":        score,
             "source_id":    source_id,
             "article_link": self._extract_article_link(chunk),

@@ -20,36 +20,54 @@ export function linkify(text: string): React.ReactNode[] {
   const parts = text.split(pattern);
 
   return parts.map((part, index) => {
+    const previousPart = index > 0 ? parts[index - 1] ?? '' : '';
+    const nextPart = index < parts.length - 1 ? parts[index + 1] ?? '' : '';
+    const needsLeadingSpace =
+      index > 0 &&
+      previousPart.length > 0 &&
+      /[A-Za-z0-9)]$/.test(previousPart) &&
+      /^[A-Za-z0-9]/.test(part);
+    const needsTrailingSpace =
+      nextPart.length > 0 &&
+      /^[A-Za-z0-9]/.test(nextPart) &&
+      /[A-Za-z0-9]$/.test(part);
+
     if (/^https?:\/\//i.test(part)) {
       return (
-        <a
-          key={index}
-          href={part}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            color: '#A07400',
-            textDecoration: 'underline',
-            wordBreak: 'break-all',
-          }}
-        >
-          {part}
-        </a>
+        <React.Fragment key={index}>
+          {needsLeadingSpace ? ' ' : null}
+          <a
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: '#A07400',
+              textDecoration: 'underline',
+              wordBreak: 'break-all',
+            }}
+          >
+            {part}
+          </a>
+          {needsTrailingSpace ? ' ' : null}
+        </React.Fragment>
       );
     }
 
     if (/^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(part)) {
       return (
-        <a
-          key={index}
-          href={`mailto:${part}`}
-          style={{
-            color: '#A07400',
-            textDecoration: 'underline',
-          }}
-        >
-          {part}
-        </a>
+        <React.Fragment key={index}>
+          {needsLeadingSpace ? ' ' : null}
+          <a
+            href={`mailto:${part}`}
+            style={{
+              color: '#A07400',
+              textDecoration: 'underline',
+            }}
+          >
+            {part}
+          </a>
+          {needsTrailingSpace ? ' ' : null}
+        </React.Fragment>
       );
     }
 

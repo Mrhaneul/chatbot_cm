@@ -1,0 +1,130 @@
+# ============================================================
+# PATCH INSTRUCTIONS — Vision / Screenshot Feature
+# Apply these two changes manually.
+# ============================================================
+
+
+# ─────────────────────────────────────────────
+# FILE 1:  app/schemas/chat.py
+# ─────────────────────────────────────────────
+# Add one optional field to ChatRequest.
+# Find the class and add the line marked with ← ADD:
+#
+#   class ChatRequest(BaseModel):
+#       message: str
+#       session_id: str | None = None
+#       image_base64: str | None = None    ← ADD THIS LINE
+#
+# That's the only change needed in this file.
+# The field is optional (defaults to None) so all existing
+# callers that don't send an image are unaffected.
+
+
+# ─────────────────────────────────────────────
+# FILE 2:  main.py  —  3 small edits
+# ─────────────────────────────────────────────
+
+# ── EDIT A ──────────────────────────────────
+# Function: call_llm_with_semaphore  (around line 307)
+#
+# BEFORE:
+# async def call_llm_with_semaphore(
+#     message: str,
+#     context: str,
+#     history: list,
+#     system_hint: str
+# ) -> tuple[str, float]:
+#     queued_at = time.time()
+#     async with llm_semaphore:
+#         queue_wait_ms = (time.time() - queued_at) * 1000
+#         reply = await asyncio.to_thread(
+#             llm.chat,
+#             message,
+#             context,
+#             history,
+#             system_hint
+#         )
+#         return reply, queue_wait_ms
+#
+# AFTER:
+# async def call_llm_with_semaphore(
+#     message: str,
+#     context: str,
+#     history: list,
+#     system_hint: str,
+#     image_base64: str | None = None,       ← ADD
+# ) -> tuple[str, float]:
+#     queued_at = time.time()
+#     async with llm_semaphore:
+#         queue_wait_ms = (time.time() - queued_at) * 1000
+#         reply = await asyncio.to_thread(
+#             llm.chat,
+#             message,
+#             context,
+#             history,
+#             system_hint,
+#             image_base64,                   ← ADD
+#         )
+#         return reply, queue_wait_ms
+
+
+# ── EDIT B ──────────────────────────────────
+# Inside process_chat_request, find the LLM call site (around line 3865):
+#
+# BEFORE:
+#         reply, llm_queue_wait_ms = await call_llm_with_semaphore(
+#             message=message,
+#             context=context,
+#             history=session["history"][-MAX_HISTORY_TURNS:],
+#             system_hint=system_hint
+#         )
+#
+# AFTER:
+#         reply, llm_queue_wait_ms = await call_llm_with_semaphore(
+#             message=message,
+#             context=context,
+#             history=session["history"][-MAX_HISTORY_TURNS:],
+#             system_hint=system_hint,
+#             image_base64=payload.image_base64,   ← ADD
+#         )
+
+
+# ── EDIT C ──────────────────────────────────
+# Inside process_chat_request, find where `message` is extracted
+# from the payload (around line 2101):
+#
+# BEFORE:
+#         message = payload.message.strip()
+#
+# AFTER:
+#         message = payload.message.strip()
+#         has_image = bool(getattr(payload, "image_base64", None))   ← ADD
+#
+# Then find the system_hint block for IA_ACCESS_ISSUE (around line 3851)
+# and ADD the screenshot nudge so Lance mentions the feature when relevant:
+#
+# BEFORE:
+#         elif intent == "IA_ACCESS_ISSUE":
+#             system_hint = (
+#                 "The user is asking about Immediate Access digital course materials. "
+#                 ...
+#             )
+#
+# AFTER:
+#         elif intent == "IA_ACCESS_ISSUE":
+#             system_hint = (
+#                 "The user is asking about Immediate Access digital course materials. "
+#                 "Do NOT suggest purchasing or renting physical textbooks unless the user explicitly asks. "
+#                 "If required information is missing, ask for the platform/publisher first "
+#                 "(for example: Cengage, McGraw Hill, Pearson, Norton/InQuizitive). "
+#                 "Do NOT ask for course code unless platform is already known and a course-specific step truly requires it. "
+#                 "Do NOT assume availability of print textbooks. "
+#                 "Only provide instructions for the specific platform mentioned in the official instructions."
+#             )
+#             # Suggest screenshot only when no image has already been attached
+#             if not has_image:
+#                 system_hint += (
+#                     " If your answer does not fully resolve the issue, end with a single sentence "
+#                     "suggesting the student attach a screenshot using the camera icon in the chat, "
+#                     "so you can see the exact error message they are getting."
+#                 )

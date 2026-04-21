@@ -11,6 +11,7 @@ from app.platform_registry import load_registry, internal_platform_key, canonica
 import asyncio
 import os
 import re
+import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, Any
 import uuid
@@ -28,6 +29,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 import yaml
 from app.rag.config import cfg
+from app.rag.model import get_model
 
 from app.utils.logging_config import configure_logging
 
@@ -307,22 +309,167 @@ async def retrieve_async(query: str, collection: str = "auto", platform: str = N
 
 async def retrieve_faq_candidates(query: str, top_k: int = 5) -> list[dict]:
     """
-    Retrieve top-k FAQ candidates for reranking.
-    Returns a list of result dicts, each with at least:
-        source_id, context, score
+    Retrieve top-k FAQ candidates as individual dicts for reranking.
+
+    Each returned dict has:
+        context   - the raw chunk text (single FAQ, not merged)
+        score     - FAISS cosine similarity score
+        source_id - e.g. "FAQ_SOURCE_3"
+
+    Uses the retriever's internal FAQ search path so each candidate remains
+    separate instead of being merged into one combined context blob.
     Falls back to empty list on any error.
     """
     try:
-        result = await retrieve_async(query, collection="faqs", platform=None, top_k=top_k)
-        if not result:
-            return []
-        # retriever.retrieve may return a single dict or a list depending on top_k
-        if isinstance(result, list):
-            return result
-        return [result]
+        def _retrieve_faq_candidates_sync() -> list[dict]:
+            if retriever.faq_index is None:
+                return []
+
+            query_vector = get_model().encode([query], normalize_embeddings=True)
+            query_vector = np.array(query_vector).astype("float32")
+            results = retriever._search(retriever.faq_index, retriever.faq_chunks, query_vector, top_k)
+
+            candidates: list[dict] = []
+            for chunk, score, idx in results:
+                source_id = f"FAQ_SOURCE_{idx}"
+                candidates.append({
+                    "context": chunk,
+                    "score": score,
+                    "source_id": source_id,
+                    "article_link": retriever._extract_article_link(chunk),
+                    "metadata": retriever._extract_metadata(chunk, source_id),
+                })
+            return candidates
+
+        return await asyncio.to_thread(_retrieve_faq_candidates_sync)
     except Exception as e:
         print(f"[WARN] retrieve_faq_candidates failed: {e}")
         return []
+
+
+def _extract_faq_question(context: str) -> str:
+    """
+    Extract the canonical QUESTION text from a FAQ chunk.
+    FAQ files follow the format:
+        QUESTION:
+        <question text>
+        ANSWER:
+        ...
+    Returns empty string if no QUESTION field found.
+    """
+    match = re.search(r"QUESTION:\s*\n(.+?)(?:\n\s*\n|\nANSWER:)", context, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
+def _jaccard_overlap(text_a: str, text_b: str) -> float:
+    """
+    Token-level Jaccard similarity between two strings.
+    Uses 3+ character alphanumeric tokens to filter noise.
+    Returns 0.0 if either string is empty.
+    """
+    tokens_a = set(re.findall(r"[a-z0-9]{3,}", text_a.lower()))
+    tokens_b = set(re.findall(r"[a-z0-9]{3,}", text_b.lower()))
+    if not tokens_a or not tokens_b:
+        return 0.0
+    intersection = tokens_a & tokens_b
+    union = tokens_a | tokens_b
+    return len(intersection) / len(union)
+
+
+def _is_overview_doc(context: str, source_id: str) -> bool:
+    """
+    Detect broad overview documents that should be penalized
+    when the user query is specific.
+    Checks source_id name and context content signals.
+    """
+    sid = source_id.lower()
+    if "overview" in sid:
+        return True
+    # Check for overview signals in the canonical question
+    question = _extract_faq_question(context).lower()
+    overview_phrases = ["what is immediate access", "overview", "how does immediate access work"]
+    return any(p in question for p in overview_phrases)
+
+
+def _is_specific_query(query: str) -> bool:
+    """
+    Detect whether a query is specific/narrow (vs. general/broad).
+    Specific queries contain concrete policy terms, error descriptions,
+    or named actions that point to a narrow FAQ.
+    """
+    q = query.lower()
+    specific_signals = [
+        "restocking fee", "25%", "30 days", "60 days", "refund",
+        "opt out", "cannot access", "can't access", "not allow",
+        "physical copy", "physical textbook", "print copy",
+        "isbn", "buy", "purchase",
+        "missing", "bundle", "not showing",
+        "return policy", "return window",
+        "access code", "code",
+        "opt out option",
+    ]
+    return any(s in q for s in specific_signals)
+
+
+def rerank_faq_candidates(candidates: list[dict], query: str) -> list[dict]:
+    """
+    Rerank FAQ candidates using a combination of:
+        1. Semantic score     - FAISS cosine similarity (already computed)
+        2. Question overlap   - Jaccard similarity between query and FAQ's QUESTION field
+        3. Subtype bonus      - small bonus when source_id suggests a specific subtype match
+        4. Broadness penalty  - penalize overview docs when query is specific
+
+    Returns candidates sorted by rerank_score descending.
+    Each dict gets a new "rerank_score" field added.
+
+    Scoring weights (conservative - break ties, don't override semantics):
+        semantic:          0.60
+        question_overlap:  0.25
+        specificity_bonus: 0.10  (applied when doc is NOT overview and query IS specific)
+        broadness_penalty: 0.10  (subtracted when doc IS overview and query IS specific)
+    """
+    if not candidates:
+        return []
+
+    query_is_specific = _is_specific_query(query)
+
+    scored = []
+    for c in candidates:
+        context = c.get("context", "")
+        source_id = c.get("source_id", "")
+        semantic = float(c.get("score", 0.0))
+
+        # Extract canonical question for lexical overlap
+        faq_question = _extract_faq_question(context)
+        question_overlap = _jaccard_overlap(query, faq_question)
+
+        # Broadness signals
+        is_overview = _is_overview_doc(context, source_id)
+
+        # Compute rerank score
+        rerank_score = (
+            0.60 * semantic
+            + 0.25 * question_overlap
+        )
+
+        if query_is_specific:
+            if not is_overview:
+                rerank_score += 0.10  # specificity bonus
+            else:
+                rerank_score -= 0.10  # broadness penalty
+
+        print(
+            f"[RERANK] {source_id} | semantic={semantic:.4f} "
+            f"q_overlap={question_overlap:.4f} overview={is_overview} "
+            f"specific_query={query_is_specific} rerank={rerank_score:.4f}"
+        )
+
+        scored.append({**c, "rerank_score": rerank_score})
+
+    scored.sort(key=lambda x: x["rerank_score"], reverse=True)
+    return scored
 
 
 async def call_llm_with_semaphore(
@@ -3597,40 +3744,14 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     platform=_plat_key
                 )
             elif intent == "GENERAL_FAQ":
-                faq_query = message
-                if is_access_code_question(message):
-                    faq_query = "Immediate Access access code Blackboard code not needed professor said use a code used textbook code"
-                elif is_general_ia_question(message):
-                    faq_query = "What is Immediate Access CBU program day one digital textbook access overview how it works"
-                elif is_textbook_return_query(message):
-                    if any(
-                        signal in (message or "").lower()
-                        for signal in [
-                            "refund policy for immediate access",
-                            "refund policy immediate access",
-                            "immediate access refund",
-                            "immediate access charge",
-                            "charged for immediate access",
-                        ]
-                    ):
-                        faq_query = "Immediate Access refund policy opt out deadline charge final sale student account"
-                    else:
-                        faq_query = "how to return textbook shipping in person CBU Campus Store deadlines refund policy Immediate Access"
-                elif is_merchandise_return_query(message):
-                    faq_query = "merchandise clothing apparel trade books 30 day return window 25 percent restocking fee tags receipt required original condition altered laundered"
-                elif is_technology_return_query(message):
-                    faq_query = "return technology Apple laptop computer tablet 5 days restocking fee defective original packaging"
-                elif is_merchandise_query(message):
-                    faq_query = "CBU Campus Store merchandise apparel clothing mugs gifts supplies"
-                elif is_ia_overview_query(message):
-                    faq_query = "What is Immediate Access CBU program day one digital textbook access overview how it works"
-                elif is_browser_cache_issue(message):
-                    faq_query = build_browser_cache_faq_query(message)
-                retrieval = await retrieve_async(
-                    faq_query,
-                    collection="faqs",
-                    k=GROUNDING_TOP_K,
-                )
+                # Use retrieval_query (vision-augmented if image present, else original message)
+                candidates = await retrieve_faq_candidates(retrieval_query, top_k=5)
+                if candidates:
+                    ranked = rerank_faq_candidates(candidates, retrieval_query)
+                    retrieval = ranked[0]  # top reranked candidate
+                    print(f"[RERANK] Winner: {retrieval.get('source_id')} rerank_score={retrieval.get('rerank_score', 0):.4f}")
+                else:
+                    retrieval = None
             else:
                 retrieval = await retrieve_async(retrieval_query)
 
@@ -3984,18 +4105,15 @@ async def chat_stream(payload: ChatRequest):
                         platform=platform,
                     )
                 elif intent == "GENERAL_FAQ":
-                    if is_general_ia_question(message) or is_ia_overview_query(message):
-                        faq_query = "What is Immediate Access CBU program day one digital textbook access overview how it works"
-                    elif is_cache_issue:
-                        faq_query = build_browser_cache_faq_query(message)
+                    # For browser cache issues, augment the retrieval query with cache-specific terms
+                    faq_retrieval_query = build_browser_cache_faq_query(retrieval_query) if is_cache_issue else retrieval_query
+                    candidates = await retrieve_faq_candidates(faq_retrieval_query, top_k=5)
+                    if candidates:
+                        ranked = rerank_faq_candidates(candidates, faq_retrieval_query)
+                        retrieval = ranked[0]
+                        print(f"[RERANK] Winner: {retrieval.get('source_id')} rerank_score={retrieval.get('rerank_score', 0):.4f}")
                     else:
-                        faq_query = message
-                    retrieval = await retrieve_async(
-                        faq_query,
-                        collection="faqs",
-                        platform=None,
-                        k=GROUNDING_TOP_K,
-                    )
+                        retrieval = None
                 else:
                     retrieval = await retrieve_async(
                         retrieval_query,

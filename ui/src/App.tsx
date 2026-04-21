@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChatHeader } from './components/ChatHeader';
 import { WelcomeState } from './components/WelcomeState';
 import { ChatMessage } from './components/ChatMessage';
@@ -55,12 +55,25 @@ export default function App() {
       updated_at: pdf.updated_at ?? null,
     }));
 
-  const sendMessageStreaming = async (messageText: string) => {
+  const toggleThought = useCallback((messageId: string) => {
+    setMessages(prev =>
+      prev.map(m =>
+        m.id === messageId
+          ? { ...m, isThinkingExpanded: !m.isThinkingExpanded }
+          : m
+      )
+    );
+  }, []);
+
+  const sendMessageStreaming = async (messageText: string, imageBase64?: string) => {
     const userMessage: Message = {
       id: Date.now().toString(),
       type: 'user',
       content: messageText,
       timestamp: new Date(),
+      imagePreviewUrl: imageBase64
+        ? `data:image/png;base64,${imageBase64}`
+        : undefined,
     };
 
     const assistantPlaceholder: Message = {
@@ -69,6 +82,8 @@ export default function App() {
       content: '',
       timestamp: new Date(),
       isStreaming: true,
+      thought: '',
+      isThinkingExpanded: false,
     };
 
     setMessages(prev => [...prev, userMessage, assistantPlaceholder]);
@@ -83,6 +98,7 @@ export default function App() {
         body: JSON.stringify({
           message: messageText,
           session_id: sessionId,
+          image_base64: imageBase64 ?? null,
         }),
       });
 
@@ -122,6 +138,35 @@ export default function App() {
           try {
             const event = JSON.parse(jsonStr);
 
+            if (event.type === 'thought') {
+              setMessages(prev =>
+                prev.map(m =>
+                  m.id === assistantPlaceholder.id
+                    ? {
+                        ...m,
+                        thought: (m.thought || '') + event.token,
+                        debug_mode: true,
+                      }
+                    : m
+                )
+              );
+              continue;
+            }
+
+            if (event.type === 'response' && event.token) {
+              setMessages(prev =>
+                prev.map(m =>
+                  m.id === assistantPlaceholder.id
+                    ? {
+                        ...m,
+                        content: m.content + event.token,
+                      }
+                    : m
+                )
+              );
+              continue;
+            }
+
             if (event.done) {
               completed = true;
               setMessages(prev =>
@@ -133,6 +178,7 @@ export default function App() {
                         source: event.source ?? m.source,
                         confidence: event.confidence ?? m.confidence,
                         debug_mode: event.debug_mode ?? m.debug_mode,
+                        thought: event.thought ?? m.thought,
                       }
                     : m
                 )
@@ -150,16 +196,6 @@ export default function App() {
               setApiStatus('connected');
               setIsLoading(false);
               return;
-            }
-
-            if (event.token) {
-              setMessages(prev =>
-                prev.map(m =>
-                  m.id === assistantPlaceholder.id
-                    ? { ...m, content: m.content + event.token }
-                    : m
-                )
-              );
             }
           } catch {
             // Ignore malformed SSE fragments
@@ -190,8 +226,8 @@ export default function App() {
     }
   };
 
-  const handleSendMessage = async (content: string) => {
-    await sendMessageStreaming(content);
+  const handleSendMessage = async (content: string, imageBase64?: string) => {
+    await sendMessageStreaming(content, imageBase64);
   };
 
   const handlePromptClick = (prompt: string) => {
@@ -233,7 +269,11 @@ export default function App() {
           ) : (
             <div className="max-w-4xl mx-auto space-y-4">
               {messages.map((message) => (
-                <ChatMessage key={message.id} message={message} />
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  onToggleThought={toggleThought}
+                />
               ))}
               
               {/* Loading indicator */}

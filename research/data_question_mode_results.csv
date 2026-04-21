@@ -1,0 +1,879 @@
+mode,file_name,verdict,source,confidence,best_match_file,best_match_score,expected_match_score,retrieval_time_ms,llm_time_ms,total_time_ms,question,reply
+auto,campus_store_delivery_directions.txt,good,FAQ_SOURCE_0,0.8702051043510437,campus_store_delivery_directions.txt,0.9109,0.9109,16.54,0.0,20.04,How do I get delivery directions to the CBU Campus Store?,"The CBU Campus Store is located at:
+
+8432 Magnolia Ave
+Riverside, CA 92504
+
+For delivery directions, use the address above with your preferred navigation app or mapping service (Google Maps, Apple Maps, etc.).
+
+If you are shipping a return to the Campus Store, send it to:
+
+California Baptist University
+Attn: Campus Store
+8432 Magnolia Ave
+Riverside, CA 92504
+
+Please allow 1 to 3 weeks for returns to be received and processed.
+
+CONTACT:
+Phone: 951-343-4259
+Email: cscontact@calbaptist.edu"
+auto,campus_store_digital_codes.txt,good,FAQ_SOURCE_1,0.784198522567749,campus_store_digital_codes.txt,0.97,0.97,15.02,0.0,17.02,What are the terms for digital codes and licensing at the CBU Campus Store?,"When you purchase a digital product from the CBU Campus Store, you are licensing it for a set duration — not purchasing permanent ownership of the content.
+
+Effective Date: January 1, 2025
+
+LICENSE DURATION:
+The duration of your license is clearly stated in the product description. Products labeled as ""Lifetime"" typically mean five (5) years of online access and permanent download to a supported device.
+
+LICENSE CHARACTERISTICS:
+- All licenses are non-transferable — they cannot be shared or assigned to another person
+- The purchase grants you specific access rights as described in the product details
+- Ownership of the underlying content remains with the publisher or creator
+
+LIFETIME LICENSES INCLUDE:
+- Online Access: access to the product on the platform for typically five (5) years
+- Downloads: you may permanently download the product to a supported device
+- Support and Maintenance: support for downloaded files is tied to compatibility with VitalSource supported devices and platforms at the time of download
+
+DOWNLOADS:
+You can download digital products for use on a supported device (the two most recent versions of an operating system). Downloads will function as long as VitalSource supports the device.
+
+ACCESS CODES:
+For products classified as Access Codes, including bundles with eBooks and Access Codes:
+- These products are provided by a third party
+- All information about these products including duration, licensing terms, and technical requirements can be found on the respective provider's website
+- While the Campus Store facilitates your purchase, ongoing access and support are managed by the access code provider
+
+IMPORTANT:
+Access codes and digital content are FINAL SALE — they are not eligible for return or refund once purchased or redeemed.
+
+CONTACT:
+Email: cscontact@calbaptist.edu
+Phone: 951-343-4259"
+auto,campus_store_hours.txt,good,FAQ_SOURCE_2,0.8604100346565247,campus_store_hours.txt,0.8796,0.8796,19.49,0.0,21.47,What are the CBU Campus Store hours?,"The CBU Campus Store is open during the following hours:
+
+- Monday: 8:00AM – 5:00PM
+- Tuesday: 8:00AM – 5:00PM
+- Wednesday: 8:00AM – 5:00PM
+- Thursday: 8:00AM – 5:00PM
+- Friday: 8:00AM – 5:00PM
+- Saturday: 10:00AM – 3:00PM
+- Sunday: Closed
+
+Note: Store hours may vary for holidays or special events. Check the Campus Store website for the latest updates.
+
+CONTACT:
+Phone: 951-343-4259
+Email: cscontact@calbaptist.edu"
+auto,campus_store_instore_pickup.txt,good,FAQ_SOURCE_3,0.7538143992424011,campus_store_instore_pickup.txt,0.9658,0.9658,30.36,0.0,32.89,What is the CBU Campus Store in store pickup policy?,"If you choose In Store Pickup as your shipping method, the Campus Store will notify you by email when your order is ready.
+
+PICKUP WINDOW:
+Packages are held at the store free of charge for 14 days once your order has been processed.
+
+UNCLAIMED PACKAGES (after 14 days):
+- General Merchandise, Textbooks, and Tradebooks: refunded to the payment method on file with a 25% restocking fee deducted
+- Apple and Technology products: refunded to the payment method on file with a 10% restocking fee deducted
+
+The following items will NOT be refunded if left unclaimed:
+- Orders purchased using a book voucher
+- Access codes and other digital content
+- Pre-paid items (specially ordered and considered final sale)
+- Rented textbooks: if left in unclaimed packages by the end of the semester rental return deadline, the textbooks will be returned at the register to avoid late fees but will not be refunded — no exceptions
+
+PICKUP EXTENSION:
+You may request an extension of the pickup window to 30 days from the original order processing date by filling out the In Store Pickup Extension Form before the original 14-day deadline.
+
+Important conditions for extensions:
+- You must fill out the In Store Pickup Extension Form before the original 14-day deadline
+- If an extension is granted, the order will be considered FINAL SALE and will no longer be eligible for return or exchange
+
+CONTACT:
+Email: cscontact@calbaptist.edu
+Phone: 951-343-4259"
+auto,campus_store_location.txt,good,FAQ_SOURCE_4,0.8295460939407349,campus_store_location.txt,1.0,1.0,25.41,0.0,26.91,Where is the CBU Campus Store located?,"The CBU Campus Store is located at:
+
+8432 Magnolia Ave
+Riverside, CA 92504
+
+Phone: 951-343-4259
+Email: cscontact@calbaptist.edu
+
+STORE HOURS:
+- Monday–Friday: 8:00AM – 5:00PM
+- Saturday: 10:00AM – 3:00PM
+- Sunday: Closed
+
+Note: Hours may vary for holidays or special events."
+auto,campus_store_merchandise.txt,needs_review,FAQ_SOURCE_5,0.6144788861274719,campus_store_merchandise.txt,0.1618,0.1618,27.55,0.0,30.44,What does the Campus Store sell?,"The CBU Campus Store carries a wide variety of CBU-branded merchandise, apparel, technology, course supplies, and gifts. For the full selection, contact: cscontact@calbaptist.edu
+
+ALUMNI:
+- Alumni gear, accessories, and apparel
+
+ATHLETICS:
+- Nike headwear, polos, and shirts
+- Athletic accessories, bottoms, headwear, outerwear, shirts, jerseys, tank tops
+
+BOTTOMS:
+- Lounge and pajamas, shorts, sweatpants, women's bottoms
+
+COLLECTIONS:
+- 75th Anniversary, best sellers, sale items
+- CBU Family, CBU Grandparents, CBU Pets
+- Disney x CBU, Hello Kitty x CBU, Peanuts x CBU
+- Julia Gash Collection, March Madness, Christmas and seasonal
+
+COURSE SUPPLIES:
+- ARC and ART kits, general supplies, lab products
+- Office and school supplies, planners, calendars, binders
+
+DRINKWARE:
+- Metal and plastic water bottles, mugs, tumblers
+
+GIFTS AND ACCESSORIES:
+- Backpacks, bags, decals, stickers, jewelry, pins
+- Lanyards, keychains, plush, toys, socks, footwear
+- Throw pillows, totes, wallets, insignia and commencement gifts
+
+GRADUATION GEAR:
+- Diploma frames, grad bundles, stoles
+
+HEADWEAR:
+- Beanies, hats, visors
+
+OUTERWEAR:
+- Crewnecks, full zips, hoodies, jackets, quarter zips, sweaters
+
+SHIRTS:
+- Long sleeves, polos, short sleeves, women's shirts
+
+TECHNOLOGY:
+- MacBook Air, MacBook Pro, iPads, Apple Pencils
+- Beats headphones, chargers, adapters, Mac and iPad accessories
+
+YOUTH:
+- Infant and toddler items, youth accessories, bottoms, outerwear, shirts
+
+For store hours and location, ask ""What are the Campus Store hours?"" or ""Where is the Campus Store?""
+
+For more information, contact: cscontact@calbaptist.edu"
+auto,campus_store_ordering.txt,good,FAQ_SOURCE_6,0.7933067083358765,campus_store_ordering.txt,0.8484,0.8484,19.19,0.0,22.35,How do I place an order with the CBU Campus Store?,"You can place orders securely through the CBU Campus Store website.
+
+HOW ORDERING WORKS:
+
+Shipping Orders:
+Once your order is placed, the Campus Store will send you an email with tracking information after your items have been shipped.
+
+In Store Pickup Orders:
+If you choose In Store Pickup, you will receive an email when your order is ready for pickup.
+
+Digital / Access Code Orders:
+Some access codes will be delivered electronically via email regardless of the shipping method you selected. This is not immediate delivery and will still take the normal processing time.
+
+PROCESSING TIME:
+Please allow up to 48 hours for orders to be processed.
+
+CONTACT:
+If you have any questions about your order, contact the Campus Store at:
+- Email: cscontact@calbaptist.edu
+- Phone: 951-343-4259
+
+Staff can also assist you in placing your order over the phone."
+auto,campus_store_refund_merchandise.txt,needs_review,FAQ_SOURCE_5,0.7262345552444458,campus_store_merchandise.txt,0.1618,0.0283,22.64,0.0,34.51,What is the return and refund policy for general merchandise and trade books at the CBU Campus Store?,"The CBU Campus Store carries a wide variety of CBU-branded merchandise, apparel, technology, course supplies, and gifts. For the full selection, contact: cscontact@calbaptist.edu
+
+ALUMNI:
+- Alumni gear, accessories, and apparel
+
+ATHLETICS:
+- Nike headwear, polos, and shirts
+- Athletic accessories, bottoms, headwear, outerwear, shirts, jerseys, tank tops
+
+BOTTOMS:
+- Lounge and pajamas, shorts, sweatpants, women's bottoms
+
+COLLECTIONS:
+- 75th Anniversary, best sellers, sale items
+- CBU Family, CBU Grandparents, CBU Pets
+- Disney x CBU, Hello Kitty x CBU, Peanuts x CBU
+- Julia Gash Collection, March Madness, Christmas and seasonal
+
+COURSE SUPPLIES:
+- ARC and ART kits, general supplies, lab products
+- Office and school supplies, planners, calendars, binders
+
+DRINKWARE:
+- Metal and plastic water bottles, mugs, tumblers
+
+GIFTS AND ACCESSORIES:
+- Backpacks, bags, decals, stickers, jewelry, pins
+- Lanyards, keychains, plush, toys, socks, footwear
+- Throw pillows, totes, wallets, insignia and commencement gifts
+
+GRADUATION GEAR:
+- Diploma frames, grad bundles, stoles
+
+HEADWEAR:
+- Beanies, hats, visors
+
+OUTERWEAR:
+- Crewnecks, full zips, hoodies, jackets, quarter zips, sweaters
+
+SHIRTS:
+- Long sleeves, polos, short sleeves, women's shirts
+
+TECHNOLOGY:
+- MacBook Air, MacBook Pro, iPads, Apple Pencils
+- Beats headphones, chargers, adapters, Mac and iPad accessories
+
+YOUTH:
+- Infant and toddler items, youth accessories, bottoms, outerwear, shirts
+
+For store hours and location, ask ""What are the Campus Store hours?"" or ""Where is the Campus Store?""
+
+For more information, contact: cscontact@calbaptist.edu"
+auto,campus_store_refund_process.txt,good,FAQ_SOURCE_8,0.8312219381332397,campus_store_refund_process.txt,0.9841,0.9841,25.12,0.0,32.05,How do I return something to the CBU Campus Store?,"The CBU Campus Store accepts returns in person or by mail, depending on the item. Before returning anything, please read the return policy for your specific item type to confirm it is eligible.
+
+STEP 1 — CONTACT THE CAMPUS STORE FIRST:
+Call 951-343-4259 or email cscontact@calbaptist.edu to let the team know you are returning an item and the reason for your return.
+
+STEP 2 — PREPARE YOUR RETURN:
+- Make sure your item is in the condition required by the return policy
+- Include a copy of your original receipt or packing list
+- Include all original materials that came with the item
+
+STEP 3 — RETURN IN PERSON OR BY MAIL:
+
+In Person:
+Bring your item to the CBU Campus Store during store hours.
+Address: 8432 Magnolia Avenue, Riverside, CA 92504
+
+By Mail (at your expense):
+Ship your return to:
+California Baptist University
+Attn: Campus Store
+8432 Magnolia Avenue
+Riverside, CA 92504
+
+It is strongly recommended that you insure your package when returning by mail.
+
+PROCESSING TIME:
+- Allow 1 to 3 weeks for the return to be received and processed
+- If you are expecting a replacement shipment, allow 2 to 4 weeks
+
+RETURN POLICIES BY ITEM TYPE:
+- Textbooks: see textbook refund policy for semester-specific deadlines
+- General merchandise and trade books: returns accepted within 30 to 60 days depending on restocking fee
+- Technology and Apple products: returns accepted within 5 days of purchase
+- Access codes and digital content: FINAL SALE — not eligible for return or refund
+- Pre-paid items: FINAL SALE
+
+CONTACT:
+Email: cscontact@calbaptist.edu
+Phone: 951-343-4259"
+auto,campus_store_refund_technology.txt,good,FAQ_SOURCE_9,0.891323447227478,campus_store_refund_technology.txt,0.9796,0.9796,21.03,0.0,26.54,What is the return and refund policy for technology and Apple products at the CBU Campus Store?,"All technology merchandise must be in resalable condition in original unopened packaging with manuals and warranties, accompanied by the original receipt.
+
+RETURN WINDOW:
+- All returns must be made within 5 days of purchase or pickup
+- Original receipt and unopened packaging are required unless the item is defective
+- Defective merchandise must be returned within 10 business days of purchase
+
+RESTOCKING FEE:
+A 10% restocking fee may be assessed on all returns. Refunds are issued only to the account used to place the original order.
+
+CONDITIONS:
+- No returns on closeout, clearance, or opened box stock unless the item is defective
+- Defective merchandise is subject to testing before return approval is given
+- Defective software must be exchanged with the original manufacturer
+- Special-order items are non-returnable unless determined to be defective
+
+TECHNOLOGY PRODUCTS COVERED:
+Technology products include but are not limited to:
+- Apple products (excluding charging cables)
+- Computers and tablets
+- Monitors, speakers, headphones and earbuds
+- Printers and cameras
+
+HOW TO RETURN:
+Call ahead at 951-343-4259 or email cscontact@calbaptist.edu before returning an item. Bring the original receipt and original packaging.
+
+Mail returns to:
+California Baptist University
+Attn: Campus Store
+8432 Magnolia Avenue
+Riverside, CA 92504
+
+CONTACT:
+Email: cscontact@calbaptist.edu
+Phone: 951-343-4259"
+auto,campus_store_shipping_policy.txt,good,FAQ_SOURCE_10,0.851299524307251,campus_store_shipping_policy.txt,0.9569,0.9569,15.14,0.0,17.14,What is the CBU Campus Store shipping policy?,"The CBU Campus Store offers competitive shipping rates. All shipments are professionally packed to ensure the safety of your items.
+
+DELIVERY TIME:
+On average, orders are received within 3 to 5 working days. During peak periods (August–September or December–January), delivery times may take longer.
+
+FLAT RATE SHIPPING:
+The CBU Campus Store offers $12.95 Flat Rate Standard Shipping on all textbook and merchandise orders.
+
+Conditions for flat rate shipping:
+- Available for U.S. orders only
+- Not transferable and not redeemable for cash
+- Available for Standard Shipping on valid U.S. addresses only
+- Diploma frames, ART kits, and ARC kits are excluded from this promotion
+
+ADDRESS REQUIREMENTS:
+Please confirm you are entering a valid U.S. shipping address before placing your order. Orders that result in an insufficient address or require an address adjustment after shipment will incur an additional shipping charge.
+
+Note: All shipping prices are subject to change. Orders over $500 may require a signature upon delivery unless stated otherwise.
+
+CONTACT:
+Email: cscontact@calbaptist.edu
+Phone: 951-343-4259"
+auto,campus_store_textbook_purchasing_terms.txt,good,FAQ_SOURCE_11,0.7757490277290344,campus_store_textbook_purchasing_terms.txt,0.9596,0.9596,16.38,0.0,18.6,What are the textbook purchasing terms of use at the CBU Campus Store?,"In compliance with the Higher Education Opportunity Act of 2008, California Baptist University and the CBU Campus Store provide up-to-date textbook and course material information for your classes.
+
+IMPORTANT TERMS TO KNOW:
+
+Textbook Information:
+- Textbook and course material information on the website is provided by the academic departments and is updated daily as additions, changes, and cancellations are received
+- Always check whether a textbook is listed as Optional, Pick One, or Required before purchasing
+
+Pricing:
+- The pricing of all textbooks is subject to change at any time and will be updated as stock arrives
+- Any material listed at $0.00 has not yet been priced
+- The Campus Store makes every effort to ensure pricing accuracy on the website
+
+Third-Party Purchasing Risk:
+- Because textbook information can change at any time, using this information to purchase textbooks from other sources is at your own risk
+- California Baptist University and the CBU Campus Store cannot be held responsible for purchases made elsewhere based on this information
+- Customers who purchase directly from the Campus Store are protected by and subject to the Campus Store return policy
+
+CONTACT:
+Email: cscontact@calbaptist.edu
+Phone: 951-343-4259"
+auto,campus_store_textbook_rentals.txt,good,FAQ_SOURCE_12,0.744567334651947,campus_store_textbook_rentals.txt,0.9037,0.9037,10.52,0.0,12.52,How does textbook renting work at the CBU Campus Store?,"A variety of textbooks may have the option to be rented rather than purchased through the CBU Campus Store, either online or in store.
+
+RENTAL AGREEMENT TERMS:
+By renting from the CBU Campus Store you agree to the following:
+
+1. You are renting and in receipt of the rental book(s) shown on your receipt. The book(s) is in good condition with all included CDs and components and is the property of the Campus Store.
+
+2. It is your responsibility to return the rental item(s) along with all included CDs and components in salable condition. Very limited highlighting and writing are acceptable. If the item is not in salable condition, the return will not be accepted and you will pay the Replacement Cost fee.
+
+3. You are responsible for the risk of loss or damage from any cause, including theft, lost items, missing pages, or damage (including water damage).
+
+4. You must return your book(s) on or before the due date listed on your receipt to avoid rental replacement costs and applicable taxes. Rental textbooks may be eligible for a rental fee refund ONLY if returned by the deadline dates listed on your receipt.
+
+5. You are liable for all replacement costs if you sell your books at buyback or return rental textbooks to any location other than inside the Campus Store.
+
+6. You authorize the Campus Store to charge your student account and/or credit card on file for the full amount of the listed replacement cost plus applicable taxes at any time after the rental return due date if you do not return the rental book(s) by the deadline. This charge WILL NOT BE REFUNDED. You may also be blocked from renting books from the Campus Store in future terms."
+auto,ia_access_issue.txt,retrieving_else,FAQ_SOURCE_21,0.6700822114944458,ia_overview.txt,1.0,0.0468,19.14,0.0,21.14,Why does Immediate Access show an “opt out” option but not allow me to access my textbook?,"Immediate Access is California Baptist University's program that provides day-one access to digital course materials through your student account.
+
+**How It Works:**
+- Get instant access to digital textbooks and courseware on the first day of class
+- Materials are automatically available through Blackboard
+- Charges are billed directly to your student account
+- You have 14 days to opt out if you prefer to purchase materials separately
+
+**Key Benefits:**
+- No waiting for materials to arrive
+- No upfront payment needed
+- Convenient access through Blackboard
+- Often more affordable than traditional textbooks
+
+**Supported Platforms:**
+Immediate Access works with major publishers including:
+- Cengage (MindTap, Cengage Unlimited)
+- McGraw Hill (Connect, ALEKS)
+- Pearson (MyLab, Mastering)
+- Bedford, Sage, VitalSource, and more
+
+**Billing & Payment:**
+- Charges appear on your student account statement
+- Can be paid alongside tuition and fees
+- Payment plans available through student accounts
+
+**Opting Out:**
+- 14-day opt-out period from the start of the semester
+- Opt out through the Immediate Access page in Blackboard
+- After opting out, you must purchase materials separately
+
+**Getting Help:**
+If you're having trouble accessing your materials, please specify which platform you need help with (e.g., ""I can't access Cengage MindTap"" or ""Help with McGraw Hill Connect"")."
+auto,ia_browser_cache_clear_chrome.txt,good,FAQ_SOURCE_15,0.6863130927085876,ia_browser_cache_clear_chrome.txt,1.0,1.0,10.02,0.0,14.02,"I am trying to access my Immediate Access materials through Blackboard but I see ""0 Courses, 0 Materials"" or get an error that says ""You currently have no content available."" I am using Google Chrome on a Mac or PC. How do I fix this?","This is usually caused by stale browser cookies or cached data interfering with your Immediate Access session. You will need to clear your browser's cookies, cache, and history in Google Chrome, then try again.
+
+Note: After clearing your browsing data, you will be signed out of most websites and will need to sign back in.
+
+STEP-BY-STEP RESOLUTION:
+
+1. Click the three dots in the top-right corner of your Chrome window and select Settings.
+2. On the left, choose Privacy and security, then select Clear browsing data.
+3. Under Time range, select All time.
+4. Check the boxes for Browsing history, Cookies and other site data, and Cached images and files.
+5. Click Clear data.
+
+Shortcut: Press Command + Shift + Delete (Mac) to open the Clear browsing data menu directly.
+
+EXPECTED RESULT:
+After clearing your browsing data, return to Blackboard, navigate to your course, and click the Immediate Access link again. Your materials should now load correctly.
+
+If you continue to experience issues, please contact the CBU Campus Store at ImmediateAccess@calbaptist.edu for further assistance."
+auto,ia_browser_cache_clear_chrome_ipad.txt,good,FAQ_SOURCE_16,0.7514708042144775,ia_browser_cache_clear_chrome_ipad.txt,1.0,1.0,10.84,0.0,14.89,"I am trying to access my Immediate Access materials through Blackboard but I see ""0 Courses, 0 Materials"" or get an error that says ""You currently have no content available."" I am using Google Chrome on an iPad. How do I fix this?","This is usually caused by stale browser cookies or cached data interfering with your Immediate Access session. You will need to clear your browser's cookies, cache, and history in Chrome on your iPad, then try again.
+
+Note: After clearing your browsing data, you will be signed out of most websites and will need to sign back in.
+
+STEP-BY-STEP RESOLUTION:
+
+1. Open Chrome on your iPad and tap the three dots (ellipsis) in the upper-right corner.
+2. Swipe left on the top menu bar until you see History, then tap it.
+3. At the bottom of the History screen, tap Clear Browsing Data.
+4. Make sure Browsing History, Cookies, Site Data, and Cached Images and Files are all checked.
+5. Tap Clear Browsing Data to confirm.
+
+Note: If you see a VitalSource error message that says ""Uh oh, your launch was unsuccessful!"" and offers a Support Site button, skip that button — it will not resolve the issue. Proceed directly with clearing your browser data as described above.
+
+EXPECTED RESULT:
+After clearing your browsing data, return to Blackboard, navigate to your course, and click the Immediate Access link again. Your materials should now load correctly.
+
+If you continue to experience issues, please contact the CBU Campus Store at ImmediateAccess@calbaptist.edu for further assistance."
+auto,ia_browser_cache_clear_firefox.txt,good,FAQ_SOURCE_17,0.7074057459831238,ia_browser_cache_clear_firefox.txt,1.0,1.0,14.53,0.0,17.63,"I am trying to access my Immediate Access materials through Blackboard but I see ""0 Courses, 0 Materials"" or get an error that says ""You currently have no content available."" I am using Mozilla Firefox on a Mac. How do I fix this?","This is usually caused by stale browser cookies or cached data interfering with your Immediate Access session. You will need to clear your browser's cookies, cache, and history in Firefox, then try again.
+
+Note: After clearing your browsing data, you will be signed out of most websites and will need to sign back in.
+
+STEP-BY-STEP RESOLUTION:
+
+1. From the top menu bar, click History and select Clear Recent History.
+2. Under Time range to clear, select Everything.
+3. Check the box for Cache (and any other items you wish to clear).
+4. Click OK.
+
+Shortcut: Press Command + Shift + Delete (Mac) to open the Clear All History menu directly.
+
+EXPECTED RESULT:
+After clearing your browsing data, return to Blackboard, navigate to your course, and click the Immediate Access link again. Your materials should now load correctly.
+
+If you continue to experience issues, please contact the CBU Campus Store at ImmediateAccess@calbaptist.edu for further assistance."
+auto,ia_browser_cache_clear_safari.txt,good,FAQ_SOURCE_18,0.6955426931381226,ia_browser_cache_clear_safari.txt,1.0,1.0,9.5,0.0,13.01,"I am trying to access my Immediate Access materials through Blackboard but I see ""0 Courses, 0 Materials"" or get an error that says ""You currently have no content available."" I am using Safari on a Mac. How do I fix this?","This is usually caused by stale browser cookies or cached data interfering with your Immediate Access session. You will need to clear your cookies, cache, and history in Safari, then try again.
+
+Note: After clearing your browsing data, you will be signed out of most websites and will need to sign back in.
+
+STEP-BY-STEP RESOLUTION:
+
+CLEARING COOKIES:
+1. In the Safari app, click Safari in the top-left corner of your screen.
+2. Click Settings from the menu.
+3. Click Privacy from the menu bar inside Settings.
+4. Click Manage Website Data.
+5. Click Remove All in the bottom-left corner.
+
+CLEARING CACHE:
+1. Click Safari in the top-left corner, then click Settings.
+2. Click Advanced from the menu bar inside Settings.
+3. At the bottom of the page, click Show Features for Web Developers.
+4. From the top menu bar, click Develop, then select Empty Caches.
+
+CLEARING HISTORY:
+1. Click Safari in the top-left corner of your screen.
+2. Click Clear History from the menu.
+3. Select All History from the dropdown.
+4. Click Clear History in the bottom-right corner to confirm.
+
+EXPECTED RESULT:
+After completing all three sections above, return to Blackboard, navigate to your course, and click the Immediate Access link again. Your materials should now load correctly.
+
+If you continue to experience issues, please contact the CBU Campus Store at ImmediateAccess@calbaptist.edu for further assistance."
+auto,ia_bundle_missing_textbook.txt,needs_review,CLARIFICATION_NEEDED,0.0,campus_store_merchandise.txt,0.1863,0.0846,0.0,0.0,1.12,What should I do if a textbook is missing from my Immediate Access bundle?,"When you open Immediate Access in Blackboard, do you see a VitalSource page that says ""0 Courses, 0 Materials"" or ""You currently have no content available""?
+
+- If yes, reply ""yes"" and I can help you fix it.
+- If no, let me know which publisher or platform your textbook uses (for example: Pearson, Cengage, McGraw Hill, Bedford, etc.) and I'll get you the right steps."
+auto,ia_opt_out_physical_textbooks.txt,retrieving_else,FAQ_SOURCE_21,0.6700822114944458,ia_overview.txt,1.0,0.0559,12.65,0.0,13.65,"If I opt out of Immediate Access, can I buy a physical copy of my textbook from the Campus Store?","Immediate Access is California Baptist University's program that provides day-one access to digital course materials through your student account.
+
+**How It Works:**
+- Get instant access to digital textbooks and courseware on the first day of class
+- Materials are automatically available through Blackboard
+- Charges are billed directly to your student account
+- You have 14 days to opt out if you prefer to purchase materials separately
+
+**Key Benefits:**
+- No waiting for materials to arrive
+- No upfront payment needed
+- Convenient access through Blackboard
+- Often more affordable than traditional textbooks
+
+**Supported Platforms:**
+Immediate Access works with major publishers including:
+- Cengage (MindTap, Cengage Unlimited)
+- McGraw Hill (Connect, ALEKS)
+- Pearson (MyLab, Mastering)
+- Bedford, Sage, VitalSource, and more
+
+**Billing & Payment:**
+- Charges appear on your student account statement
+- Can be paid alongside tuition and fees
+- Payment plans available through student accounts
+
+**Opting Out:**
+- 14-day opt-out period from the start of the semester
+- Opt out through the Immediate Access page in Blackboard
+- After opting out, you must purchase materials separately
+
+**Getting Help:**
+If you're having trouble accessing your materials, please specify which platform you need help with (e.g., ""I can't access Cengage MindTap"" or ""Help with McGraw Hill Connect"")."
+auto,ia_overview.txt,good,FAQ_SOURCE_21,0.6700822114944458,ia_overview.txt,1.0,1.0,12.53,0.0,13.62,What is Immediate Access?,"Immediate Access is California Baptist University's program that provides day-one access to digital course materials through your student account.
+
+**How It Works:**
+- Get instant access to digital textbooks and courseware on the first day of class
+- Materials are automatically available through Blackboard
+- Charges are billed directly to your student account
+- You have 14 days to opt out if you prefer to purchase materials separately
+
+**Key Benefits:**
+- No waiting for materials to arrive
+- No upfront payment needed
+- Convenient access through Blackboard
+- Often more affordable than traditional textbooks
+
+**Supported Platforms:**
+Immediate Access works with major publishers including:
+- Cengage (MindTap, Cengage Unlimited)
+- McGraw Hill (Connect, ALEKS)
+- Pearson (MyLab, Mastering)
+- Bedford, Sage, VitalSource, and more
+
+**Billing & Payment:**
+- Charges appear on your student account statement
+- Can be paid alongside tuition and fees
+- Payment plans available through student accounts
+
+**Opting Out:**
+- 14-day opt-out period from the start of the semester
+- Opt out through the Immediate Access page in Blackboard
+- After opting out, you must purchase materials separately
+
+**Getting Help:**
+If you're having trouble accessing your materials, please specify which platform you need help with (e.g., ""I can't access Cengage MindTap"" or ""Help with McGraw Hill Connect"")."
+llm,campus_store_delivery_directions.txt,good,FAQ_SOURCE_0,0.8702051043510437,campus_store_delivery_directions.txt,0.9109,0.9109,12.03,37397.2,37410.21,How do I get delivery directions to the CBU Campus Store?,"The CBU Campus Store is located at:
+
+8432 Magnolia Ave
+Riverside, CA 92504
+
+For delivery directions, use the address above with your preferred navigation app or mapping service (Google Maps, Apple Maps, etc.).
+
+If you are shipping a return to the Campus Store, send it to:
+
+California Baptist University
+Attn: Campus Store
+8432 Magnolia Ave
+Riverside, CA 92504
+
+Please allow 1 to 3 weeks for returns to be received and processed.
+
+CONTACT:
+Phone: 951-343-4259
+Email: cscontact@calbaptist.edu"
+llm,campus_store_digital_codes.txt,good,FAQ_SOURCE_1,0.784198522567749,campus_store_digital_codes.txt,0.97,0.97,16.15,49257.75,49273.9,What are the terms for digital codes and licensing at the CBU Campus Store?,"When you purchase a digital product from the CBU Campus Store, you are licensing it for a set duration — not purchasing permanent ownership of the content.
+
+Effective Date: January 1, 2025
+
+LICENSE DURATION:
+The duration of your license is clearly stated in the product description. Products labeled as ""Lifetime"" typically mean five (5) years of online access and permanent download to a supported device.
+
+LICENSE CHARACTERISTICS:
+- All licenses are non-transferable — they cannot be shared or assigned to another person
+- The purchase grants you specific access rights as described in the product details
+- Ownership of the underlying content remains with the publisher or creator
+
+LIFETIME LICENSES INCLUDE:
+- Online Access: access to the product on the platform for typically five (5) years
+- Downloads: you may permanently download the product to a supported device
+- Support and Maintenance: support for downloaded files is tied to compatibility with VitalSource supported devices and platforms at the time of download
+
+DOWNLOADS:
+You can download digital products for use on a supported device (the two most recent versions of an operating system). Downloads will function as long as VitalSource supports the device.
+
+ACCESS CODES:
+For products classified as Access Codes, including bundles with eBooks and Access Codes:
+- These products are provided by a third party
+- All information about these products including duration, licensing terms, and technical requirements can be found on the respective provider's website
+- While the Campus Store facilitates your purchase, ongoing access and support are managed by the access code provider
+
+IMPORTANT:
+Access codes and digital content are FINAL SALE — they are not eligible for return or refund once purchased or redeemed.
+
+CONTACT:
+Email: cscontact@calbaptist.edu
+Phone: 951-343-4259"
+llm,campus_store_hours.txt,good,FAQ_SOURCE_2,0.8604100346565247,campus_store_hours.txt,1.0,1.0,71.96,44095.81,44169.98,What are the CBU Campus Store hours?,"The CBU Campus Store is open during the following hours:
+
+- Monday: 8:00AM – 5:00PM
+- Tuesday: 8:00AM – 5:00PM
+- Wednesday: 8:00AM – 5:00PM
+- Thursday: 8:00AM – 5:00PM
+- Friday: 8:00AM – 5:00PM
+- Saturday: 10:00AM – 3:00PM
+- Sunday: Closed
+
+Note: Store hours may vary for holidays or special events. Check the Campus Store website for the latest updates."
+llm,campus_store_instore_pickup.txt,needs_review,FAQ_SOURCE_3,0.7538143992424011,campus_store_merchandise.txt,0.0909,0.0077,13.93,62077.28,62094.87,What is the CBU Campus Store in store pickup policy?,I'm having trouble connecting right now. Please try again in a moment.
+llm,campus_store_location.txt,good,FAQ_SOURCE_4,0.8295460939407349,campus_store_location.txt,1.0,1.0,34.47,28787.63,28825.32,Where is the CBU Campus Store located?,"The CBU Campus Store is located at:
+
+8432 Magnolia Ave
+Riverside, CA 92504
+
+Phone: 951-343-4259
+Email: cscontact@calbaptist.edu
+
+STORE HOURS:
+- Monday–Friday: 8:00AM – 5:00PM
+- Saturday: 10:00AM – 3:00PM
+- Sunday: Closed
+
+Note: Hours may vary for holidays or special events."
+llm,campus_store_merchandise.txt,needs_review,FAQ_SOURCE_5,0.6144788861274719,campus_store_merchandise.txt,0.177,0.177,15.52,52308.06,52328.1,What does the Campus Store sell?,"The CBU Campus Store carries a wide variety of CBU-branded merchandise, apparel, technology, course supplies, and gifts. For the full selection, contact: cscontact@calbaptist.edu
+
+ALUMNI:
+- Alumni gear, accessories, and apparel
+
+ATHLETICS:
+- Nike headwear, polos, and shirts
+- Athletic accessories, bottoms, headwear, outerwear, shirts, jerseys, tank tops
+
+BOTTOMS:
+- Lounge and pajamas, shorts, sweatpants, women's bottoms
+
+COLLECTIONS:
+- 75th Anniversary, best sellers, sale items
+- CBU Family, CBU Grandparents, CBU Pets
+- Disney x CBU, Hello Kitty x CBU, Peanuts x CBU
+- Julia Gash Collection, March Madness, Christmas and seasonal
+
+COURSE SUPPLIES:
+- ARC and ART kits, general supplies, lab products
+- Office and school supplies, planners, calendars, binders
+
+DRINKWARE:
+- Metal and plastic water bottles, mugs, tumblers
+
+GIFTS AND ACCESSORIES:
+- Backpacks, bags, decals, stickers, jewelry, pins
+- Lanyards, keychains, plush, toys, socks, footwear
+- Throw pillows, totes, wallets, insignia and commencement gifts
+
+GRADUATION GEAR:
+- Diploma frames, grad bundles, stoles
+
+HEADWEAR:
+- Beanies, hats, visors
+
+OUTERWEAR:
+- Crewnecks, full zips, hoodies, jackets, quarter zips, sweaters
+
+SHIRTS:
+- Long sleeves, polos, short sleeves, women's shirts
+
+TECHNOLOGY:
+- MacBook Air, MacBook Pro, iPads, Apple Pencils
+- Beats headphones, chargers, adapters, Mac and iPad accessories
+
+YOUTH:
+- Infant and toddler items, youth accessories, bottoms, outerwear, shirts"
+llm,campus_store_ordering.txt,good,FAQ_SOURCE_6,0.7933067083358765,campus_store_ordering.txt,0.8484,0.8484,14.56,45193.04,45208.89,How do I place an order with the CBU Campus Store?,"You can place orders securely through the CBU Campus Store website.
+
+HOW ORDERING WORKS:
+
+Shipping Orders:
+Once your order is placed, the Campus Store will send you an email with tracking information after your items have been shipped.
+
+In Store Pickup Orders:
+If you choose In Store Pickup, you will receive an email when your order is ready for pickup.
+
+Digital / Access Code Orders:
+Some access codes will be delivered electronically via email regardless of the shipping method you selected. This is not immediate delivery and will still take the normal processing time.
+
+PROCESSING TIME:
+Please allow up to 48 hours for orders to be processed.
+
+CONTACT:
+If you have any questions about your order, contact the Campus Store at:
+- Email: cscontact@calbaptist.edu
+- Phone: 951-343-4259
+
+Staff can also assist you in placing your order over the phone."
+llm,campus_store_refund_merchandise.txt,needs_review,FAQ_SOURCE_5,0.7262345552444458,campus_store_merchandise.txt,0.0909,0.0107,299.32,62049.7,62355.13,What is the return and refund policy for general merchandise and trade books at the CBU Campus Store?,I'm having trouble connecting right now. Please try again in a moment.
+llm,campus_store_refund_process.txt,needs_review,FAQ_SOURCE_8,0.8312219381332397,campus_store_merchandise.txt,0.0909,0.0089,386.76,62053.96,62446.65,How do I return something to the CBU Campus Store?,I'm having trouble connecting right now. Please try again in a moment.
+llm,campus_store_refund_technology.txt,good,FAQ_SOURCE_9,0.891323447227478,campus_store_refund_technology.txt,0.9796,0.9796,30.23,47406.98,47443.2,What is the return and refund policy for technology and Apple products at the CBU Campus Store?,"All technology merchandise must be in resalable condition in original unopened packaging with manuals and warranties, accompanied by the original receipt.
+
+RETURN WINDOW:
+- All returns must be made within 5 days of purchase or pickup
+- Original receipt and unopened packaging are required unless the item is defective
+- Defective merchandise must be returned within 10 business days of purchase
+
+RESTOCKING FEE:
+A 10% restocking fee may be assessed on all returns. Refunds are issued only to the account used to place the original order.
+
+CONDITIONS:
+- No returns on closeout, clearance, or opened box stock unless the item is defective
+- Defective merchandise is subject to testing before return approval is given
+- Defective software must be exchanged with the original manufacturer
+- Special-order items are non-returnable unless determined to be defective
+
+TECHNOLOGY PRODUCTS COVERED:
+Technology products include but are not limited to:
+- Apple products (excluding charging cables)
+- Computers and tablets
+- Monitors, speakers, headphones and earbuds
+- Printers and cameras
+
+HOW TO RETURN:
+Call ahead at 951-343-4259 or email cscontact@calbaptist.edu before returning an item. Bring the original receipt and original packaging.
+
+Mail returns to:
+California Baptist University
+Attn: Campus Store
+8432 Magnolia Avenue
+Riverside, CA 92504
+
+CONTACT:
+Email: cscontact@calbaptist.edu
+Phone: 951-343-4259"
+llm,campus_store_shipping_policy.txt,good,FAQ_SOURCE_10,0.851299524307251,campus_store_shipping_policy.txt,0.9569,0.9569,19.48,52782.07,52804.21,What is the CBU Campus Store shipping policy?,"The CBU Campus Store offers competitive shipping rates. All shipments are professionally packed to ensure the safety of your items.
+
+DELIVERY TIME:
+On average, orders are received within 3 to 5 working days. During peak periods (August–September or December–January), delivery times may take longer.
+
+FLAT RATE SHIPPING:
+The CBU Campus Store offers $12.95 Flat Rate Standard Shipping on all textbook and merchandise orders.
+
+Conditions for flat rate shipping:
+- Available for U.S. orders only
+- Not transferable and not redeemable for cash
+- Available for Standard Shipping on valid U.S. addresses only
+- Diploma frames, ART kits, and ARC kits are excluded from this promotion
+
+ADDRESS REQUIREMENTS:
+Please confirm you are entering a valid U.S. shipping address before placing your order. Orders that result in an insufficient address or require an address adjustment after shipment will incur an additional shipping charge.
+
+Note: All shipping prices are subject to change. Orders over $500 may require a signature upon delivery unless stated otherwise.
+
+CONTACT:
+Email: cscontact@calbaptist.edu
+Phone: 951-343-4259"
+llm,campus_store_textbook_purchasing_terms.txt,good,FAQ_SOURCE_11,0.7757490277290344,campus_store_textbook_purchasing_terms.txt,0.9596,0.9596,25.66,38375.61,38406.2,What are the textbook purchasing terms of use at the CBU Campus Store?,"In compliance with the Higher Education Opportunity Act of 2008, California Baptist University and the CBU Campus Store provide up-to-date textbook and course material information for your classes.
+
+IMPORTANT TERMS TO KNOW:
+
+Textbook Information:
+- Textbook and course material information on the website is provided by the academic departments and is updated daily as additions, changes, and cancellations are received
+- Always check whether a textbook is listed as Optional, Pick One, or Required before purchasing
+
+Pricing:
+- The pricing of all textbooks is subject to change at any time and will be updated as stock arrives
+- Any material listed at $0.00 has not yet been priced
+- The Campus Store makes every effort to ensure pricing accuracy on the website
+
+Third-Party Purchasing Risk:
+- Because textbook information can change at any time, using this information to purchase textbooks from other sources is at your own risk
+- California Baptist University and the CBU Campus Store cannot be held responsible for purchases made elsewhere based on this information
+- Customers who purchase directly from the Campus Store are protected by and subject to the Campus Store return policy
+
+CONTACT:
+Email: cscontact@calbaptist.edu
+Phone: 951-343-4259"
+llm,campus_store_textbook_rentals.txt,needs_review,FAQ_SOURCE_12,0.744567334651947,campus_store_merchandise.txt,0.0909,0.006,111.84,62077.44,62209.33,How does textbook renting work at the CBU Campus Store?,I'm having trouble connecting right now. Please try again in a moment.
+llm,ia_access_issue.txt,needs_review,FAQ_SOURCE_21,0.6700822114944458,campus_store_merchandise.txt,0.1796,0.0481,24.4,37463.87,37494.45,Why does Immediate Access show an “opt out” option but not allow me to access my textbook?,"If you're having trouble accessing your materials, please specify which platform you need help with (e.g., ""I can't access Cengage MindTap"" or ""Help with McGraw Hill Connect"")."
+llm,ia_browser_cache_clear_chrome.txt,good,FAQ_SOURCE_15,0.6863130927085876,ia_browser_cache_clear_chrome.txt,1.0,1.0,23.45,48293.65,48330.19,"I am trying to access my Immediate Access materials through Blackboard but I see ""0 Courses, 0 Materials"" or get an error that says ""You currently have no content available."" I am using Google Chrome on a Mac or PC. How do I fix this?","This is usually caused by stale browser cookies or cached data interfering with your Immediate Access session. You will need to clear your browser's cookies, cache, and history in Google Chrome, then try again.
+
+Note: After clearing your browsing data, you will be signed out of most websites and will need to sign back in.
+
+STEP-BY-STEP RESOLUTION:
+
+1. Click the three dots in the top-right corner of your Chrome window and select Settings.
+2. On the left, choose Privacy and security, then select Clear browsing data.
+3. Under Time range, select All time.
+4. Check the boxes for Browsing history, Cookies and other site data, and Cached images and files.
+5. Click Clear data.
+
+Shortcut: Press Command + Shift + Delete (Mac) to open the Clear browsing data menu directly.
+
+EXPECTED RESULT:
+After clearing your browsing data, return to Blackboard, navigate to your course, and click the Immediate Access link again. Your materials should now load correctly.
+
+If you continue to experience issues, please contact the CBU Campus Store at ImmediateAccess@calbaptist.edu for further assistance."
+llm,ia_browser_cache_clear_chrome_ipad.txt,needs_review,FAQ_SOURCE_16,0.7514708042144775,campus_store_merchandise.txt,0.0909,0.0174,20.28,62047.32,62074.16,"I am trying to access my Immediate Access materials through Blackboard but I see ""0 Courses, 0 Materials"" or get an error that says ""You currently have no content available."" I am using Google Chrome on an iPad. How do I fix this?",I'm having trouble connecting right now. Please try again in a moment.
+llm,ia_browser_cache_clear_firefox.txt,good,FAQ_SOURCE_17,0.7074057459831238,ia_browser_cache_clear_firefox.txt,1.0,1.0,68.92,46644.76,46720.68,"I am trying to access my Immediate Access materials through Blackboard but I see ""0 Courses, 0 Materials"" or get an error that says ""You currently have no content available."" I am using Mozilla Firefox on a Mac. How do I fix this?","This is usually caused by stale browser cookies or cached data interfering with your Immediate Access session. You will need to clear your browser's cookies, cache, and history in Firefox, then try again.
+
+Note: After clearing your browsing data, you will be signed out of most websites and will need to sign back in.
+
+STEP-BY-STEP RESOLUTION:
+
+1. From the top menu bar, click History and select Clear Recent History.
+2. Under Time range to clear, select Everything.
+3. Check the box for Cache (and any other items you wish to clear).
+4. Click OK.
+
+Shortcut: Press Command + Shift + Delete (Mac) to open the Clear All History menu directly.
+
+EXPECTED RESULT:
+After clearing your browsing data, return to Blackboard, navigate to your course, and click the Immediate Access link again. Your materials should now load correctly.
+
+If you continue to experience issues, please contact the CBU Campus Store at ImmediateAccess@calbaptist.edu for further assistance."
+llm,ia_browser_cache_clear_safari.txt,good,FAQ_SOURCE_18,0.6955426931381226,ia_browser_cache_clear_safari.txt,1.0,1.0,24.04,48576.82,48605.65,"I am trying to access my Immediate Access materials through Blackboard but I see ""0 Courses, 0 Materials"" or get an error that says ""You currently have no content available."" I am using Safari on a Mac. How do I fix this?","This is usually caused by stale browser cookies or cached data interfering with your Immediate Access session. You will need to clear your cookies, cache, and history in Safari, then try again.
+
+Note: After clearing your browsing data, you will be signed out of most websites and will need to sign back in.
+
+STEP-BY-STEP RESOLUTION:
+
+CLEARING COOKIES:
+1. In the Safari app, click Safari in the top-left corner of your screen.
+2. Click Settings from the menu.
+3. Click Privacy from the menu bar inside Settings.
+4. Click Manage Website Data.
+5. Click Remove All in the bottom-left corner.
+
+CLEARING CACHE:
+1. Click Safari in the top-left corner, then click Settings.
+2. Click Advanced from the menu bar inside Settings.
+3. At the bottom of the page, click Show Features for Web Developers.
+4. From the top menu bar, click Develop, then select Empty Caches.
+
+CLEARING HISTORY:
+1. Click Safari in the top-left corner of your screen.
+2. Click Clear History from the menu.
+3. Select All History from the dropdown.
+4. Click Clear History in the bottom-right corner to confirm.
+
+EXPECTED RESULT:
+After completing all three sections above, return to Blackboard, navigate to your course, and click the Immediate Access link again. Your materials should now load correctly.
+
+If you continue to experience issues, please contact the CBU Campus Store at ImmediateAccess@calbaptist.edu for further assistance."
+llm,ia_bundle_missing_textbook.txt,needs_review,CLARIFICATION_NEEDED,0.0,campus_store_merchandise.txt,0.1328,0.0683,0.0,0.0,2.5,What should I do if a textbook is missing from my Immediate Access bundle?,"I can help you with textbook access! To give you the most accurate instructions, could you please specify which platform or publisher your textbook uses? Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, Sage, SimuCase, etc."
+llm,ia_opt_out_physical_textbooks.txt,needs_review,FAQ_SOURCE_21,0.6700822114944458,campus_store_merchandise.txt,0.2031,0.0128,47.27,31484.79,31534.32,"If I opt out of Immediate Access, can I buy a physical copy of my textbook from the Campus Store?","After opting out, you must purchase materials separately."
+llm,ia_overview.txt,good,FAQ_SOURCE_21,0.6700822114944458,ia_overview.txt,1.0,1.0,13.53,32266.21,32281.05,What is Immediate Access?,"Immediate Access is California Baptist University's program that provides day-one access to digital course materials through your student account.
+
+**How It Works:**
+- Get instant access to digital textbooks and courseware on the first day of class
+- Materials are automatically available through Blackboard
+- Charges are billed directly to your student account
+- You have 14 days to opt out if you prefer to purchase materials separately
+
+**Key Benefits:**
+- No waiting for materials to arrive
+- No upfront payment needed
+- Convenient access through Blackboard
+- Often more affordable than traditional textbooks
+
+**Supported Platforms:**
+Immediate Access works with major publishers including:
+- Cengage (MindTap, Cengage Unlimited)
+- McGraw Hill (Connect, ALEKS)
+- Pearson (MyLab, Mastering)
+- Bedford, Sage, VitalSource, and more
+
+**Billing & Payment:**
+- Charges appear on your student account statement
+- Can be paid alongside tuition and fees
+- Payment plans available through student accounts
+
+**Opting Out:**
+- 14-day opt-out period from the start of the semester
+- Opt out through the Immediate Access page in Blackboard
+- After opting out, you must purchase materials separately
+
+**Getting Help:**
+If you're having trouble accessing your materials, please specify which platform you need help with (e.g., ""I can't access Cengage MindTap"" or ""Help with McGraw Hill Connect"")."

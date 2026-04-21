@@ -23,4 +23,9 @@ export interface Message {
   articleLink?: string | null;
   debug_mode?: boolean;
   isStreaming?: boolean;
+  thought?: string;
+  isThinkingExpanded?: boolean;
+  // Vision: when a user message includes a screenshot, store a preview URL
+  // so the thumbnail can be displayed in the chat bubble.
+  imagePreviewUrl?: string;
 }
