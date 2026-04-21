@@ -4,7 +4,7 @@ import json
 from email.mime import message
 from fastapi import FastAPI, HTTPException, Depends, Query
 from app.schemas.chat import ChatRequest, ChatResponse
-from app.llm.llama_client import LlamaClient, build_system_prompt, stream_llm_response
+from app.llm.llama_client import LlamaClient, build_system_prompt, build_vision_system_prompt, stream_llm_response, stream_llm_chat_response
 # from app.rag.retriever import FAQRetriever  # Deprecated import
 from app.rag.retriever import get_retriever  # New singleton accessor
 from app.platform_registry import load_registry, internal_platform_key, canonical_platform_key
@@ -77,6 +77,20 @@ FAQ_DIRECT_MIN_CONFIDENCE = float(os.getenv("FAQ_DIRECT_MIN_CONFIDENCE", "0.2"))
 MAX_HISTORY_TURNS = 6
 SESSION_TIMEOUT = timedelta(hours=1)
 MAX_CONCURRENT_LLM_REQUESTS = int(os.getenv("MAX_CONCURRENT_LLM_REQUESTS", "2"))
+GROUNDING_TOP_K = int(os.getenv("GROUNDING_TOP_K", "3"))
+
+GREETING_KEYWORDS = ["hi", "hello", "hey", "good morning", "good afternoon", "good evening", "greetings"]
+GREETING_REPLY = (
+    "Hi! I'm Lance, your Campus Store AI Assistant. "
+    "I can help with Immediate Access, textbook access, returns, and store policies. "
+    "What can I help you with today?"
+)
+PLATFORM_CLARIFICATION_MESSAGE = (
+    "I can help you with textbook access! To give you the most accurate instructions, "
+    "could you please specify which platform or publisher your textbook uses? "
+    "Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, "
+    "Sage, SimuCase, etc."
+)
 
 # Create FastAPI app FIRST
 app = FastAPI(title="Campus Store Chatbot (Session-Safe + Performance Tracking)")
@@ -233,11 +247,12 @@ for _platform_key, _display in _registry.get("platform_display_names", {}).items
 def detect_platforms_from_text(text: str) -> list[str]:
     """
     Return all matching platform keys from message text.
+    Uses word-boundary matching to avoid false positives (e.g. 'sage' inside 'message').
     """
     normalized = text.lower()
     matches: list[str] = []
     for platform_key, aliases in PLATFORM_ALIASES.items():
-        if any(alias in normalized for alias in aliases):
+        if any(re.search(r"\b" + re.escape(alias) + r"\b", normalized) for alias in aliases):
             matches.append(platform_key)
     return matches
 
@@ -279,12 +294,12 @@ def resolve_platform_correction(text: str) -> str | None:
     return None
 
 
-async def retrieve_async(query: str, collection: str = "auto", platform: str = None):
+async def retrieve_async(query: str, collection: str = "auto", platform: str = None, k: int = 1):
     """Run sync FAISS retrieval in a worker thread to avoid blocking the event loop."""
     return await asyncio.to_thread(
         retriever.retrieve,
         query,
-        1,
+        k,
         collection,
         platform
     )
@@ -294,7 +309,8 @@ async def call_llm_with_semaphore(
     message: str,
     context: str,
     history: list,
-    system_hint: str
+    system_hint: str,
+    image_base64: str | None = None,
 ) -> tuple[str, float]:
     """
     Queue LLM requests behind a semaphore so concurrent users do not over-saturate the GPU.
@@ -308,7 +324,8 @@ async def call_llm_with_semaphore(
             message,
             context,
             history,
-            system_hint
+            system_hint,
+            image_base64,
         )
         return reply, queue_wait_ms
 
@@ -806,6 +823,29 @@ def strip_article_link_lines(text: str) -> str:
         return text
     cleaned = re.sub(r'(?im)^\s*Article link:\s*"?[^"\n]+"?\s*$', "", text)
     return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+
+def build_grounded_prompt(message: str, context: str) -> str:
+    """Build a strict grounded-answer system prompt for FAQ queries.
+
+    Instructs the model to answer only from retrieved context and to never
+    reproduce URLs or links even when they appear in the context chunks.
+    """
+    return f"""You are Lance, the CBU Campus Store assistant. Answer the student's question using ONLY the information provided below.
+
+RULES:
+- Answer directly from the provided context only
+- If the context does not contain a direct answer to the question, say: "I don't have specific information about that. Please contact ImmediateAccess@calbaptist.edu for assistance."
+- Do NOT reproduce any URLs or links from the context
+- Do NOT add information not present in the context
+- Be concise and helpful
+
+CONTEXT:
+{context}
+
+STUDENT QUESTION: {message}
+
+ANSWER:"""
 
 
 def is_meta_or_greeting_misfire(reply: str) -> bool:
@@ -2085,6 +2125,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             session["stored_original_query"] = None
 
         message = payload.message.strip()
+        has_image = bool(getattr(payload, "image_base64", None))
 
         # Initialize variables
         platform = None
@@ -2183,12 +2224,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     debug_mode=debug_mode
                 )
             elif any(s in msg_lower for s in no_signals):
-                clarification = (
-                    "I can help you with textbook access! To give you the most accurate instructions, "
-                    "could you please specify which platform or publisher your textbook uses? "
-                    "Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, "
-                    "Sage, SimuCase, etc."
-                )
+                clarification = PLATFORM_CLARIFICATION_MESSAGE
                 session["history"].append({"role": "user", "content": message})
                 session["history"].append({"role": "assistant", "content": clarification})
                 session["awaiting_vitalsource_screen_confirm"] = False
@@ -2281,16 +2317,12 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # Handle follow-up questions about class materials
         if not debug_mode and is_confirmed_materials_issue(message) and not is_browser_cache_issue(message) and not is_textbook_return_query(message) and not is_merchandise_return_query(message) and not is_technology_return_query(message) and not is_vague_books_missing_query(message) and not is_blank_page_query(message) and not session.get("awaiting_vitalsource_screen_confirm", False) and not session.get("awaiting_platform_type", False) and not session.get("awaiting_publisher_list_response", False) and not session.get("awaiting_class_access_clarification", False) and platform is None:
             # User is asking about materials, trigger platform clarification
-            clarification = (
-                "I can help you with textbook access! To give you the most accurate instructions, "
-                "could you please specify which platform or publisher your textbook uses? "
-                "Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, "
-                "Sage, SimuCase, etc."
-            )
+            clarification = PLATFORM_CLARIFICATION_MESSAGE
             session["history"].append({"role": "user", "content": message})
             session["history"].append({"role": "assistant", "content": clarification})
             session["awaiting_platform_type"] = True
             session["stored_publisher"] = "TEXTBOOK_GENERIC"
+            session["stored_original_query"] = message
             session["stored_intent"] = "IA_ACCESS_ISSUE"
             session["platform_clarification_count"] = session.get("platform_clarification_count", 0) + 1
             total_time = (time.time() - request_start) * 1000
@@ -2450,17 +2482,13 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 )
             elif is_confirmed_materials_issue(message):
                 # User confirmed it's about materials/textbook
-                clarification = (
-                    "I can help you with textbook access! To give you the most accurate instructions, "
-                    "could you please specify which platform or publisher your textbook uses? "
-                    "Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, "
-                    "Sage, SimuCase, etc."
-                )
+                clarification = PLATFORM_CLARIFICATION_MESSAGE
                 session["history"].append({"role": "user", "content": message})
                 session["history"].append({"role": "assistant", "content": clarification})
                 session["awaiting_class_access_clarification"] = False
                 session["awaiting_platform_type"] = True
                 session["stored_publisher"] = "TEXTBOOK_GENERIC"
+                session["stored_original_query"] = message
                 session["stored_intent"] = "IA_ACCESS_ISSUE"
                 session["platform_clarification_count"] = session.get("platform_clarification_count", 0) + 1
                 total_time = (time.time() - request_start) * 1000
@@ -3402,13 +3430,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             platform is None and
             not explicit_textbook_selection
         )
-        if not debug_mode and needs_platform_clarification:
-            clarification = (
-                "I can help you with textbook access! To give you the most accurate instructions, "
-                "could you please specify which platform or publisher your textbook uses? "
-                "Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, "
-                "Sage, SimuCase, etc."
-            )
+        if needs_platform_clarification:
+            clarification = PLATFORM_CLARIFICATION_MESSAGE
             session["awaiting_platform_type"] = True
             session["stored_publisher"] = "TEXTBOOK_GENERIC"
             session["stored_original_query"] = message
@@ -3448,22 +3471,50 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         retrieval = None
         context = ""
 
-        greeting_keywords = ["hi", "hello", "hey", "good morning", "good afternoon", "good evening", "greetings"]
         is_greeting = (
-            len(message.split()) <= 3 and  # Short message
-            any(keyword in message.lower() for keyword in greeting_keywords)
+            len(message.split()) <= 3
+            and any(kw in message.lower() for kw in GREETING_KEYWORDS)
         )
+        if is_greeting:
+            session["history"].append({"role": "assistant", "content": GREETING_REPLY})
+            if len(session["history"]) > MAX_HISTORY_TURNS * 2:
+                session["history"] = session["history"][-MAX_HISTORY_TURNS * 2:]
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=GREETING_REPLY,
+                source="DETERMINISTIC_GREETING",
+                article_link=None,
+                confidence=1.0,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[],
+                debug_mode=debug_mode
+            )
 
         try:
+            # --- Vision retrieval augmentation ---
+            image_context = {}
+            retrieval_query = message
+
+            if payload.image_base64:
+                from app.llm.llama_client import analyze_image_for_retrieval, build_augmented_query
+                image_context = await analyze_image_for_retrieval(
+                    payload.image_base64,
+                    payload.image_media_type or "image/jpeg",
+                )
+                retrieval_query = build_augmented_query(message, image_context)
+                print(f"[VISION] image_context={image_context}")
+                print(f"[VISION] augmented retrieval_query={retrieval_query!r}")
+
+                if not platform and image_context.get("detected_platform"):
+                    print(f"[VISION] detected_platform from image: {image_context['detected_platform']!r}")
+
             # ✨ START RETRIEVAL TIMER
             retrieval_start = time.time()
-            
-            if is_greeting:
-                retrieval = None
-                context = ""
-                print("[RAG DEBUG] Greeting detected - skipping retrieval")
+
             # ✨ NEW: Skip retrieval for vague queries
-            elif is_vague_query:
+            if is_vague_query:
                 retrieval = None
                 context = ""
                 print("[RAG DEBUG] Query too vague - skipping retrieval, will ask for clarification")
@@ -3530,7 +3581,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 if is_access_code_question(message):
                     faq_query = "Immediate Access access code Blackboard code not needed professor said use a code used textbook code"
                 elif is_general_ia_question(message):
-                    faq_query = "Immediate Access program overview billing opt out student account digital materials Blackboard"
+                    faq_query = "What is Immediate Access CBU program day one digital textbook access overview how it works"
                 elif is_textbook_return_query(message):
                     if any(
                         signal in (message or "").lower()
@@ -3552,18 +3603,19 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 elif is_merchandise_query(message):
                     faq_query = "CBU Campus Store merchandise apparel clothing mugs gifts supplies"
                 elif is_ia_overview_query(message):
-                    faq_query = "Immediate Access program overview day-one digital course materials student account CBU definition"
+                    faq_query = "What is Immediate Access CBU program day one digital textbook access overview how it works"
                 elif is_browser_cache_issue(message):
                     faq_query = build_browser_cache_faq_query(message)
                 retrieval = await retrieve_async(
                     faq_query,
-                    collection="faqs"
+                    collection="faqs",
+                    k=GROUNDING_TOP_K,
                 )
             else:
-                retrieval = await retrieve_async(message)
+                retrieval = await retrieve_async(retrieval_query)
 
             if retrieval and "context" in retrieval:
-                context = strip_meta_prefix(retrieval["context"])
+                context = strip_article_link_lines(strip_meta_prefix(retrieval["context"]))
             
             # ✨ END RETRIEVAL TIMER
             retrieval_time_ms = (time.time() - retrieval_start) * 1000
@@ -3572,7 +3624,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             print(f"[WARN] Platform-specific index not found ({e}), falling back to general index")
             try:
                 retrieval = await retrieve_async(
-                    enhanced_query if 'enhanced_query' in locals() else message,
+                    enhanced_query if 'enhanced_query' in locals() else retrieval_query,
                     collection="instructions",
                     platform=None
                 )
@@ -3851,6 +3903,12 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 "Do NOT assume availability of print textbooks. "
                 "Only provide instructions for the specific platform mentioned in the official instructions."
             )
+            if not has_image:
+                system_hint += (
+                    " If your answer does not fully resolve the issue, end with a single sentence "
+                    "suggesting the student attach a screenshot using the camera icon in the chat, "
+                    "so you can see the exact error message they are getting."
+                )
 
         # ✨ START LLM TIMER
         llm_start = time.time()
@@ -3859,7 +3917,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             message=message,
             context=context,
             history=session["history"][-MAX_HISTORY_TURNS:],
-            system_hint=system_hint
+            system_hint=system_hint,
+            image_base64=payload.image_base64,
         )
         reply = strip_article_link_lines(reply)
 
@@ -3971,28 +4030,93 @@ async def chat_stream(payload: ChatRequest):
             debug_mode = session.get("debug_mode", False)
             if not debug_mode:
                 result = await process_chat_request(payload)
-                yield f"data: {json.dumps({'token': result.reply, 'done': False})}\n\n"
+                yield f"data: {json.dumps({'type': 'response', 'token': result.reply, 'done': False})}\n\n"
                 yield (
                     "data: "
-                    f"{json.dumps({'token': '', 'done': True, 'session_id': session_id, 'source': result.source, 'confidence': result.confidence, 'recommended_pdfs': result.recommended_pdfs, 'debug_mode': result.debug_mode})}\n\n"
+                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'session_id': session_id, 'source': result.source, 'confidence': result.confidence, 'recommended_pdfs': result.recommended_pdfs, 'debug_mode': result.debug_mode, 'thought': ''})}\n\n"
                 )
                 return
 
             platform = detect_platform_from_text(message)
             intent = detect_intent(message)
 
+            # Deterministic greeting: skip retrieval and LLM entirely.
+            if len(message.split()) <= 3 and any(kw in message.lower() for kw in GREETING_KEYWORDS):
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": GREETING_REPLY})
+                session["last_activity"] = datetime.now()
+                yield f"data: {json.dumps({'type': 'response', 'token': GREETING_REPLY, 'done': False})}\n\n"
+                yield (
+                    "data: "
+                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'session_id': session_id, 'source': 'DETERMINISTIC_GREETING', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                )
+                return
+
+            # Apply same intent overrides as process_chat_request.
+            is_cache_issue = is_browser_cache_issue(message)
+            if is_cache_issue and intent != "GENERAL_FAQ":
+                intent = "GENERAL_FAQ"
+                print("[STREAM INTENT] Browser cache override → GENERAL_FAQ")
+
+            # Ask for platform before retrieval — prevents wrong-platform hallucination.
+            # Skip when already overridden to GENERAL_FAQ (e.g. browser cache issue).
+            if intent == "IA_ACCESS_ISSUE" and platform is None:
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": PLATFORM_CLARIFICATION_MESSAGE})
+                session["last_activity"] = datetime.now()
+                session["awaiting_platform_type"] = True
+                session["stored_original_query"] = message
+                session["stored_intent"] = "IA_ACCESS_ISSUE"
+                session["stored_platform"] = None
+                yield f"data: {json.dumps({'type': 'response', 'token': PLATFORM_CLARIFICATION_MESSAGE, 'done': False})}\n\n"
+                yield (
+                    "data: "
+                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'session_id': session_id, 'source': 'CLARIFICATION_NEEDED', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                )
+                return
+
+            # --- Vision retrieval augmentation ---
+            image_context = {}
+            retrieval_query = message
+
+            if payload.image_base64:
+                from app.llm.llama_client import analyze_image_for_retrieval, build_augmented_query
+                image_context = await analyze_image_for_retrieval(
+                    payload.image_base64,
+                    payload.image_media_type or "image/jpeg",
+                )
+                retrieval_query = build_augmented_query(message, image_context)
+                print(f"[VISION] image_context={image_context}")
+                print(f"[VISION] augmented retrieval_query={retrieval_query!r}")
+
+                if not platform and image_context.get("detected_platform"):
+                    print(f"[VISION] detected_platform from image: {image_context['detected_platform']!r}")
+
             retrieval_start = time.time()
             retrieval = None
             try:
                 if platform and intent == "IA_ACCESS_ISSUE":
                     retrieval = await retrieve_async(
-                        message,
+                        retrieval_query,
                         collection="instructions",
                         platform=platform,
                     )
+                elif intent == "GENERAL_FAQ":
+                    if is_general_ia_question(message) or is_ia_overview_query(message):
+                        faq_query = "What is Immediate Access CBU program day one digital textbook access overview how it works"
+                    elif is_cache_issue:
+                        faq_query = build_browser_cache_faq_query(message)
+                    else:
+                        faq_query = message
+                    retrieval = await retrieve_async(
+                        faq_query,
+                        collection="faqs",
+                        platform=None,
+                        k=GROUNDING_TOP_K,
+                    )
                 else:
                     retrieval = await retrieve_async(
-                        message,
+                        retrieval_query,
                         collection="auto",
                         platform=platform,
                     )
@@ -4000,7 +4124,7 @@ async def chat_stream(payload: ChatRequest):
                 print(f"[STREAM WARN] Primary retrieval failed: {retrieval_error}")
                 try:
                     retrieval = await retrieve_async(
-                        message,
+                        retrieval_query,
                         collection="auto",
                         platform=None,
                     )
@@ -4010,7 +4134,7 @@ async def chat_stream(payload: ChatRequest):
 
             retrieval_ms = (time.time() - retrieval_start) * 1000
             context = (
-                strip_meta_prefix(retrieval["context"])
+                strip_article_link_lines(strip_meta_prefix(retrieval["context"]))
                 if retrieval and retrieval.get("context")
                 else ""
             )
@@ -4046,10 +4170,52 @@ async def chat_stream(payload: ChatRequest):
                     "If the retrieved content is a FAQ, answer directly from it with no greeting."
                 )
 
-            system = build_system_prompt(context=context, system_hint=system_hint)
+            has_image = bool(payload.image_base64)
+            if has_image:
+                system = build_vision_system_prompt(context=context, system_hint=system_hint)
+            elif intent == "GENERAL_FAQ" and context:
+                system = build_grounded_prompt(message, context)
+            else:
+                system = build_system_prompt(context=context, system_hint=system_hint)
+            full_thought = ""
             full_response = ""
-            stream_visible_text = ""
             pending_tail = ""
+
+            # Vision requests must use the /api/chat endpoint (multimodal).
+            # stream_llm_response uses /api/generate with thinking mode, which
+            # causes the model to emit everything inside a thought block and
+            # produces an empty visible response. stream_llm_chat_response uses
+            # /api/chat with images=[...] and extracts thinking tokens correctly.
+            if has_image:
+                vision_thought = ""
+                vision_response = ""
+                async with llm_semaphore:
+                    async for chunk in stream_llm_chat_response(
+                        message=message,
+                        system=system,
+                        history=session["history"][-MAX_HISTORY_TURNS:],
+                        image_base64=payload.image_base64,
+                    ):
+                        chunk_type = chunk.get("type", "response")
+                        token = chunk.get("token", "")
+                        if not token:
+                            continue
+                        if chunk_type == "thought":
+                            vision_thought += token
+                            yield f"data: {json.dumps({'type': 'thought', 'token': token, 'done': False})}\n\n"
+                        else:
+                            vision_response += token
+                            yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
+
+                vision_response = strip_article_link_lines(vision_response).strip()
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": vision_response})
+                session["last_activity"] = datetime.now()
+                yield (
+                    "data: "
+                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'session_id': session_id, 'source': retrieval.get('source_id', 'LLM_VISION') if retrieval else 'LLM_VISION', 'confidence': confidence, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': vision_thought})}\n\n"
+                )
+                return
 
             def extract_safe_stream_text(text: str) -> tuple[str, str]:
                 """
@@ -4066,23 +4232,29 @@ async def chat_stream(payload: ChatRequest):
                 return sanitized[:-hold_chars], sanitized[-hold_chars:]
 
             async with llm_semaphore:
-                async for token in stream_llm_response(message, system):
-                    full_response += token
-                    safe_chunk, pending_tail = extract_safe_stream_text(pending_tail + token)
-                    if safe_chunk:
-                        stream_visible_text += safe_chunk
-                        yield f"data: {json.dumps({'token': safe_chunk, 'done': False})}\n\n"
+                async for chunk in stream_llm_response(message, system, image_base64=payload.image_base64):
+                    chunk_type = chunk.get("type", "response")
+                    token = chunk.get("token", "")
+                    if not token:
+                        continue
+
+                    if chunk_type == "thought":
+                        full_thought += token
+                        yield f"data: {json.dumps({'type': 'thought', 'token': token, 'done': False})}\n\n"
+                    else:
+                        full_response += token
+                        safe_chunk, pending_tail = extract_safe_stream_text(pending_tail + token)
+                        if safe_chunk:
+                            yield f"data: {json.dumps({'type': 'response', 'token': safe_chunk, 'done': False})}\n\n"
 
             cleaned_full_response = strip_article_link_lines(full_response).strip()
             final_safe_chunk, pending_tail = extract_safe_stream_text(pending_tail)
             if final_safe_chunk:
-                stream_visible_text += final_safe_chunk
-                yield f"data: {json.dumps({'token': final_safe_chunk, 'done': False})}\n\n"
+                yield f"data: {json.dumps({'type': 'response', 'token': final_safe_chunk, 'done': False})}\n\n"
 
             pending_tail = strip_article_link_lines(pending_tail).strip()
             if pending_tail:
-                stream_visible_text += pending_tail
-                yield f"data: {json.dumps({'token': pending_tail, 'done': False})}\n\n"
+                yield f"data: {json.dumps({'type': 'response', 'token': pending_tail, 'done': False})}\n\n"
 
             full_response = cleaned_full_response
             source = retrieval.get("source_id", "LLM_GROUNDED_STREAM") if retrieval else "LLM_GROUNDED_STREAM"
@@ -4111,14 +4283,14 @@ async def chat_stream(payload: ChatRequest):
             )
             yield (
                 "data: "
-                f"{json.dumps({'token': '', 'done': True, 'session_id': session_id, 'source': source, 'confidence': confidence, 'recommended_pdfs': recommended_pdfs, 'debug_mode': debug_mode})}\n\n"
+                f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'session_id': session_id, 'source': source, 'confidence': confidence, 'recommended_pdfs': recommended_pdfs, 'debug_mode': debug_mode, 'thought': full_thought})}\n\n"
             )
 
         except Exception as e:
             print(f"[STREAM ERROR] {e}")
             yield (
                 "data: "
-                f"{json.dumps({'token': '[Error generating response]', 'done': True, 'session_id': session_id, 'recommended_pdfs': [], 'debug_mode': session.get('debug_mode', False)})}\n\n"
+                f"{json.dumps({'type': 'done', 'token': '[Error generating response]', 'done': True, 'session_id': session_id, 'recommended_pdfs': [], 'debug_mode': session.get('debug_mode', False), 'thought': ''})}\n\n"
             )
 
     return StreamingResponse(

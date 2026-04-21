@@ -4,6 +4,8 @@ from typing import Dict, List, Optional
 class ChatRequest(BaseModel):
     message: str
     session_id: str | None = None
+    image_base64: str | None = None
+    image_media_type: str | None = None
 
 class ChatResponse(BaseModel):
     reply: str
