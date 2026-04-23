@@ -409,6 +409,30 @@ def _is_specific_query(query: str) -> bool:
         "return policy", "return window",
         "access code", "code",
         "opt out option",
+        # Access problem language — student describing a specific error state
+        "opted in",
+        "already opted in",
+        "got back",
+        "this is what i got",
+        "this is what i see",
+        "but i still",
+        "but it still",
+        "still not",
+        "still can't",
+        "still cannot",
+        "not working",
+        "doesn't work",
+        "won't load",
+        "won't open",
+        "can't get in",
+        "cannot get in",
+        "showing me",
+        "it shows",
+        "getting an error",
+        "getting error",
+        "error message",
+        "keeps saying",
+        "says it",
     ]
     return any(s in q for s in specific_signals)
 
@@ -458,7 +482,13 @@ def rerank_faq_candidates(candidates: list[dict], query: str) -> list[dict]:
             if not is_overview:
                 rerank_score += 0.10  # specificity bonus
             else:
-                rerank_score -= 0.10  # broadness penalty
+                rerank_score -= 0.20  # broadness penalty — increased from 0.10
+        else:
+            # Even for non-specific queries, apply a small penalty to overview docs
+            # to prevent them winning on shared vocabulary alone (e.g. "immediate access"
+            # appearing in both the query and the overview canonical question).
+            if is_overview:
+                rerank_score -= 0.08
 
         print(
             f"[RERANK] {source_id} | semantic={semantic:.4f} "
