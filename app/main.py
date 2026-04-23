@@ -4203,7 +4203,22 @@ async def chat_stream(payload: ChatRequest):
                 )
 
             has_image = bool(payload.image_base64)
-            if has_image:
+            if has_image and intent == "GENERAL_FAQ" and context:
+                # FAQ with image: use grounded FAQ prompt but append vision awareness section
+                # so the LLM can still reference screenshot details for context.
+                # Do NOT use build_vision_system_prompt here — it is designed for instruction
+                # retrieval and causes the LLM to misidentify FAQ content as irrelevant.
+                base = build_grounded_prompt(message, context)
+                vision_note = (
+                    "\n\n=== STUDENT HAS PROVIDED A SCREENSHOT ===\n"
+                    "The student also attached a screenshot of their current screen.\n"
+                    "Use the screenshot only to understand their specific error or screen state.\n"
+                    "Your answer must come from the FAQ content above, not from the screenshot.\n"
+                    "Do NOT describe the image back to the student.\n"
+                    "=== END SCREENSHOT GUIDANCE ==="
+                )
+                system = base + vision_note
+            elif has_image:
                 system = build_vision_system_prompt(context=context, system_hint=system_hint)
             elif intent == "GENERAL_FAQ" and context:
                 system = build_grounded_prompt(message, context)
