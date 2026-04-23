@@ -3858,8 +3858,19 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # ===== LLM CALL (TIMED) =====
         system_hint = ""
 
+        # Store hours guard: if the user is asking about store hours but the
+        # retrieved context does not contain verified hours, instruct the LLM
+        # not to invent them.
+        if is_store_hours_query(message) and not context_contains_store_hours(context):
+            system_hint = (
+                "The user is asking about Campus Store hours. "
+                "The retrieved documentation does not contain verified store hours. "
+                "Do NOT invent or guess store hours. "
+                "Tell the user you do not have current verified hours in your knowledge base "
+                "and direct them to check the Campus Store website or call 951-343-4259."
+            )
         # ✨ UPDATED: Add hint for vague queries with textbook/IA detection
-        if is_vague_query:
+        elif is_vague_query:
             # Check what type of vague query it is
             msg_lower = message.lower()
             
@@ -4161,7 +4172,15 @@ async def chat_stream(payload: ChatRequest):
                 return
 
             system_hint = ""
-            if intent == "IA_ACCESS_ISSUE":
+            if is_store_hours_query(message) and not context_contains_store_hours(context):
+                system_hint = (
+                    "The user is asking about Campus Store hours. "
+                    "The retrieved documentation does not contain verified store hours. "
+                    "Do NOT invent or guess store hours. "
+                    "Tell the user you do not have current verified hours in your knowledge base "
+                    "and direct them to check the Campus Store website or call 951-343-4259."
+                )
+            elif intent == "IA_ACCESS_ISSUE":
                 system_hint = (
                     "The user is asking about Immediate Access digital course materials. "
                     "Do NOT suggest purchasing or renting physical textbooks unless the user explicitly asks. "
