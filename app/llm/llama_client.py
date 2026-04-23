@@ -235,19 +235,12 @@ async def analyze_image_for_retrieval(
         return {}
 
     system_prompt = (
-        "You are extracting screenshot details for semantic retrieval. "
-        "Read all visible text in the image and return JSON only."
+        "You are a screenshot analyzer. Return ONLY a JSON object, nothing else."
     )
     user_prompt = (
-        "Return a JSON object with exactly these keys: "
-        'detected_platform, page_title, error_text, text_signals. '
-        "Rules: detected_platform should be a short platform key or null; "
-        "page_title should be the main page heading or null; "
-        "error_text should be the most important visible error/problem text or null; "
-        "text_signals should be an array of up to 8 short strings copied or paraphrased "
-        "from the screenshot, focusing on platform names, page labels, buttons, and errors. "
-        f"The image media type is {image_media_type}. "
-        "Do not include markdown fences or explanations."
+        'Look at this screenshot. Return ONLY this JSON object with no explanation: '
+        '{"visible_error": "<most important error text visible, or empty string>", '
+        '"detected_platform": "<platform or publisher name visible, or empty string>"}'
     )
 
     payload = {
@@ -263,12 +256,12 @@ async def analyze_image_for_retrieval(
         "stream": False,
         "options": {
             "temperature": 0.0,
-            "num_predict": 256,
+            "num_predict": 512,
         },
     }
 
     try:
-        timeout = httpx.Timeout(5.0, read=60.0)
+        timeout = httpx.Timeout(15.0, read=90.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(OLLAMA_CHAT_URL, json=payload)
             response.raise_for_status()
@@ -276,41 +269,30 @@ async def analyze_image_for_retrieval(
         print(f"[VISION WARN] image analysis request failed: {exc}")
         return {}
 
-    content = (
-        response.json().get("message", {}).get("content", "")
-        if response.content
-        else ""
-    )
+    if not response.content:
+        print("[VISION WARN] image analysis: empty HTTP response body")
+        return {}
+    resp_data = response.json()
+    msg = resp_data.get("message", {})
+    content = msg.get("content", "").strip()
+    if not content:
+        # gemma4:e2b routes multimodal responses into message.thinking
+        # when called non-streaming - fall back to that field
+        content = msg.get("thinking", "").strip()
+        if content:
+            print("[VISION] using message.thinking fallback for image analysis")
+        else:
+            print("[VISION WARN] image analysis: both content and thinking are empty. Response keys:", list(resp_data.keys()))
+            return {}
     parsed = _extract_json_object(content)
     if not parsed:
-        print("[VISION WARN] image analysis returned non-JSON content")
+        print(f"[VISION WARN] image analysis returned non-JSON content: {content[:200]!r}")
         return {}
 
-    page_title = _normalize_text_signal(parsed.get("page_title"))
-    error_text = _normalize_text_signal(parsed.get("error_text"))
-
-    raw_signals = parsed.get("text_signals", [])
-    if isinstance(raw_signals, str):
-        raw_signals = [raw_signals]
-    if not isinstance(raw_signals, list):
-        raw_signals = []
-
-    text_signals: list[str] = []
-    seen: set[str] = set()
-    for item in raw_signals:
-        normalized = _normalize_text_signal(item)
-        if not normalized:
-            continue
-        key = normalized.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        text_signals.append(normalized)
-        if len(text_signals) >= 8:
-            break
-
+    visible_error = _normalize_text_signal(parsed.get("visible_error"))
     detected_platform = _normalize_text_signal(parsed.get("detected_platform"))
-    combined_text = " ".join(filter(None, [detected_platform, page_title, error_text, *text_signals]))
+
+    combined_text = " ".join(filter(None, [detected_platform, visible_error]))
     inferred_platform = _detect_platform_hint(combined_text)
     if inferred_platform:
         detected_platform = inferred_platform
@@ -318,12 +300,8 @@ async def analyze_image_for_retrieval(
     result: dict[str, object] = {}
     if detected_platform:
         result["detected_platform"] = detected_platform
-    if page_title:
-        result["page_title"] = page_title
-    if error_text:
-        result["error_text"] = error_text
-    if text_signals:
-        result["text_signals"] = text_signals
+    if visible_error:
+        result["visible_error"] = visible_error
     return result
 
 
@@ -336,7 +314,7 @@ def build_augmented_query(message: str, image_context: dict) -> str:
     parts: list[str] = [base_query]
     seen: set[str] = {base_query.casefold()} if base_query else set()
 
-    for key in ("detected_platform", "page_title", "error_text"):
+    for key in ("detected_platform", "visible_error"):
         normalized = _normalize_text_signal(image_context.get(key))
         if not normalized:
             continue
@@ -347,20 +325,6 @@ def build_augmented_query(message: str, image_context: dict) -> str:
         if key == "detected_platform":
             parts.append(f"platform {normalized}")
         else:
-            parts.append(normalized)
-
-    raw_signals = image_context.get("text_signals", [])
-    if isinstance(raw_signals, str):
-        raw_signals = [raw_signals]
-    if isinstance(raw_signals, list):
-        for item in raw_signals:
-            normalized = _normalize_text_signal(item)
-            if not normalized:
-                continue
-            dedupe_key = normalized.casefold()
-            if dedupe_key in seen:
-                continue
-            seen.add(dedupe_key)
             parts.append(normalized)
 
     return " ".join(part for part in parts if part).strip()
