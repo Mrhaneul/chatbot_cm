@@ -76,6 +76,8 @@ def extract_step_by_step(content: str) -> str:
 
 CONFIDENCE_THRESHOLD = 0.1
 FAQ_DIRECT_MIN_CONFIDENCE = float(os.getenv("FAQ_DIRECT_MIN_CONFIDENCE", "0.2"))
+# Minimum rerank_score for a FAQ pre-check result to suppress clarification
+FAQ_PRECHECK_CONFIDENCE_THRESHOLD = 0.55
 MAX_HISTORY_TURNS = 6
 SESSION_TIMEOUT = timedelta(hours=1)
 MAX_CONCURRENT_LLM_REQUESTS = int(os.getenv("MAX_CONCURRENT_LLM_REQUESTS", "2"))
@@ -468,6 +470,35 @@ def rerank_faq_candidates(candidates: list[dict], query: str) -> list[dict]:
 
     scored.sort(key=lambda x: x["rerank_score"], reverse=True)
     return scored
+
+
+async def faq_precheck(query: str) -> dict | None:
+    """
+    Run a fast top-5 FAQ retrieval + rerank before clarification branches fire.
+
+    Returns the top reranked candidate dict if its rerank_score exceeds
+    FAQ_PRECHECK_CONFIDENCE_THRESHOLD, otherwise returns None.
+
+    Used to suppress clarification when an exact FAQ match already exists,
+    e.g. "What should I do if a textbook is missing from my bundle?" should
+    answer directly rather than triggering the VitalSource screen confirm flow.
+    """
+    try:
+        candidates = await retrieve_faq_candidates(query, top_k=5)
+        if not candidates:
+            return None
+        ranked = rerank_faq_candidates(candidates, query)
+        if not ranked:
+            return None
+        top = ranked[0]
+        score = top.get("rerank_score", 0.0)
+        print(f"[FAQ PRECHECK] top={top.get('source_id')} rerank_score={score:.4f}")
+        if score >= FAQ_PRECHECK_CONFIDENCE_THRESHOLD:
+            return top
+        return None
+    except Exception as e:
+        print(f"[FAQ PRECHECK] failed: {e}")
+        return None
 
 
 async def call_llm_with_semaphore(
@@ -1498,6 +1529,10 @@ def is_vague_books_missing_query(message: str) -> bool:
     need a targeted clarification before routing to browser cache fix or
     platform-specific instructions.
     """
+    # Bundle admin questions are FAQ lookups, not vague access issues.
+    if is_bundle_admin_question(message):
+        return False
+
     m = (message or "").lower()
     vague_signals = [
         "have not been able to see",
@@ -1560,6 +1595,19 @@ def is_bundle_admin_question(message: str) -> bool:
         "missing from bundle",
         "not included in",
         "not part of my bundle",
+        "missing from my immediate access",
+        "missing from my ia",
+        "textbook is missing",
+        "book is missing from",
+        "not showing in my bundle",
+        "not in my immediate access",
+        "missing from my course",
+        "textbook not in my",
+        "book not in my",
+        "not included in my bundle",
+        "what should i do if a textbook is missing",
+        "what do i do if a textbook is missing",
+        "what should i do if my textbook is missing",
     ]
     return any(s in m for s in bundle_signals)
 
@@ -2244,6 +2292,9 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
         message = payload.message.strip()
         has_image = bool(getattr(payload, "image_base64", None))
+        retrieval_query = message
+        faq_precheck_result = None
+        is_cache_issue = is_browser_cache_issue(message)
 
         # Initialize variables
         platform = None
@@ -2379,8 +2430,21 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     debug_mode=debug_mode
                 )
 
+        # FAQ pre-check: if intent is GENERAL_FAQ and a high-confidence FAQ match
+        # exists, skip all clarification branches and answer directly.
+        precheck_intent = intent or detect_intent(message)
+        is_bundle_faq = is_bundle_admin_question(message)
+        if (precheck_intent == "GENERAL_FAQ" or is_bundle_faq) and not session.get("awaiting_platform_type", False):
+            faq_precheck_result = await faq_precheck(retrieval_query)
+            if faq_precheck_result:
+                print(f"[FAQ PRECHECK] High-confidence match found — suppressing clarification")
+        if faq_precheck_result and is_bundle_faq:
+            intent = "GENERAL_FAQ"
+            print(f"[FAQ PRECHECK] Bundle admin question — overriding intent to GENERAL_FAQ")
+
         if (
-            (is_vague_books_missing_query(message) or is_blank_page_query(message))
+            not faq_precheck_result
+            and (is_vague_books_missing_query(message) or is_blank_page_query(message))
             and not is_browser_cache_issue(message)
             and not session.get("awaiting_platform_type", False)
             and not session.get("awaiting_publisher_list_response", False)
@@ -3688,14 +3752,19 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     platform=_plat_key
                 )
             elif intent == "GENERAL_FAQ":
-                # Use retrieval_query (vision-augmented if image present, else original message)
-                candidates = await retrieve_faq_candidates(retrieval_query, top_k=5)
-                if candidates:
-                    ranked = rerank_faq_candidates(candidates, retrieval_query)
-                    retrieval = ranked[0]  # top reranked candidate
-                    print(f"[RERANK] Winner: {retrieval.get('source_id')} rerank_score={retrieval.get('rerank_score', 0):.4f}")
+                faq_retrieval_query = build_browser_cache_faq_query(retrieval_query) if is_cache_issue else retrieval_query
+                if faq_precheck_result and not is_cache_issue:
+                    # Already retrieved and reranked — reuse the result
+                    retrieval = faq_precheck_result
+                    print(f"[FAQ PRECHECK] Reusing precheck result: {retrieval.get('source_id')}")
                 else:
-                    retrieval = None
+                    candidates = await retrieve_faq_candidates(faq_retrieval_query, top_k=5)
+                    if candidates:
+                        ranked = rerank_faq_candidates(candidates, faq_retrieval_query)
+                        retrieval = ranked[0]
+                        print(f"[RERANK] Winner: {retrieval.get('source_id')} rerank_score={retrieval.get('rerank_score', 0):.4f}")
+                    else:
+                        retrieval = None
             else:
                 retrieval = await retrieve_async(retrieval_query)
 
