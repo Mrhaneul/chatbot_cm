@@ -1581,6 +1581,12 @@ def is_bundle_admin_question(message: str) -> bool:
     Detect questions about IA bundle composition (adding/missing textbooks in bundle).
     These are Campus Store admin questions, not access troubleshooting.
     """
+    # Cache issue symptoms take priority over bundle admin detection.
+    # "0 Courses, 0 Materials" and "no content available" are cache issues,
+    # not bundle admin questions.
+    if is_browser_cache_issue(message):
+        return False
+
     m = (message or "").lower()
     bundle_signals = [
         "not in my bundle",
@@ -2294,7 +2300,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         has_image = bool(getattr(payload, "image_base64", None))
         retrieval_query = message
         faq_precheck_result = None
-        is_cache_issue = is_browser_cache_issue(message)
+        is_cache_issue = is_browser_cache_issue(message) or is_browser_cache_issue(retrieval_query)
 
         # Initialize variables
         platform = None
@@ -3262,9 +3268,9 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # Browser/session cache issues ("0 Courses, 0 Materials", "no content available")
         # are device-level problems, not platform-specific. Force GENERAL_FAQ so they
         # route to the FAQ cache-clearing instructions rather than platform clarification.
-        if is_browser_cache_issue(message) and intent != "GENERAL_FAQ":
+        if is_cache_issue and intent != "GENERAL_FAQ":
             intent = "GENERAL_FAQ"
-            print(f"[INTENT DEBUG] Browser cache issue override → GENERAL_FAQ")
+            print(f"[INTENT DEBUG] Browser cache issue override → GENERAL_FAQ (cache detected in query or image)")
 
         # NOW the intent is set!
         # 1. Intent detection happens somewhere up here
@@ -3684,6 +3690,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
                 if not platform and image_context.get("detected_platform"):
                     print(f"[VISION] detected_platform from image: {image_context['detected_platform']!r}")
+                is_cache_issue = is_browser_cache_issue(message) or is_browser_cache_issue(retrieval_query)
+                if is_cache_issue and intent != "GENERAL_FAQ":
+                    intent = "GENERAL_FAQ"
+                    print(f"[INTENT DEBUG] Browser cache issue override → GENERAL_FAQ (cache detected in query or image)")
 
             # ✨ START RETRIEVAL TIMER
             retrieval_start = time.time()
@@ -4070,11 +4080,27 @@ async def chat_stream(payload: ChatRequest):
                 )
                 return
 
-            # Apply same intent overrides as process_chat_request.
-            is_cache_issue = is_browser_cache_issue(message)
+            # --- Vision retrieval augmentation ---
+            image_context = {}
+            retrieval_query = message
+
+            if payload.image_base64:
+                from app.llm.llama_client import analyze_image_for_retrieval, build_augmented_query
+                image_context = await analyze_image_for_retrieval(
+                    payload.image_base64,
+                    payload.image_media_type or "image/jpeg",
+                )
+                retrieval_query = build_augmented_query(message, image_context)
+                print(f"[VISION] image_context={image_context}")
+                print(f"[VISION] augmented retrieval_query={retrieval_query!r}")
+
+                if not platform and image_context.get("detected_platform"):
+                    print(f"[VISION] detected_platform from image: {image_context['detected_platform']!r}")
+
+            is_cache_issue = is_browser_cache_issue(message) or is_browser_cache_issue(retrieval_query)
             if is_cache_issue and intent != "GENERAL_FAQ":
                 intent = "GENERAL_FAQ"
-                print("[STREAM INTENT] Browser cache override → GENERAL_FAQ")
+                print("[STREAM INTENT] Browser cache override → GENERAL_FAQ (cache detected in query or image)")
 
             # Ask for platform before retrieval — prevents wrong-platform hallucination.
             # Skip when already overridden to GENERAL_FAQ (e.g. browser cache issue).
@@ -4092,23 +4118,6 @@ async def chat_stream(payload: ChatRequest):
                     f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'session_id': session_id, 'source': 'CLARIFICATION_NEEDED', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
                 )
                 return
-
-            # --- Vision retrieval augmentation ---
-            image_context = {}
-            retrieval_query = message
-
-            if payload.image_base64:
-                from app.llm.llama_client import analyze_image_for_retrieval, build_augmented_query
-                image_context = await analyze_image_for_retrieval(
-                    payload.image_base64,
-                    payload.image_media_type or "image/jpeg",
-                )
-                retrieval_query = build_augmented_query(message, image_context)
-                print(f"[VISION] image_context={image_context}")
-                print(f"[VISION] augmented retrieval_query={retrieval_query!r}")
-
-                if not platform and image_context.get("detected_platform"):
-                    print(f"[VISION] detected_platform from image: {image_context['detected_platform']!r}")
 
             retrieval_start = time.time()
             retrieval = None
