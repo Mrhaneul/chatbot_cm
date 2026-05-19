@@ -45,8 +45,25 @@ def _is_model_not_found_error(error_text: str) -> bool:
     return any(pattern in normalized for pattern in _MODEL_NOT_FOUND_PATTERNS)
 
 
+def _format_error_text(error_text: str, max_chars: int = 300) -> str:
+    compact = " ".join((error_text or "").split())
+    if len(compact) <= max_chars:
+        return compact
+    return compact[:max_chars] + "..."
+
+
+def _failure_reason_from_status(status_code: int, error_text: str) -> str:
+    formatted_body = _format_error_text(error_text)
+    if formatted_body:
+        return f"status={status_code} body={formatted_body}"
+    return f"status={status_code}"
+
+
 def _should_fallback_status(status_code: int, error_text: str) -> bool:
-    return status_code >= 500 or _is_model_not_found_error(error_text)
+    # Ollama returns 404 when the requested model tag is missing.
+    # Retry with the fallback model for any 404 here so the /chat path
+    # remains resilient even when the response body wording varies.
+    return status_code >= 500 or status_code == 404 or _is_model_not_found_error(error_text)
 
 
 def _should_fallback_exception(exc: Exception) -> bool:
@@ -63,6 +80,37 @@ def _log_model_use(purpose: str, model_name: str) -> None:
     log.info("Using Ollama model '%s' for %s", model_name, purpose)
 
 
+def _log_primary_failure(model_name: str, reason: str) -> None:
+    log.warning("[LLM] primary model failed: %s %s", model_name, reason)
+
+
+def _log_retry_with_fallback(model_name: str) -> None:
+    log.info("[LLM] retrying with fallback model: %s", model_name)
+
+
+def _log_fallback_success(model_name: str) -> None:
+    log.info("[LLM] fallback model succeeded: %s", model_name)
+
+
+def _evaluate_fallback_attempt(
+    current_model: str,
+    fallback_model: str | None,
+    *,
+    status_code: int | None = None,
+    error_text: str = "",
+    exc: Exception | None = None,
+) -> tuple[bool, str]:
+    if exc is not None:
+        reason = f"{exc.__class__.__name__}: {exc}"
+        return bool(fallback_model) and _should_fallback_exception(exc), reason
+
+    if status_code is not None:
+        reason = _failure_reason_from_status(status_code, error_text)
+        return bool(fallback_model) and _should_fallback_status(status_code, error_text), reason
+
+    return False, "unknown failure"
+
+
 async def check_ollama_health(timeout_seconds: float = 2.0) -> bool:
     """Lightweight reachability check for Ollama."""
     try:
@@ -72,6 +120,51 @@ async def check_ollama_health(timeout_seconds: float = 2.0) -> bool:
             return response.status_code == 200
     except (httpx.HTTPError, httpx.TimeoutException):
         return False
+
+
+async def get_ollama_model_availability(timeout_seconds: float = 2.0) -> dict[str, object]:
+    """Return Ollama reachability plus whether the configured model tags are installed."""
+    result: dict[str, object] = {
+        "ollama_reachable": False,
+        "primary_model": PRIMARY_LLM_MODEL,
+        "primary_model_available": False,
+        "fallback_model": FALLBACK_LLM_MODEL,
+        "fallback_model_available": False,
+        "warnings": [],
+    }
+    try:
+        timeout = httpx.Timeout(timeout_seconds, read=timeout_seconds)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(OLLAMA_TAGS_URL)
+            response.raise_for_status()
+    except (httpx.HTTPError, httpx.TimeoutException) as exc:
+        result["warnings"] = [f"Ollama not reachable: {exc}"]
+        return result
+
+    result["ollama_reachable"] = True
+    try:
+        payload = response.json()
+    except ValueError:
+        result["warnings"] = ["Ollama /api/tags returned non-JSON response"]
+        return result
+
+    models = payload.get("models", []) if isinstance(payload, dict) else []
+    installed_tags = {
+        model.get("name")
+        for model in models
+        if isinstance(model, dict) and isinstance(model.get("name"), str)
+    }
+
+    result["primary_model_available"] = PRIMARY_LLM_MODEL in installed_tags
+    result["fallback_model_available"] = FALLBACK_LLM_MODEL in installed_tags
+
+    warnings: list[str] = []
+    if not result["primary_model_available"]:
+        warnings.append(f"Primary model tag not installed: {PRIMARY_LLM_MODEL}")
+    if not result["fallback_model_available"]:
+        warnings.append(f"Fallback model tag not installed: {FALLBACK_LLM_MODEL}")
+    result["warnings"] = warnings
+    return result
 
 
 def flush_word_boundaries(text: str) -> tuple[list[str], str]:
@@ -343,6 +436,7 @@ async def analyze_image_for_retrieval(
     response: httpx.Response | None = None
     models = _candidate_models()
     for index, model_name in enumerate(models):
+        fallback_model = models[index + 1] if index < len(models) - 1 else None
         try:
             timeout = httpx.Timeout(15.0, read=90.0)
             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -351,28 +445,38 @@ async def analyze_image_for_retrieval(
                 response = await client.post(OLLAMA_CHAT_URL, json=request_payload)
                 if response.status_code >= 400:
                     error_text = response.text
-                    if index < len(models) - 1 and _should_fallback_status(response.status_code, error_text):
-                        log.warning(
-                            "Primary image-analysis model '%s' failed with status %s; trying fallback '%s'.",
-                            model_name,
-                            response.status_code,
-                            models[index + 1],
-                        )
+                    should_retry, reason = _evaluate_fallback_attempt(
+                        model_name,
+                        fallback_model,
+                        status_code=response.status_code,
+                        error_text=error_text,
+                    )
+                    if should_retry and fallback_model:
+                        _log_primary_failure(model_name, reason)
+                        _log_retry_with_fallback(fallback_model)
                         continue
                     response.raise_for_status()
                 break
         except (httpx.ConnectError, httpx.TimeoutException) as exc:
-            if index < len(models) - 1 and _should_fallback_exception(exc):
-                log.warning(
-                    "Primary image-analysis model '%s' failed (%s); trying fallback '%s'.",
-                    model_name,
-                    exc.__class__.__name__,
-                    models[index + 1],
-                )
+            should_retry, reason = _evaluate_fallback_attempt(
+                model_name,
+                fallback_model,
+                exc=exc,
+            )
+            if should_retry and fallback_model:
+                _log_primary_failure(model_name, reason)
+                _log_retry_with_fallback(fallback_model)
                 continue
             print(f"[VISION WARN] image analysis request failed: {exc}")
             return {}
         except httpx.HTTPError as exc:
+            response = getattr(exc, "response", None)
+            if response is not None:
+                log.error(
+                    "[LLM] image-analysis request failed: %s %s",
+                    model_name,
+                    _failure_reason_from_status(response.status_code, response.text),
+                )
             print(f"[VISION WARN] image analysis request failed: {exc}")
             return {}
     else:
@@ -464,6 +568,7 @@ async def stream_llm_response(
 
     models = _candidate_models()
     for index, model_name in enumerate(models):
+        fallback_model = models[index + 1] if index < len(models) - 1 else None
         thought_start_marker = "<|channel>thought"
         thought_end_marker = "<channel|>"
         in_thought_block = False
@@ -479,13 +584,15 @@ async def stream_llm_response(
                 async with client.stream("POST", OLLAMA_GENERATE_URL, json=request_payload) as response:
                     if response.status_code >= 400:
                         error_text = (await response.aread()).decode("utf-8", errors="ignore")
-                        if index < len(models) - 1 and _should_fallback_status(response.status_code, error_text):
-                            log.warning(
-                                "Primary streamed model '%s' failed with status %s; trying fallback '%s'.",
-                                model_name,
-                                response.status_code,
-                                models[index + 1],
-                            )
+                        should_retry, reason = _evaluate_fallback_attempt(
+                            model_name,
+                            fallback_model,
+                            status_code=response.status_code,
+                            error_text=error_text,
+                        )
+                        if should_retry and fallback_model:
+                            _log_primary_failure(model_name, reason)
+                            _log_retry_with_fallback(fallback_model)
                             continue
                         response.raise_for_status()
 
@@ -575,15 +682,18 @@ async def stream_llm_response(
                         if cleaned:
                             emitted_anything = True
                             yield {"type": "response", "token": cleaned}
+            if index > 0:
+                _log_fallback_success(model_name)
             return
         except (httpx.ConnectError, httpx.TimeoutException) as exc:
-            if index < len(models) - 1 and not emitted_anything and _should_fallback_exception(exc):
-                log.warning(
-                    "Primary streamed model '%s' failed (%s); trying fallback '%s'.",
-                    model_name,
-                    exc.__class__.__name__,
-                    models[index + 1],
-                )
+            should_retry, reason = _evaluate_fallback_attempt(
+                model_name,
+                fallback_model,
+                exc=exc,
+            )
+            if should_retry and fallback_model and not emitted_anything:
+                _log_primary_failure(model_name, reason)
+                _log_retry_with_fallback(fallback_model)
                 continue
             if isinstance(exc, httpx.ConnectError):
                 yield {"type": "response", "token": "[ERROR: Ollama is not running. Please start Ollama and try again.]"}
@@ -591,6 +701,13 @@ async def stream_llm_response(
                 yield {"type": "response", "token": "[ERROR: LLM response timed out.]"}
             return
         except httpx.HTTPError as exc:
+            response = getattr(exc, "response", None)
+            if response is not None:
+                log.error(
+                    "[LLM] streamed generate request failed: %s %s",
+                    model_name,
+                    _failure_reason_from_status(response.status_code, response.text),
+                )
             yield {"type": "response", "token": f"[ERROR: Ollama request failed: {exc}]"}
             return
 
@@ -633,6 +750,7 @@ async def stream_llm_chat_response(
 
     models = _candidate_models()
     for index, model_name in enumerate(models):
+        fallback_model = models[index + 1] if index < len(models) - 1 else None
         response_word_buffer = ""
         thought_word_buffer = ""
         emitted_anything = False
@@ -644,13 +762,15 @@ async def stream_llm_chat_response(
                 async with client.stream("POST", OLLAMA_CHAT_URL, json=request_payload) as response:
                     if response.status_code >= 400:
                         error_text = (await response.aread()).decode("utf-8", errors="ignore")
-                        if index < len(models) - 1 and _should_fallback_status(response.status_code, error_text):
-                            log.warning(
-                                "Primary streamed chat model '%s' failed with status %s; trying fallback '%s'.",
-                                model_name,
-                                response.status_code,
-                                models[index + 1],
-                            )
+                        should_retry, reason = _evaluate_fallback_attempt(
+                            model_name,
+                            fallback_model,
+                            status_code=response.status_code,
+                            error_text=error_text,
+                        )
+                        if should_retry and fallback_model:
+                            _log_primary_failure(model_name, reason)
+                            _log_retry_with_fallback(fallback_model)
                             continue
                         response.raise_for_status()
 
@@ -689,15 +809,18 @@ async def stream_llm_chat_response(
             if response_word_buffer:
                 emitted_anything = True
                 yield {"type": "response", "token": response_word_buffer}
+            if index > 0:
+                _log_fallback_success(model_name)
             return
         except (httpx.ConnectError, httpx.TimeoutException) as exc:
-            if index < len(models) - 1 and not emitted_anything and _should_fallback_exception(exc):
-                log.warning(
-                    "Primary streamed chat model '%s' failed (%s); trying fallback '%s'.",
-                    model_name,
-                    exc.__class__.__name__,
-                    models[index + 1],
-                )
+            should_retry, reason = _evaluate_fallback_attempt(
+                model_name,
+                fallback_model,
+                exc=exc,
+            )
+            if should_retry and fallback_model and not emitted_anything:
+                _log_primary_failure(model_name, reason)
+                _log_retry_with_fallback(fallback_model)
                 continue
             if isinstance(exc, httpx.ConnectError):
                 yield {"type": "response", "token": "[ERROR: Ollama is not running. Please start Ollama and try again.]"}
@@ -705,6 +828,13 @@ async def stream_llm_chat_response(
                 yield {"type": "response", "token": "[ERROR: LLM response timed out.]"}
             return
         except httpx.HTTPError as exc:
+            response = getattr(exc, "response", None)
+            if response is not None:
+                log.error(
+                    "[LLM] streamed chat request failed: %s %s",
+                    model_name,
+                    _failure_reason_from_status(response.status_code, response.text),
+                )
             yield {"type": "response", "token": f"[ERROR: Ollama request failed: {exc}]"}
             return
 
@@ -772,37 +902,65 @@ class LlamaClient(LLMClient):
 
             models = _candidate_models()
             for index, model_name in enumerate(models):
+                fallback_model = models[index + 1] if index < len(models) - 1 else None
                 try:
                     request_payload = {**payload, "model": model_name}
                     _log_model_use("chat response", model_name)
                     response = requests.post(OLLAMA_CHAT_URL, json=request_payload, timeout=(15, 240))
                     if response.status_code >= 400:
                         error_text = response.text
-                        if index < len(models) - 1 and _should_fallback_status(response.status_code, error_text):
-                            log.warning(
-                                "Primary chat model '%s' failed with status %s; trying fallback '%s'.",
-                                model_name,
-                                response.status_code,
-                                models[index + 1],
-                            )
+                        should_retry, reason = _evaluate_fallback_attempt(
+                            model_name,
+                            fallback_model,
+                            status_code=response.status_code,
+                            error_text=error_text,
+                        )
+                        if should_retry and fallback_model:
+                            _log_primary_failure(model_name, reason)
+                            _log_retry_with_fallback(fallback_model)
                             continue
                         response.raise_for_status()
+                    if index > 0:
+                        _log_fallback_success(model_name)
                     return strip_thinking_tags(response.json()["message"].get("content", ""))
                 except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
-                    if index < len(models) - 1 and _should_fallback_exception(exc):
-                        log.warning(
-                            "Primary chat model '%s' failed (%s); trying fallback '%s'.",
-                            model_name,
-                            exc.__class__.__name__,
-                            models[index + 1],
-                        )
+                    should_retry, reason = _evaluate_fallback_attempt(
+                        model_name,
+                        fallback_model,
+                        exc=exc,
+                    )
+                    if should_retry and fallback_model:
+                        _log_primary_failure(model_name, reason)
+                        _log_retry_with_fallback(fallback_model)
                         continue
+                    log.error("[LLM] model request failed: %s %s", model_name, reason)
                     print(f"[ERROR] Ollama request failed: {exc}")
                     return "I'm having trouble connecting right now. Please try again in a moment."
                 except requests.exceptions.RequestException as exc:
+                    response = getattr(exc, "response", None)
+                    if response is not None:
+                        error_text = response.text
+                        should_retry, reason = _evaluate_fallback_attempt(
+                            model_name,
+                            fallback_model,
+                            status_code=response.status_code,
+                            error_text=error_text,
+                        )
+                        if should_retry and fallback_model:
+                            _log_primary_failure(model_name, reason)
+                            _log_retry_with_fallback(fallback_model)
+                            continue
+                        log.error("[LLM] model request failed: %s %s", model_name, reason)
+                    else:
+                        log.error("[LLM] model request failed: %s %s: %s", model_name, exc.__class__.__name__, exc)
                     print(f"[ERROR] Ollama request failed: {exc}")
                     return "I'm having trouble connecting right now. Please try again in a moment."
 
+            log.error(
+                "[LLM] both primary and fallback models failed: primary=%s fallback=%s",
+                PRIMARY_LLM_MODEL,
+                FALLBACK_LLM_MODEL,
+            )
             return "I'm having trouble connecting right now. Please try again in a moment."
 
         except requests.exceptions.RequestException as e:

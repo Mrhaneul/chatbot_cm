@@ -9,6 +9,7 @@ from app.llm.llama_client import (
     build_system_prompt,
     build_vision_system_prompt,
     check_ollama_health,
+    get_ollama_model_availability,
     stream_llm_response,
     stream_llm_chat_response,
 )
@@ -163,14 +164,29 @@ async def healthz():
 
 @app.get("/readyz")
 async def readyz():
-    checks = {
+    model_status = await get_ollama_model_availability()
+    payload = {
+        "status": "ready",
+        "ollama_reachable": bool(model_status["ollama_reachable"]),
+        "primary_model": model_status["primary_model"],
+        "primary_model_available": bool(model_status["primary_model_available"]),
+        "fallback_model": model_status["fallback_model"],
+        "fallback_model_available": bool(model_status["fallback_model_available"]),
         "faq_index_loaded": retriever.faq_index is not None,
         "instructions_index_loaded": retriever.instructions_index is not None,
-        "ollama_reachable": await check_ollama_health(),
+        "warnings": list(model_status["warnings"]),
     }
-    if all(checks.values()):
-        return {"status": "ready"}
-    raise HTTPException(status_code=503, detail={"status": "not_ready", "checks": checks})
+    is_ready = (
+        payload["ollama_reachable"]
+        and payload["primary_model_available"]
+        and payload["fallback_model_available"]
+        and payload["faq_index_loaded"]
+        and payload["instructions_index_loaded"]
+    )
+    if is_ready:
+        return payload
+    payload["status"] = "not_ready"
+    raise HTTPException(status_code=503, detail=payload)
 
 PLATFORM_ALIASES: Dict[str, list[str]] = {
     "CENGAGE": ["cengage", "mindtap", "cnow", "cnowv2"],
