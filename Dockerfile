@@ -27,6 +27,7 @@ COPY --from=builder /install/deps /usr/local
 # Copy application code
 COPY app/ ./app/
 COPY data/ ./data/
+COPY lance_admin_ui.html ./
 
 # Firebase service account is sensitive — it must be mounted at runtime,
 # not baked into the image. See docker-compose.yml for the volume mount.
@@ -41,7 +42,7 @@ USER lance
 
 # Health check — uses the existing /sessions/stats endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/sessions/stats')"
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"
 
 # Start the backend
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -4,7 +4,14 @@ import json
 from email.mime import message
 from fastapi import FastAPI, HTTPException, Depends
 from app.schemas.chat import ChatRequest, ChatResponse
-from app.llm.llama_client import LlamaClient, build_system_prompt, build_vision_system_prompt, stream_llm_response, stream_llm_chat_response
+from app.llm.llama_client import (
+    LlamaClient,
+    build_system_prompt,
+    build_vision_system_prompt,
+    check_ollama_health,
+    stream_llm_response,
+    stream_llm_chat_response,
+)
 # from app.rag.retriever import FAQRetriever  # Deprecated import
 from app.rag.retriever import get_retriever  # New singleton accessor
 from app.platform_registry import load_registry, internal_platform_key, canonical_platform_key
@@ -17,7 +24,7 @@ from typing import Dict, Any
 import uuid
 import time
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import StreamingResponse
 try:
     from app.pdf_recommendations import get_recommendations_for_chat
 except Exception:
@@ -40,6 +47,19 @@ from fastapi import Depends
 from fastapi.security import HTTPBasicCredentials
 
 # Configure logging once at startup
+def parse_bool_env(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def parse_csv_env(name: str, default: str) -> list[str]:
+    raw_value = os.getenv(name, default)
+    values = [item.strip() for item in raw_value.split(",") if item.strip()]
+    return values or [default]
+
+
 def strip_meta_prefix(context: str) -> str:
     """Remove the [META:{...}] header from a retrieved context chunk.
 
@@ -82,6 +102,8 @@ MAX_HISTORY_TURNS = 6
 SESSION_TIMEOUT = timedelta(hours=1)
 MAX_CONCURRENT_LLM_REQUESTS = int(os.getenv("MAX_CONCURRENT_LLM_REQUESTS", "2"))
 GROUNDING_TOP_K = int(os.getenv("GROUNDING_TOP_K", "3"))
+CORS_ORIGINS = parse_csv_env("CORS_ORIGINS", "http://localhost:3000")
+ENABLE_DEBUG_ROUTES = parse_bool_env("ENABLE_DEBUG_ROUTES", default=False)
 
 GREETING_KEYWORDS = ["hi", "hello", "hey", "good morning", "good afternoon", "good evening", "greetings"]
 GREETING_REPLY = (
@@ -116,29 +138,12 @@ def admin_ui(username: str = Depends(verify_admin_credentials)):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://lance-cbu.web.app",
-        "https://lance-cbu.firebaseapp.com",
-    ],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
     expose_headers=["*"],
 )
-
-@app.options("/{full_path:path}")
-async def options_handler(full_path: str):
-    return Response(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": "http://localhost:3000",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "*",
-            "Access-Control-Allow-Credentials": "true",
-        }
-    )
 # Session storage: session_id -> session_data
 sessions: Dict[str, Dict[str, Any]] = {}
 
@@ -149,6 +154,23 @@ llm_semaphore = asyncio.Semaphore(MAX_CONCURRENT_LLM_REQUESTS)
 chat_request_queue: asyncio.Queue[str] = asyncio.Queue()
 chat_jobs: Dict[str, Dict[str, Any]] = {}
 chat_workers: list[asyncio.Task] = []
+
+
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok"}
+
+
+@app.get("/readyz")
+async def readyz():
+    checks = {
+        "faq_index_loaded": retriever.faq_index is not None,
+        "instructions_index_loaded": retriever.instructions_index is not None,
+        "ollama_reachable": await check_ollama_health(),
+    }
+    if all(checks.values()):
+        return {"status": "ready"}
+    raise HTTPException(status_code=503, detail={"status": "not_ready", "checks": checks})
 
 PLATFORM_ALIASES: Dict[str, list[str]] = {
     "CENGAGE": ["cengage", "mindtap", "cnow", "cnowv2"],
@@ -4036,7 +4058,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # ===== PDF RECOMMENDATIONS =====
         recommended_pdfs = []
         try:
-            if intent == "IA_ACCESS_ISSUE" and retrieval and not is_greeting:
+            if retrieval and not is_greeting:
                 recommended_pdfs = get_recommendations_for_chat(
                     retrieval_result=retrieval,
                     platform=platform,
@@ -4288,9 +4310,21 @@ async def chat_stream(payload: ChatRequest):
                 session["history"].append({"role": "user", "content": message})
                 session["history"].append({"role": "assistant", "content": vision_response})
                 session["last_activity"] = datetime.now()
+                recommended_pdfs = []
+                try:
+                    if retrieval:
+                        recommended_pdfs = get_recommendations_for_chat(
+                            retrieval_result=retrieval,
+                            platform=platform,
+                            query=message,
+                        )
+                        print(f"[STREAM PDF] Recommending {len(recommended_pdfs)} PDFs")
+                except Exception as pdf_error:
+                    print(f"[STREAM WARN] PDF recommendation failed: {pdf_error}")
+                    recommended_pdfs = []
                 yield (
                     "data: "
-                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'session_id': session_id, 'source': retrieval.get('source_id', 'LLM_VISION') if retrieval else 'LLM_VISION', 'confidence': confidence, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': vision_thought})}\n\n"
+                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'session_id': session_id, 'source': retrieval.get('source_id', 'LLM_VISION') if retrieval else 'LLM_VISION', 'confidence': confidence, 'recommended_pdfs': recommended_pdfs, 'debug_mode': debug_mode, 'thought': vision_thought})}\n\n"
                 )
                 return
 
@@ -4556,13 +4590,19 @@ def compare_models(payload: ChatRequest):
     avg_time = sum(r["elapsed_ms"] for r in results) / len(results)
     
     return {
-        "model": "gemma4:e2b",
+        "model": "configured-at-runtime",
         "message": payload.message,
         "runs": results,
         "average_ms": round(avg_time, 2),
         "min_ms": round(min(r["elapsed_ms"] for r in results), 2),
         "max_ms": round(max(r["elapsed_ms"] for r in results), 2)
     }
+
+if not ENABLE_DEBUG_ROUTES:
+    app.router.routes = [
+        route for route in app.router.routes
+        if not getattr(route, "path", "").startswith("/debug/")
+    ]
 
 @app.get("/platforms")
 async def get_platforms():

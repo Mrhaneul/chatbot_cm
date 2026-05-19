@@ -1,5 +1,7 @@
 import base64
 import json
+import logging
+import os
 import re
 
 import httpx
@@ -7,9 +9,14 @@ import requests
 
 from app.llm.base import LLMClient
 
-OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
-OLLAMA_GENERATE_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "gemma4:e2b"
+log = logging.getLogger(__name__)
+
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+OLLAMA_CHAT_URL = f"{OLLAMA_BASE_URL}/api/chat"
+OLLAMA_GENERATE_URL = f"{OLLAMA_BASE_URL}/api/generate"
+OLLAMA_TAGS_URL = f"{OLLAMA_BASE_URL}/api/tags"
+PRIMARY_LLM_MODEL = os.getenv("PRIMARY_LLM_MODEL", "gemma4:e4b")
+FALLBACK_LLM_MODEL = os.getenv("FALLBACK_LLM_MODEL", "gemma4:e2b")
 
 
 _THINKING_TAG_RE: re.Pattern[str] = re.compile(
@@ -17,6 +24,54 @@ _THINKING_TAG_RE: re.Pattern[str] = re.compile(
 )
 
 _WORD_BOUNDARY_RE: re.Pattern[str] = re.compile(r"[ \n\t.,!?:;]")
+_MODEL_NOT_FOUND_PATTERNS: tuple[str, ...] = (
+    "model not found",
+    "pull model",
+    "no such model",
+    "not found, try pulling it first",
+    "file does not exist",
+)
+
+
+def _candidate_models() -> list[str]:
+    models = [PRIMARY_LLM_MODEL]
+    if FALLBACK_LLM_MODEL and FALLBACK_LLM_MODEL != PRIMARY_LLM_MODEL:
+        models.append(FALLBACK_LLM_MODEL)
+    return models
+
+
+def _is_model_not_found_error(error_text: str) -> bool:
+    normalized = (error_text or "").lower()
+    return any(pattern in normalized for pattern in _MODEL_NOT_FOUND_PATTERNS)
+
+
+def _should_fallback_status(status_code: int, error_text: str) -> bool:
+    return status_code >= 500 or _is_model_not_found_error(error_text)
+
+
+def _should_fallback_exception(exc: Exception) -> bool:
+    timeout_types = (
+        httpx.ConnectError,
+        httpx.TimeoutException,
+        requests.exceptions.ConnectionError,
+        requests.exceptions.Timeout,
+    )
+    return isinstance(exc, timeout_types)
+
+
+def _log_model_use(purpose: str, model_name: str) -> None:
+    log.info("Using Ollama model '%s' for %s", model_name, purpose)
+
+
+async def check_ollama_health(timeout_seconds: float = 2.0) -> bool:
+    """Lightweight reachability check for Ollama."""
+    try:
+        timeout = httpx.Timeout(timeout_seconds, read=timeout_seconds)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(OLLAMA_TAGS_URL)
+            return response.status_code == 200
+    except (httpx.HTTPError, httpx.TimeoutException):
+        return False
 
 
 def flush_word_boundaries(text: str) -> tuple[list[str], str]:
@@ -166,6 +221,32 @@ use that platform name in your response.
     return vision_preamble + base
 
 
+def _is_faq_context(context: str) -> bool:
+    return "QUESTION:" in context and "ANSWER:" in context
+
+
+def build_grounded_vision_faq_prompt(message: str, context: str) -> str:
+    """Ground FAQ answers even when the student attaches a screenshot."""
+    return f"""You are Lance, the CBU Campus Store assistant. Answer the student's question using ONLY the information provided below.
+
+RULES:
+- Answer directly from the provided context only
+- If the context does not contain a direct answer to the question, say: "I don't have specific information about that. Please contact ImmediateAccess@calbaptist.edu for assistance."
+- Do NOT reproduce any URLs or links from the context
+- Do NOT add information not present in the context
+- The student has also attached a screenshot. Use it only to understand their error or screen state.
+- Your answer must come from the FAQ content below, not from the screenshot by itself.
+- Do NOT describe the screenshot back to the student
+- Be concise and helpful
+
+CONTEXT:
+{context}
+
+STUDENT QUESTION: {message}
+
+ANSWER:"""
+
+
 _JSON_OBJECT_RE: re.Pattern[str] = re.compile(r"\{.*\}", re.DOTALL)
 _MULTISPACE_RE: re.Pattern[str] = re.compile(r"\s+")
 _PLATFORM_HINT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
@@ -244,7 +325,6 @@ async def analyze_image_for_retrieval(
     )
 
     payload = {
-        "model": OLLAMA_MODEL,
         "messages": [
             {"role": "system", "content": system_prompt},
             {
@@ -260,13 +340,42 @@ async def analyze_image_for_retrieval(
         },
     }
 
-    try:
-        timeout = httpx.Timeout(15.0, read=90.0)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(OLLAMA_CHAT_URL, json=payload)
-            response.raise_for_status()
-    except (httpx.HTTPError, httpx.TimeoutException) as exc:
-        print(f"[VISION WARN] image analysis request failed: {exc}")
+    response: httpx.Response | None = None
+    models = _candidate_models()
+    for index, model_name in enumerate(models):
+        try:
+            timeout = httpx.Timeout(15.0, read=90.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                request_payload = {**payload, "model": model_name}
+                _log_model_use("image analysis", model_name)
+                response = await client.post(OLLAMA_CHAT_URL, json=request_payload)
+                if response.status_code >= 400:
+                    error_text = response.text
+                    if index < len(models) - 1 and _should_fallback_status(response.status_code, error_text):
+                        log.warning(
+                            "Primary image-analysis model '%s' failed with status %s; trying fallback '%s'.",
+                            model_name,
+                            response.status_code,
+                            models[index + 1],
+                        )
+                        continue
+                    response.raise_for_status()
+                break
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
+            if index < len(models) - 1 and _should_fallback_exception(exc):
+                log.warning(
+                    "Primary image-analysis model '%s' failed (%s); trying fallback '%s'.",
+                    model_name,
+                    exc.__class__.__name__,
+                    models[index + 1],
+                )
+                continue
+            print(f"[VISION WARN] image analysis request failed: {exc}")
+            return {}
+        except httpx.HTTPError as exc:
+            print(f"[VISION WARN] image analysis request failed: {exc}")
+            return {}
+    else:
         return {}
 
     if not response.content:
@@ -345,7 +454,6 @@ async def stream_llm_response(
         system = f"<|think|>\n{system}" if system else "<|think|>"
 
     payload = {
-        "model": OLLAMA_MODEL,
         "prompt": prompt,
         "system": system,
         "stream": True,
@@ -354,102 +462,137 @@ async def stream_llm_response(
     if image_base64:
         payload["images"] = [image_base64]
 
-    thought_start_marker = "<|channel>thought"
-    thought_end_marker = "<channel|>"
-    in_thought_block = False
-    marker_buffer = ""
-    response_word_buffer = ""
-    thought_word_buffer = ""
+    models = _candidate_models()
+    for index, model_name in enumerate(models):
+        thought_start_marker = "<|channel>thought"
+        thought_end_marker = "<channel|>"
+        in_thought_block = False
+        marker_buffer = ""
+        response_word_buffer = ""
+        thought_word_buffer = ""
+        emitted_anything = False
+        try:
+            timeout = httpx.Timeout(5.0, read=120.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                request_payload = {**payload, "model": model_name}
+                _log_model_use("streamed generate response", model_name)
+                async with client.stream("POST", OLLAMA_GENERATE_URL, json=request_payload) as response:
+                    if response.status_code >= 400:
+                        error_text = (await response.aread()).decode("utf-8", errors="ignore")
+                        if index < len(models) - 1 and _should_fallback_status(response.status_code, error_text):
+                            log.warning(
+                                "Primary streamed model '%s' failed with status %s; trying fallback '%s'.",
+                                model_name,
+                                response.status_code,
+                                models[index + 1],
+                            )
+                            continue
+                        response.raise_for_status()
 
-    try:
-        timeout = httpx.Timeout(5.0, read=120.0)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            async with client.stream("POST", OLLAMA_GENERATE_URL, json=payload) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line:
-                        continue
+                    async for line in response.aiter_lines():
+                        if not line:
+                            continue
 
-                    try:
-                        chunk = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
+                        try:
+                            chunk = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
 
-                    if chunk.get("done"):
-                        break
+                        if chunk.get("done"):
+                            break
 
-                    thought_token = chunk.get("thinking", "")
-                    token = chunk.get("response", "")
+                        thought_token = chunk.get("thinking", "")
+                        token = chunk.get("response", "")
 
-                    if thought_token:
-                        thought_word_buffer += thought_token
-                        chunks, thought_word_buffer = flush_word_boundaries(thought_word_buffer)
-                        for chunk_text in chunks:
-                            yield {"type": "thought", "token": chunk_text}
+                        if thought_token:
+                            thought_word_buffer += thought_token
+                            chunks, thought_word_buffer = flush_word_boundaries(thought_word_buffer)
+                            for chunk_text in chunks:
+                                emitted_anything = True
+                                yield {"type": "thought", "token": chunk_text}
 
-                    if not token:
-                        continue
+                        if not token:
+                            continue
 
-                    marker_buffer += token
+                        marker_buffer += token
 
-                    while marker_buffer:
-                        if not in_thought_block:
-                            start_idx = marker_buffer.find(thought_start_marker)
-                            if start_idx != -1:
-                                response_word_buffer += marker_buffer[:start_idx]
-                                chunks, response_word_buffer = flush_word_boundaries(response_word_buffer)
+                        while marker_buffer:
+                            if not in_thought_block:
+                                start_idx = marker_buffer.find(thought_start_marker)
+                                if start_idx != -1:
+                                    response_word_buffer += marker_buffer[:start_idx]
+                                    chunks, response_word_buffer = flush_word_boundaries(response_word_buffer)
+                                    for chunk_text in chunks:
+                                        emitted_anything = True
+                                        yield {"type": "response", "token": chunk_text}
+                                    marker_buffer = marker_buffer[start_idx + len(thought_start_marker):]
+                                    in_thought_block = True
+                                    continue
+
+                                safe_len = max(0, len(marker_buffer) - (len(thought_start_marker) - 1))
+                                if safe_len > 0:
+                                    response_word_buffer += marker_buffer[:safe_len]
+                                    chunks, response_word_buffer = flush_word_boundaries(response_word_buffer)
+                                    for chunk_text in chunks:
+                                        emitted_anything = True
+                                        yield {"type": "response", "token": chunk_text}
+                                    marker_buffer = marker_buffer[safe_len:]
+                                break
+
+                            end_idx = marker_buffer.find(thought_end_marker)
+                            if end_idx != -1:
+                                thought_word_buffer += marker_buffer[:end_idx]
+                                chunks, thought_word_buffer = flush_word_boundaries(thought_word_buffer)
                                 for chunk_text in chunks:
-                                    yield {"type": "response", "token": chunk_text}
-                                marker_buffer = marker_buffer[start_idx + len(thought_start_marker):]
-                                in_thought_block = True
+                                    emitted_anything = True
+                                    yield {"type": "thought", "token": chunk_text}
+                                marker_buffer = marker_buffer[end_idx + len(thought_end_marker):]
+                                in_thought_block = False
                                 continue
 
-                            safe_len = max(0, len(marker_buffer) - (len(thought_start_marker) - 1))
+                            safe_len = max(0, len(marker_buffer) - (len(thought_end_marker) - 1))
                             if safe_len > 0:
-                                response_word_buffer += marker_buffer[:safe_len]
-                                chunks, response_word_buffer = flush_word_boundaries(response_word_buffer)
+                                thought_word_buffer += marker_buffer[:safe_len]
+                                chunks, thought_word_buffer = flush_word_boundaries(thought_word_buffer)
                                 for chunk_text in chunks:
-                                    yield {"type": "response", "token": chunk_text}
+                                    emitted_anything = True
+                                    yield {"type": "thought", "token": chunk_text}
                                 marker_buffer = marker_buffer[safe_len:]
                             break
 
-                        end_idx = marker_buffer.find(thought_end_marker)
-                        if end_idx != -1:
-                            thought_word_buffer += marker_buffer[:end_idx]
-                            chunks, thought_word_buffer = flush_word_boundaries(thought_word_buffer)
-                            for chunk_text in chunks:
-                                yield {"type": "thought", "token": chunk_text}
-                            marker_buffer = marker_buffer[end_idx + len(thought_end_marker):]
-                            in_thought_block = False
-                            continue
+                    if marker_buffer:
+                        if in_thought_block:
+                            thought_word_buffer += marker_buffer
+                        else:
+                            response_word_buffer += marker_buffer
 
-                        safe_len = max(0, len(marker_buffer) - (len(thought_end_marker) - 1))
-                        if safe_len > 0:
-                            thought_word_buffer += marker_buffer[:safe_len]
-                            chunks, thought_word_buffer = flush_word_boundaries(thought_word_buffer)
-                            for chunk_text in chunks:
-                                yield {"type": "thought", "token": chunk_text}
-                            marker_buffer = marker_buffer[safe_len:]
-                        break
+                    if thought_word_buffer:
+                        emitted_anything = True
+                        yield {"type": "thought", "token": thought_word_buffer}
 
-                if marker_buffer:
-                    if in_thought_block:
-                        thought_word_buffer += marker_buffer
-                    else:
-                        response_word_buffer += marker_buffer
-
-                if thought_word_buffer:
-                    yield {"type": "thought", "token": thought_word_buffer}
-
-                if response_word_buffer and not in_thought_block:
-                    cleaned = strip_thinking_tags_preserve_spacing(response_word_buffer)
-                    if cleaned:
-                        yield {"type": "response", "token": cleaned}
-
-    except httpx.ConnectError:
-        yield {"type": "response", "token": "[ERROR: Ollama is not running. Please start Ollama and try again.]"}
-    except httpx.ReadTimeout:
-        yield {"type": "response", "token": "[ERROR: LLM response timed out.]"}
+                    if response_word_buffer and not in_thought_block:
+                        cleaned = strip_thinking_tags_preserve_spacing(response_word_buffer)
+                        if cleaned:
+                            emitted_anything = True
+                            yield {"type": "response", "token": cleaned}
+            return
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
+            if index < len(models) - 1 and not emitted_anything and _should_fallback_exception(exc):
+                log.warning(
+                    "Primary streamed model '%s' failed (%s); trying fallback '%s'.",
+                    model_name,
+                    exc.__class__.__name__,
+                    models[index + 1],
+                )
+                continue
+            if isinstance(exc, httpx.ConnectError):
+                yield {"type": "response", "token": "[ERROR: Ollama is not running. Please start Ollama and try again.]"}
+            else:
+                yield {"type": "response", "token": "[ERROR: LLM response timed out.]"}
+            return
+        except httpx.HTTPError as exc:
+            yield {"type": "response", "token": f"[ERROR: Ollama request failed: {exc}]"}
+            return
 
 
 async def stream_llm_chat_response(
@@ -482,57 +625,88 @@ async def stream_llm_chat_response(
     messages.append(user_msg)
 
     payload = {
-        "model": OLLAMA_MODEL,
         "messages": messages,
         "stream": True,
         "think": True,
         "options": {"temperature": 0.1, "num_predict": 1024},
     }
 
-    response_word_buffer = ""
-    thought_word_buffer = ""
+    models = _candidate_models()
+    for index, model_name in enumerate(models):
+        response_word_buffer = ""
+        thought_word_buffer = ""
+        emitted_anything = False
+        try:
+            timeout = httpx.Timeout(5.0, read=120.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                request_payload = {**payload, "model": model_name}
+                _log_model_use("streamed chat response", model_name)
+                async with client.stream("POST", OLLAMA_CHAT_URL, json=request_payload) as response:
+                    if response.status_code >= 400:
+                        error_text = (await response.aread()).decode("utf-8", errors="ignore")
+                        if index < len(models) - 1 and _should_fallback_status(response.status_code, error_text):
+                            log.warning(
+                                "Primary streamed chat model '%s' failed with status %s; trying fallback '%s'.",
+                                model_name,
+                                response.status_code,
+                                models[index + 1],
+                            )
+                            continue
+                        response.raise_for_status()
 
-    try:
-        timeout = httpx.Timeout(5.0, read=120.0)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            async with client.stream("POST", OLLAMA_CHAT_URL, json=payload) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line:
-                        continue
-                    try:
-                        chunk = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
+                    async for line in response.aiter_lines():
+                        if not line:
+                            continue
+                        try:
+                            chunk = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
 
-                    if chunk.get("done"):
-                        break
+                        if chunk.get("done"):
+                            break
 
-                    msg = chunk.get("message", {})
-                    thinking_token = msg.get("thinking", "") or ""
-                    response_token = msg.get("content", "") or ""
+                        msg = chunk.get("message", {})
+                        thinking_token = msg.get("thinking", "") or ""
+                        response_token = msg.get("content", "") or ""
 
-                    if thinking_token:
-                        thought_word_buffer += thinking_token
-                        chunks, thought_word_buffer = flush_word_boundaries(thought_word_buffer)
-                        for t in chunks:
-                            yield {"type": "thought", "token": t}
+                        if thinking_token:
+                            thought_word_buffer += thinking_token
+                            chunks, thought_word_buffer = flush_word_boundaries(thought_word_buffer)
+                            for t in chunks:
+                                emitted_anything = True
+                                yield {"type": "thought", "token": t}
 
-                    if response_token:
-                        response_word_buffer += response_token
-                        chunks, response_word_buffer = flush_word_boundaries(response_word_buffer)
-                        for t in chunks:
-                            yield {"type": "response", "token": t}
+                        if response_token:
+                            response_word_buffer += response_token
+                            chunks, response_word_buffer = flush_word_boundaries(response_word_buffer)
+                            for t in chunks:
+                                emitted_anything = True
+                                yield {"type": "response", "token": t}
 
-        if thought_word_buffer:
-            yield {"type": "thought", "token": thought_word_buffer}
-        if response_word_buffer:
-            yield {"type": "response", "token": response_word_buffer}
-
-    except httpx.ConnectError:
-        yield {"type": "response", "token": "[ERROR: Ollama is not running. Please start Ollama and try again.]"}
-    except httpx.ReadTimeout:
-        yield {"type": "response", "token": "[ERROR: LLM response timed out.]"}
+            if thought_word_buffer:
+                emitted_anything = True
+                yield {"type": "thought", "token": thought_word_buffer}
+            if response_word_buffer:
+                emitted_anything = True
+                yield {"type": "response", "token": response_word_buffer}
+            return
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
+            if index < len(models) - 1 and not emitted_anything and _should_fallback_exception(exc):
+                log.warning(
+                    "Primary streamed chat model '%s' failed (%s); trying fallback '%s'.",
+                    model_name,
+                    exc.__class__.__name__,
+                    models[index + 1],
+                )
+                continue
+            if isinstance(exc, httpx.ConnectError):
+                yield {"type": "response", "token": "[ERROR: Ollama is not running. Please start Ollama and try again.]"}
+            else:
+                yield {"type": "response", "token": "[ERROR: LLM response timed out.]"}
+            return
+        except httpx.HTTPError as exc:
+            yield {"type": "response", "token": f"[ERROR: Ollama request failed: {exc}]"}
+            return
 
 
 class LlamaClient(LLMClient):
@@ -564,8 +738,11 @@ class LlamaClient(LLMClient):
                 print("[DEBUG] Context Preview:", preview)
             print("=" * 50 + "\n")
 
-            # Choose system prompt: vision-aware variant when screenshot is present
-            if image_base64:
+            # FAQ+image should stay grounded in the FAQ answer rather than
+            # switching to the troubleshooting-oriented vision prompt.
+            if image_base64 and context and _is_faq_context(context):
+                system_content = build_grounded_vision_faq_prompt(message, context)
+            elif image_base64:
                 system_content = build_vision_system_prompt(context, system_hint)
             else:
                 system_content = build_system_prompt(context, system_hint)
@@ -585,7 +762,6 @@ class LlamaClient(LLMClient):
             messages.append(user_message)
 
             payload = {
-                "model": OLLAMA_MODEL,
                 "messages": messages,
                 "stream": False,
                 "options": {
@@ -594,10 +770,40 @@ class LlamaClient(LLMClient):
                 },
             }
 
-            response = requests.post(OLLAMA_CHAT_URL, json=payload, timeout=(5, 120))
-            response.raise_for_status()
+            models = _candidate_models()
+            for index, model_name in enumerate(models):
+                try:
+                    request_payload = {**payload, "model": model_name}
+                    _log_model_use("chat response", model_name)
+                    response = requests.post(OLLAMA_CHAT_URL, json=request_payload, timeout=(15, 240))
+                    if response.status_code >= 400:
+                        error_text = response.text
+                        if index < len(models) - 1 and _should_fallback_status(response.status_code, error_text):
+                            log.warning(
+                                "Primary chat model '%s' failed with status %s; trying fallback '%s'.",
+                                model_name,
+                                response.status_code,
+                                models[index + 1],
+                            )
+                            continue
+                        response.raise_for_status()
+                    return strip_thinking_tags(response.json()["message"].get("content", ""))
+                except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+                    if index < len(models) - 1 and _should_fallback_exception(exc):
+                        log.warning(
+                            "Primary chat model '%s' failed (%s); trying fallback '%s'.",
+                            model_name,
+                            exc.__class__.__name__,
+                            models[index + 1],
+                        )
+                        continue
+                    print(f"[ERROR] Ollama request failed: {exc}")
+                    return "I'm having trouble connecting right now. Please try again in a moment."
+                except requests.exceptions.RequestException as exc:
+                    print(f"[ERROR] Ollama request failed: {exc}")
+                    return "I'm having trouble connecting right now. Please try again in a moment."
 
-            return strip_thinking_tags(response.json()["message"]["content"])
+            return "I'm having trouble connecting right now. Please try again in a moment."
 
         except requests.exceptions.RequestException as e:
             print(f"[ERROR] Ollama request failed: {e}")
