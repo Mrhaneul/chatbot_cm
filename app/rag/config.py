@@ -52,10 +52,27 @@ class Config:
     RETRIEVAL_TOP_K: int = field(
         default_factory=lambda: int(os.getenv("RETRIEVAL_TOP_K", "1"))
     )
+    MAX_PARENT_SOURCES: int = field(
+        default_factory=lambda: int(os.getenv("MAX_PARENT_SOURCES", "3"))
+    )
+    MAX_EXPANDED_CONTEXT_CHARS: int = field(
+        default_factory=lambda: int(os.getenv("MAX_EXPANDED_CONTEXT_CHARS", "12000"))
+    )
 
     # ── Embedding model ───────────────────────────────────────────────────────
     EMBEDDING_MODEL: str = field(
         default_factory=lambda: os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    )
+
+    # ── Grounding verifier ────────────────────────────────────────────────────
+    # When True, generated answers are checked for high-risk claims (emails,
+    # phone numbers, URLs, dollar amounts, time periods, policy phrases) that
+    # do not appear in the retrieved context.  Unsupported claims replace the
+    # answer with a safe fallback before it reaches the frontend.
+    # Set ENABLE_GROUNDING_VERIFIER=false to disable during rollout.
+    ENABLE_GROUNDING_VERIFIER: bool = field(
+        default_factory=lambda: os.getenv("ENABLE_GROUNDING_VERIFIER", "true").strip().lower()
+        in {"1", "true", "yes", "on"}
     )
 
     # ── Internal separator written between chunks on disk ────────────────────

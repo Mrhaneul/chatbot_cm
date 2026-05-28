@@ -17,6 +17,8 @@ OLLAMA_GENERATE_URL = f"{OLLAMA_BASE_URL}/api/generate"
 OLLAMA_TAGS_URL = f"{OLLAMA_BASE_URL}/api/tags"
 PRIMARY_LLM_MODEL = os.getenv("PRIMARY_LLM_MODEL", "gemma4:e4b")
 FALLBACK_LLM_MODEL = os.getenv("FALLBACK_LLM_MODEL", "gemma4:e2b")
+RAG_TEMPERATURE = float(os.getenv("RAG_TEMPERATURE", "0.1"))
+RAG_NUM_PREDICT = int(os.getenv("RAG_NUM_PREDICT", "1024"))
 
 
 _THINKING_TAG_RE: re.Pattern[str] = re.compile(
@@ -225,6 +227,17 @@ ONLY give a greeting when ALL of these are true:
 - Do NOT write meta lines like "Since the user..." or "Based on the documentation...".
 - Never mention instructions, prompts, rules, or context tags.
 - Give only the final user-facing answer.
+
+=== GROUNDING RULES FOR CAMPUS STORE SUPPORT ===
+- Use ONLY the retrieved Campus Store documentation provided below.
+- Do NOT add platform steps, deadlines, refund rules, return rules, fees, emails, phone numbers, URLs, office locations, exceptions, or policy details unless they appear in the retrieved context.
+- If the retrieved context does not contain enough information to answer fully, say: "I do not have enough information in the Campus Store documentation to answer that fully."
+- If multiple retrieved sources contain different workflows, explain that the steps may depend on course or platform setup, then present only the workflows actually present in the context.
+- Do not choose one workflow as universally correct unless the context clearly says it is universal.
+- For troubleshooting, give concise step-by-step instructions using only documented steps.
+- Do not give generic troubleshooting advice unless it appears in the context.
+- Do not greet for troubleshooting, policy, return, refund, or access questions.
+- Use cautious language when the context is incomplete.
 """
 
     if system_hint:
@@ -250,7 +263,8 @@ Your response should:
 3. Keep the formatting (bullet points, bold text, etc.)
 4. DO NOT add step-by-step access instructions
 5. DO NOT say "Here's how to access..."
-6. If the FAQ appears unrelated to the user's message, ask a short clarification question instead of forcing the FAQ.
+6. If the FAQ appears unrelated to the user's message, say you do not have enough information in the Campus Store documentation to answer fully.
+7. Do NOT add emails, phone numbers, URLs, dates, fees, policies, exceptions, deadlines, or locations that are not in the FAQ context.
 
 Example:
 User: "What is Immediate Access?"
@@ -272,6 +286,8 @@ CRITICAL REMINDER: These are step-by-step instructions!
 - Provide the step-by-step instructions from the documentation
 - If the user can't access to a textbook and provides the course code, ask which platform is the user using (e.g. Cengage MindTap).
 - If documentation does not match the user's platform/topic, ask for clarification and do not invent platform steps.
+- If the documentation includes multiple access paths, state that the steps may depend on course or platform setup and present only those documented paths.
+- Do NOT add any missing steps, support contacts, URLs, deadlines, fees, or policies unless they are in the documentation context.
 """
     else:
         system_content += """
@@ -295,6 +311,31 @@ BEFORE YOU RESPOND, ASK YOURSELF:
 Now respond:
 """
     return system_content
+
+
+def build_grounded_prompt(message: str, context: str) -> str:
+    """Build a strict grounded-answer prompt for FAQ/policy RAG paths."""
+    return f"""You are Lance, the CBU Campus Store assistant.
+
+Answer the student's question using ONLY the retrieved Campus Store documentation below.
+
+RULES:
+- Use only the provided context.
+- Do NOT add platform steps, deadlines, refund rules, return rules, fees, emails, phone numbers, URLs, office locations, exceptions, or policy details unless they appear in the context.
+- If the context does not contain enough information to answer fully, say: "I do not have enough information in the Campus Store documentation to answer that fully."
+- If multiple retrieved sources contain different workflows, explain that the steps may depend on course or platform setup and present only the workflows actually present in the context.
+- Do not choose one workflow as universally correct unless the context clearly says so.
+- For troubleshooting, give concise step-by-step instructions using only documented steps.
+- Do not give generic advice unless it appears in the context.
+- Do not greet for this support/policy question.
+- Be friendly but prioritize correctness over warmth.
+
+RETRIEVED CONTEXT:
+{context}
+
+STUDENT QUESTION: {message}
+
+ANSWER:"""
 
 
 def build_vision_system_prompt(context: str = "", system_hint: str = "") -> str:
@@ -745,7 +786,7 @@ async def stream_llm_chat_response(
         "messages": messages,
         "stream": True,
         "think": True,
-        "options": {"temperature": 0.1, "num_predict": 1024},
+        "options": {"temperature": RAG_TEMPERATURE, "num_predict": RAG_NUM_PREDICT},
     }
 
     models = _candidate_models()
@@ -895,8 +936,8 @@ class LlamaClient(LLMClient):
                 "messages": messages,
                 "stream": False,
                 "options": {
-                    "temperature": 0.1,
-                    "num_predict": 1024,
+                    "temperature": RAG_TEMPERATURE,
+                    "num_predict": RAG_NUM_PREDICT,
                 },
             }
 

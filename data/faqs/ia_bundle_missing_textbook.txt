@@ -1,0 +1,40 @@
+---
+source_id: ia_bundle_missing_textbook
+source_type: faq
+category: immediate_access
+platform: null
+issue_type: missing_book
+priority: canonical
+---
+
+QUESTION:
+What should I do if a textbook is missing from my Immediate Access bundle?
+
+ANSWER:
+If a textbook you expected to see in your Immediate Access bundle is not showing up, there are a few possible reasons and steps to resolve it.
+
+POSSIBLE REASONS:
+- The course may use a publisher platform that delivers access through a direct link in Blackboard rather than through the Immediate Access tab
+- The textbook may not be included in the Immediate Access program for your specific course section
+- Your enrollment in Immediate Access may not have processed yet
+
+STEPS TO RESOLVE:
+
+1. Check Blackboard first:
+   - Log into Blackboard
+   - Open the course that uses the missing textbook
+   - Look for a publisher link in the course menu, under "Course Materials," "Learning Activities," or "Weekly Chapters"
+   - Some platforms (McGraw Hill, Sage, Pearson) deliver access through these links, not through the IA tab
+
+2. Confirm you are opted in:
+   - Click the Immediate Access tab in Blackboard
+   - Verify your opt-in status for the course
+
+3. Contact the Campus Store:
+   If you have checked Blackboard and confirmed your opt-in status but the textbook is still missing, contact:
+   ImmediateAccess@calbaptist.edu
+
+   Include your name, student ID number, course code, section, and instructor name so the team can check your enrollment.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.

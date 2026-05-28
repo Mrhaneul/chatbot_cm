@@ -7,6 +7,7 @@ from app.schemas.chat import ChatRequest, ChatResponse
 from app.llm.llama_client import (
     LlamaClient,
     build_system_prompt,
+    build_grounded_prompt,
     build_vision_system_prompt,
     check_ollama_health,
     get_ollama_model_availability,
@@ -38,6 +39,8 @@ from starlette.requests import Request
 import yaml
 from app.rag.config import cfg
 from app.rag.model import get_model
+from app.rag.grounding_verifier import verify_answer_grounding, GROUNDING_SAFE_FALLBACK
+from app.quick_help_routes import build_quick_help_match
 
 from app.utils.logging_config import configure_logging
 
@@ -195,7 +198,7 @@ PLATFORM_ALIASES: Dict[str, list[str]] = {
     "WILEY": ["wiley", "wileyplus"],
     "MACMILLAN": ["macmillan", "achieve"],
     "SAGE": ["sage", "vantage"],
-    "BEDFORD": ["bedford", "bookshelf"],
+    "BEDFORD": ["bedford"],
     "CLIFTON": ["clifton", "cliftonstrengths", "strengthsquest"],
     "SIMUCASE": ["simucase", "simucace"],
     "ZYBOOKS": ["zybooks", "zybook"],
@@ -786,6 +789,16 @@ def detect_intent(message: str) -> str:
         "trouble with",
         "having issues",       # ✨ NEW
         "issues with",         # ✨ NEW
+        "email is wrong",
+        "wrong email",
+        "email error",
+        "incorrect email",
+        "email address is wrong",
+        "says my email",
+        "create account",
+        "set up account",
+        "create a vitalsource",
+        "need to create",
     ]
     
     # Check if any IA keyword is present AND mentions a platform OR textbook
@@ -1042,29 +1055,6 @@ def strip_article_link_lines(text: str) -> str:
         return text
     cleaned = re.sub(r'(?im)^\s*Article link:\s*"?[^"\n]+"?\s*$', "", text)
     return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
-
-
-def build_grounded_prompt(message: str, context: str) -> str:
-    """Build a strict grounded-answer system prompt for FAQ queries.
-
-    Instructs the model to answer only from retrieved context and to never
-    reproduce URLs or links even when they appear in the context chunks.
-    """
-    return f"""You are Lance, the CBU Campus Store assistant. Answer the student's question using ONLY the information provided below.
-
-RULES:
-- Answer directly from the provided context only
-- If the context does not contain a direct answer to the question, say: "I don't have specific information about that. Please contact ImmediateAccess@calbaptist.edu for assistance."
-- Do NOT reproduce any URLs or links from the context
-- Do NOT add information not present in the context
-- Be concise and helpful
-
-CONTEXT:
-{context}
-
-STUDENT QUESTION: {message}
-
-ANSWER:"""
 
 
 def is_meta_or_greeting_misfire(reply: str) -> bool:
@@ -2369,6 +2359,34 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         retrieval_query = message
         faq_precheck_result = None
         is_cache_issue = is_browser_cache_issue(message) or is_browser_cache_issue(retrieval_query)
+
+        quick_help_match = build_quick_help_match(message)
+        if quick_help_match:
+            print(
+                "[QUICK HELP] Deterministic route matched "
+                f"{quick_help_match.source}: {quick_help_match.source_paths}"
+            )
+            session["awaiting_vitalsource_screen_confirm"] = False
+            session["awaiting_platform_type"] = False
+            session["awaiting_publisher_list_response"] = False
+            session["awaiting_class_access_clarification"] = False
+            session["history"].append({"role": "user", "content": message})
+            session["history"].append({"role": "assistant", "content": quick_help_match.reply})
+            if len(session["history"]) > MAX_HISTORY_TURNS * 2:
+                session["history"] = session["history"][-MAX_HISTORY_TURNS * 2:]
+            session["last_activity"] = datetime.now()
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=quick_help_match.reply,
+                source=quick_help_match.source,
+                article_link=None,
+                confidence=1.0,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[],
+                debug_mode=debug_mode,
+            )
 
         # Initialize variables
         platform = None
@@ -4048,7 +4066,20 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             if fallback_reply:
                 print("[WARN] [LLM GUARD] Detected FAQ prompt/meta misfire; using FAQ fallback")
                 reply = strip_article_link_lines(fallback_reply)
-        
+
+        # Grounding verifier: block unsupported high-risk claims before returning.
+        # Only runs on LLM-generated answers with retrieved context; Quick Help and
+        # deterministic paths return before reaching this point.
+        if cfg.ENABLE_GROUNDING_VERIFIER and context:
+            _gv_result = verify_answer_grounding(reply, context)
+            if not _gv_result.passed:
+                print(
+                    f"[GROUNDING VERIFIER] {len(_gv_result.unsupported_claims)} unsupported "
+                    f"claim(s) detected — triggering safe fallback. "
+                    f"Claims: {[(c.claim_type, c.claim_text) for c in _gv_result.unsupported_claims]}"
+                )
+                reply = GROUNDING_SAFE_FALLBACK
+
         # ✨ END LLM TIMER
         llm_time_ms = (time.time() - llm_start) * 1000
 

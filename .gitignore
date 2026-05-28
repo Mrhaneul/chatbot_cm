@@ -56,6 +56,16 @@ ui/.cache/
 *.log
 logs/
 
+# Generated audit / migration outputs
+faq_quick_help_audit_results.json
+live_lance_accuracy_audit_results.json
+live_lance_accuracy_audit_summary.md
+firestore_pdf_metadata_backup_*.json
+s3_pdf_mapping.csv
+s3_pdf_mapping.json
+test-upload.txt
+test_screenshot.png
+
 # Firebase service account
 firebase-service-account.json
 *firebase-adminsdk*.json

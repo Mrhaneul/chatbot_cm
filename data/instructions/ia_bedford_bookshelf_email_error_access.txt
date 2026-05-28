@@ -1,0 +1,54 @@
+---
+source_id: ia_bedford_bookshelf_email_error_access
+source_type: instruction
+category: platform_access
+platform: bedford
+issue_type: email_error
+priority: specific_case
+---
+
+PROBLEM:
+Student is opted into Immediate Access for a Bedford Bookshelf title but cannot access the textbook after clicking “Read Now.”
+
+COMMON SYMPTOMS:
+- Clicking “Read Now” redirects to VitalSource Bookshelf but no book appears
+- “My Library” is empty
+- Student previously created a VitalSource account using an incorrect email address
+- Account verification emails were sent to the wrong email
+- System continues redirecting to the incorrect VitalSource account
+
+COMMON CAUSE:
+The student created multiple VitalSource (Bookshelf) accounts using different email addresses. Immediate Access materials must be linked to a single account created with the student’s full CBU email address (firstname.lastname@calbaptist.edu).
+
+PLATFORM:
+VitalSource Bookshelf (Bedford Bookshelf)
+
+STEP-BY-STEP RESOLUTION:
+1. Confirm the student is opted in to Immediate Access for the course.
+2. Verify that the student is using their full CBU email address (firstname.lastname@calbaptist.edu).
+3. If multiple VitalSource accounts exist, instruct the student to request an account merge.
+4. Direct the student to contact VitalSource Support.
+5. Ask the student to request a live agent through the support chat.
+6. Have the student request that all VitalSource accounts be merged under their correct CBU email.
+7. After the merge is complete, have the student return to Blackboard.
+8. Navigate to the course.
+9. Click the “Immediate Access” link.
+10. Click “Read Now.”
+
+IMPORTANT NOTES:
+- Bedford Bookshelf materials delivered through Immediate Access do NOT require publisher access codes.
+- Immediate Access eTexts are codeless products in most cases.
+- The Bedford Bookshelf is a library containing multiple titles. Students may need to search within the library to locate their assigned reading.
+
+IF ISSUE PERSISTS:
+- Confirm the student is accessing the material through Blackboard, not directly through VitalSource.
+- Verify the account merge has fully completed.
+- Refer the student back to VitalSource Support if content still does not appear.
+- Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+
+SUPPORT CONTACT:
+VitalSource Support Team
+https://learnersupport.vitalsource.com/hc/en-us
+
+ADDITIONAL HELP:
+ImmediateAccess@calbaptist.edu

@@ -15,6 +15,7 @@ Previous changes:
 """
 
 import logging
+import os
 import re
 
 import faiss
@@ -22,11 +23,14 @@ import numpy as np
 import yaml
 
 from .config import cfg
+from .context_expansion import expand_retrieval_context
 from .metadata import (
     INSTRUCTION_META_SCHEMA,
     FAQ_META_SCHEMA,
+    load_document_with_metadata,
     parse_and_validate,
 )
+from .metadata_filtering import apply_metadata_preference, classify_query_metadata
 from .model import get_model
 
 log = logging.getLogger(__name__)
@@ -69,6 +73,7 @@ class FAQRetriever:
         self.instructions_index, self.instruction_chunks = _load_index(
             cfg.INSTRUCTIONS_INDEX_PATH, cfg.INSTRUCTIONS_CHUNKS_PATH, "instructions_general"
         )
+        self._source_metadata = self._load_source_metadata()
 
         # Platform-specific indexes — built from platforms.yaml
         platforms = self._load_platforms()
@@ -94,8 +99,39 @@ class FAQRetriever:
         with open(cfg.PLATFORMS_CONFIG, "r", encoding="utf-8") as fh:
             return yaml.safe_load(fh)["platforms"]
 
+    @staticmethod
+    def _load_source_metadata() -> dict[str, dict]:
+        """Load optional front-matter metadata from source txt files."""
+        source_metadata: dict[str, dict] = {}
+        for directory in (cfg.FAQ_DIR, cfg.INSTRUCTIONS_DIR):
+            if not os.path.isdir(directory):
+                continue
+            for file_name in os.listdir(directory):
+                if not file_name.lower().endswith(".txt"):
+                    continue
+                if file_name.startswith(("faqs_chunks", "instructions_chunks")):
+                    continue
+                path = os.path.join(directory, file_name)
+                try:
+                    metadata, _ = load_document_with_metadata(path)
+                except Exception as exc:
+                    log.warning("Could not load source metadata for %s: %s", path, exc)
+                    continue
+                source_metadata[file_name] = metadata
+        return source_metadata
+
     def _select_collection(self, query: str) -> str:
         """Route to 'instructions' or 'faqs' based on query keywords."""
+        query_metadata = classify_query_metadata(query)
+        if query_metadata.category == "platform_access":
+            return "instructions"
+        if query_metadata.category in {
+            "immediate_access",
+            "textbook_return",
+            "merchandise_return",
+        }:
+            return "faqs"
+
         normalized = query.lower()
         if any(kw in normalized for kw in cfg.INSTRUCTIONS_KEYWORDS):
             return "instructions"
@@ -139,6 +175,31 @@ class FAQRetriever:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
+    def _extract_enriched_metadata(self, chunk: str, source_id: str) -> dict:
+        metadata = self._extract_metadata(chunk, source_id)
+        source_file = metadata.get("source_file")
+        if source_file and source_file in self._source_metadata:
+            return {**metadata, **self._source_metadata[source_file]}
+        return metadata
+
+    def _build_candidates(
+        self,
+        results: list[tuple[str, float, int]],
+        source_prefix: str,
+    ) -> list[dict]:
+        candidates = []
+        for chunk, score, idx in results:
+            source_id = f"{source_prefix}_SOURCE_{idx}"
+            candidates.append({
+                "context": chunk,
+                "score": score,
+                "idx": idx,
+                "source_id": source_id,
+                "article_link": self._extract_article_link(chunk),
+                "metadata": self._extract_enriched_metadata(chunk, source_id),
+            })
+        return candidates
+
     def retrieve(
         self,
         query: str,
@@ -173,6 +234,8 @@ class FAQRetriever:
             else collection
         )
         log.info("retrieve()  query=%r  collection=%s  platform=%s", query, selected, platform)
+        query_metadata = classify_query_metadata(query)
+        search_k = max(k, 10) if query_metadata.has_filters() else k
 
         query_vector = get_model().encode([query], normalize_embeddings=True)
         query_vector = np.array(query_vector).astype("float32")
@@ -199,36 +262,70 @@ class FAQRetriever:
             if index is None:
                 raise RuntimeError("General instructions index is not loaded.")
 
-            results = self._search(index, chunks, query_vector, k)
-            chunk, score, idx = results[0]
-            source_id = f"{source_prefix}_SOURCE_{idx}"
+            results = self._search(index, chunks, query_vector, search_k)
+            candidates = self._build_candidates(results, source_prefix)
+            candidates, query_metadata = apply_metadata_preference(query, candidates)
+            if query_metadata.has_filters():
+                log.info(
+                    "hybrid retrieval query=%s candidates=%d winner=%s score_breakdown=%s",
+                    query_metadata,
+                    len(candidates),
+                    candidates[0]["source_id"] if candidates else None,
+                    candidates[0].get("score_breakdown") if candidates else None,
+                )
+            selected_candidates = candidates[:k]
+            winner = selected_candidates[0]
+            chunk = winner["context"]
+            score = winner["score"]
+            idx = winner["idx"]
+            source_id = winner["source_id"]
             log.info("  -> %s  score=%.4f  chunk_idx=%d", source_prefix, score, idx)
 
-            context = "\n\n---\n\n".join(r[0] for r in results) if len(results) > 1 else chunk
+            expansion = expand_retrieval_context(selected_candidates)
             return {
-                "context":      context,
+                "context":      expansion.context or chunk,
                 "score":        score,
                 "source_id":    source_id,
-                "article_link": self._extract_article_link(chunk),
-                "metadata":     self._extract_metadata(chunk, source_id),
+                "article_link": winner["article_link"],
+                "metadata":     winner["metadata"],
+                "parent_sources": expansion.parent_sources,
+                "expanded_context_chars": expansion.expanded_context_chars,
+                "context_truncated": expansion.truncated,
             }
 
         # ── FAQ path ──────────────────────────────────────────────────────────
         if self.faq_index is None:
             raise RuntimeError("FAQ index is not loaded.")
 
-        results = self._search(self.faq_index, self.faq_chunks, query_vector, k)
-        chunk, score, idx = results[0]
-        source_id = f"FAQ_SOURCE_{idx}"
+        results = self._search(self.faq_index, self.faq_chunks, query_vector, search_k)
+        candidates = self._build_candidates(results, "FAQ")
+        candidates, query_metadata = apply_metadata_preference(query, candidates)
+        if query_metadata.has_filters():
+            log.info(
+                "hybrid retrieval query=%s candidates=%d winner=%s score_breakdown=%s",
+                query_metadata,
+                len(candidates),
+                candidates[0]["source_id"] if candidates else None,
+                candidates[0].get("score_breakdown") if candidates else None,
+            )
+        selected_candidates = candidates[:k]
+        winner = selected_candidates[0]
+        chunk = winner["context"]
+        score = winner["score"]
+        idx = winner["idx"]
+        source_id = winner["source_id"]
         log.info("  -> FAQ  score=%.4f  chunk_idx=%d", score, idx)
 
-        context = "\n\n---\n\n".join(r[0] for r in results) if len(results) > 1 else chunk
+        expansion = expand_retrieval_context(selected_candidates)
         return {
-            "context":      context,
+            "context":      expansion.context or chunk,
             "score":        score,
             "source_id":    source_id,
-            "article_link": self._extract_article_link(chunk),
-            "metadata":     self._extract_metadata(chunk, source_id),
+            "article_link": winner["article_link"],
+            "metadata":     winner["metadata"],
+            "parent_sources": expansion.parent_sources,
+            "expanded_context_chars": expansion.expanded_context_chars,
+            "context_truncated": expansion.truncated,
         }
 
 

@@ -1,0 +1,18 @@
+---
+source_id: ia_access_issue
+source_type: faq
+category: immediate_access
+platform: null
+issue_type: access_issue
+priority: specific_case
+---
+
+QUESTION:
+Why does Immediate Access show an “opt out” option but not allow me to access my textbook?
+
+ANSWER:
+Some courses use external publisher platforms. In these cases, textbook access is provided through links inside the Blackboard course rather than directly through the Immediate Access page.
+
+If you are opted in but cannot access your textbook, additional course-specific information may be required to guide you correctly.
+
+Article link: "https://campusstore.cbu.edu/immediate-access-help"

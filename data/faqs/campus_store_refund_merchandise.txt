@@ -1,0 +1,45 @@
+---
+source_id: campus_store_refund_merchandise
+source_type: faq
+category: merchandise_return
+platform: null
+issue_type: return_refund
+priority: canonical
+---
+
+QUESTION:
+What is the return and refund policy for general merchandise and trade books at the CBU Campus Store?
+
+ANSWER:
+All returns and exchanges must be in original condition and accompanied by the original receipt.
+
+RETURN WINDOWS:
+- Returns and exchanges accepted within 30 days from the date of purchase — no penalty
+- Returns accepted with a 25% restocking fee between 31 and 60 days from the date of purchase
+- All sales are FINAL after 60 days from the date of purchase
+
+CONDITIONS FOR RETURN:
+- Merchandise must be in original condition
+- Altered, laundered, or unwrapped merchandise cannot be returned or exchanged
+- Receipt and tags are required
+- Items discounted at 50% or more are FINAL SALE
+- Defective merchandise returned in original packaging will be exchanged for the identical item
+- Pre-paid items are FINAL SALE
+- Items marked "Final Sale" are non-refundable and non-exchangeable
+
+HOW TO RETURN:
+You may return items in person at the CBU Campus Store or by mail at your own expense. It is strongly recommended that you insure mailed returns.
+
+Call ahead at 951-343-4259 or email cscontact@calbaptist.edu before returning an item.
+
+Mail returns to:
+California Baptist University
+Attn: Campus Store
+8432 Magnolia Avenue
+Riverside, CA 92504
+
+Please allow 1 to 3 weeks for the return to be received and processed.
+
+CONTACT:
+Email: cscontact@calbaptist.edu
+Phone: 951-343-4259

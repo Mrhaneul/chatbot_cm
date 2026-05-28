@@ -1,0 +1,48 @@
+---
+source_id: ia_overview
+source_type: faq
+category: immediate_access
+platform: null
+issue_type: overview
+priority: canonical
+---
+
+QUESTION:
+What is Immediate Access?
+
+ANSWER:
+Immediate Access is California Baptist University's program that provides day-one access to digital course materials through your student account.
+
+**How It Works:**
+- Get instant access to digital textbooks and courseware on the first day of class
+- Materials are automatically available through Blackboard
+- Charges are billed directly to your student account
+- You have 14 days to opt out if you prefer to purchase materials separately
+
+**Key Benefits:**
+- No waiting for materials to arrive
+- No upfront payment needed
+- Convenient access through Blackboard
+- Often more affordable than traditional textbooks
+
+**Supported Platforms:**
+Immediate Access works with major publishers including:
+- Cengage (MindTap, Cengage Unlimited)
+- McGraw Hill (Connect, ALEKS)
+- Pearson (MyLab, Mastering)
+- Bedford, Sage, VitalSource, and more
+
+**Billing & Payment:**
+- Charges appear on your student account statement
+- Can be paid alongside tuition and fees
+- Payment plans available through student accounts
+
+**Opting Out:**
+- 14-day opt-out period from the start of the semester
+- Opt out through the Immediate Access page in Blackboard
+- After opting out, you must purchase materials separately
+
+**Getting Help:**
+If you're having trouble accessing your materials, please specify which platform you need help with (e.g., "I can't access Cengage MindTap" or "Help with McGraw Hill Connect").
+
+Article link: "https://bookstore.calbaptist.edu/immediate-access"

@@ -1,0 +1,35 @@
+---
+source_id: ia_mcgraw_hill_connect_access
+source_type: instruction
+category: platform_access
+platform: mcgraw_hill
+issue_type: access
+priority: canonical
+---
+
+PROBLEM:
+Student is opted into Immediate Access but cannot access McGraw Hill Connect textbook or assignments.
+
+APPLIES TO:
+Courses using McGraw Hill Connect.
+
+BLACKBOARD LOCATION:
+Learning Activities tab
+
+STEP-BY-STEP RESOLUTION:
+1. Log in to Blackboard.
+2. Open the correct course.
+3. Click on the “Learning Activities” tab in the left menu.
+4. Open the appropriate week folder (e.g., Week 1).
+5. Click the McGraw Hill Connect link for the eText or assignment.
+6. If prompted, log in or create a McGraw Hill account using your CBU email address.
+
+LOGIN REQUIREMENTS:
+- Use your full CBU email address (firstname.lastname@calbaptist.edu).
+- Do NOT use your ID#@calbaptist.edu email.
+
+EXPECTED RESULT:
+Once logged in, the eText and assignments should open successfully within McGraw Hill Connect.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.

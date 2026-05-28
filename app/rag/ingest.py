@@ -29,6 +29,7 @@ from .metadata import (
     INSTRUCTION_META_SCHEMA,
     FAQ_META_SCHEMA,
     build_and_validate,
+    load_document_with_metadata,
 )
 from .model import get_model
 
@@ -264,8 +265,7 @@ def ingest_faqs():
     for file_name in file_names:
         file_path = os.path.join(cfg.FAQ_DIR, file_name)
         try:
-            with open(file_path, "r", encoding="utf-8") as fh:
-                text = fh.read().strip()
+            document_metadata, text = load_document_with_metadata(file_path)
         except Exception:
             log.exception("Failed to read %s", file_path)
             continue
@@ -280,7 +280,8 @@ def ingest_faqs():
         for rc in raw_chunks:
             context    = f"{file_name} / {rc.get('faq_id', '')}"
             meta_dict  = {
-                "platform":    "faq",
+                **document_metadata,
+                "platform": document_metadata.get("platform"),
                 "source_file": rc["source_file"],
                 "faq_id":      rc.get("faq_id", ""),
             }
@@ -319,8 +320,7 @@ def ingest_instructions():
     for file_name in file_names:
         file_path = os.path.join(cfg.INSTRUCTIONS_DIR, file_name)
         try:
-            with open(file_path, "r", encoding="utf-8") as fh:
-                text = fh.read().strip()
+            document_metadata, text = load_document_with_metadata(file_path)
         except Exception:
             log.exception("Failed to read %s", file_path)
             continue
@@ -339,7 +339,11 @@ def ingest_instructions():
         for rc in raw_chunks:
             context   = f"{file_name} / {rc.get('section_title', '')}"
             meta_dict = {
-                "platform":      list(matched_platforms) if matched_platforms else ["general"],
+                **document_metadata,
+                "platform": document_metadata.get(
+                    "platform",
+                    list(matched_platforms) if matched_platforms else ["general"],
+                ),
                 "source_file":   rc["source_file"],
                 "section_title": rc.get("section_title", ""),
             }
