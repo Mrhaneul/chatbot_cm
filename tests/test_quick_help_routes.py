@@ -15,6 +15,9 @@ EXPECTED_QUICK_HELP_SOURCES = {
     "How do I opt out of Immediate Access?": (
         "data/faqs/ia_overview.txt",
     ),
+    "Where do I opt out from Immediate Access?": (
+        "data/faqs/ia_overview.txt",
+    ),
     "How do I return a textbook?": (
         "data/faqs/textbook_refund_policy.txt",
     ),

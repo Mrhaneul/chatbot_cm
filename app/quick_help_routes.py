@@ -74,6 +74,12 @@ QUICK_HELP_ROUTES: dict[str, QuickHelpRoute] = {
             source="QUICK_HELP:ia_overview.txt",
         ),
         QuickHelpRoute(
+            prompt="Where do I opt out from Immediate Access?",
+            source_paths=("data/faqs/ia_overview.txt",),
+            answer_kind="opt_out",
+            source="QUICK_HELP:ia_overview.txt",
+        ),
+        QuickHelpRoute(
             prompt="How do I return a textbook?",
             source_paths=("data/faqs/textbook_refund_policy.txt",),
             answer_kind="textbook_return",

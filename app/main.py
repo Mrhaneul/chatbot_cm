@@ -1508,6 +1508,68 @@ def is_technology_return_query(message: str) -> bool:
     ])
 
 
+def is_ambiguous_refund_policy_query(message: str) -> bool:
+    """
+    Detect generic refund questions that need product/category clarification.
+
+    Without a scope like Immediate Access, textbook, merchandise, or technology,
+    semantic retrieval can choose a specific return policy by accident and answer
+    too confidently.
+    """
+    m = (message or "").lower().strip()
+    if "refund" not in m:
+        return False
+
+    scoped_terms = [
+        "immediate access",
+        "ia ",
+        "ia textbook",
+        "digital",
+        "access code",
+        "textbook",
+        "book",
+        "merchandise",
+        "clothing",
+        "apparel",
+        "shirt",
+        "hoodie",
+        "technology",
+        "tech",
+        "apple",
+        "laptop",
+        "computer",
+        "ipad",
+        "tablet",
+        "printer",
+        "software",
+    ]
+    if any(term in m for term in scoped_terms):
+        return False
+
+    generic_refund_patterns = [
+        "can i get a refund",
+        "will i get a refund",
+        "do i get a refund",
+        "am i eligible for a refund",
+        "guarantee i will get a refund",
+        "guarantee my refund",
+        "refund after",
+    ]
+    has_generic_refund = any(pattern in m for pattern in generic_refund_patterns)
+    has_timeline = bool(re.search(r"\bafter\s+\d+\s*(day|days|week|weeks|month|months)\b", m))
+    has_guarantee = "guarantee" in m
+    return has_generic_refund or has_timeline or has_guarantee
+
+
+def ambiguous_refund_clarification_reply() -> str:
+    return (
+        "I can help with refund policies, but the answer depends on what you're asking about: "
+        "Immediate Access/digital content, textbooks, general merchandise, or technology items. "
+        "I cannot confirm refund eligibility without that context. Could you clarify which type of item "
+        "or charge you mean?"
+    )
+
+
 def is_browser_cache_issue(message: str) -> bool:
     """
     Detect browser/session cache issues that show '0 Courses, 0 Materials' or
@@ -2397,6 +2459,24 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         is_vague_query = False
         explicit_textbook_selection = False
         skip_platform_ambiguity_clarification = False
+
+        if is_ambiguous_refund_policy_query(message):
+            clarification = ambiguous_refund_clarification_reply()
+            session["history"].append({"role": "user", "content": message})
+            session["history"].append({"role": "assistant", "content": clarification})
+            session["last_activity"] = datetime.now()
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=clarification,
+                source="CLARIFICATION_NEEDED",
+                article_link=None,
+                confidence=0.0,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[],
+                debug_mode=debug_mode,
+            )
         
         # Check for ambiguous class access queries (need clarification)
         if is_ambiguous_class_access_query(message):
