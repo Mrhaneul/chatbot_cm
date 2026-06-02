@@ -41,6 +41,8 @@ from app.rag.config import cfg
 from app.rag.model import get_model
 from app.rag.grounding_verifier import verify_answer_grounding, GROUNDING_SAFE_FALLBACK
 from app.quick_help_routes import build_quick_help_match
+from app.safety import run_safety_gate, get_safety_response, safety_source_label
+from app.safety.deterministic_rules import check_deterministic as _safety_check_deterministic
 
 from app.utils.logging_config import configure_logging
 
@@ -108,6 +110,8 @@ MAX_CONCURRENT_LLM_REQUESTS = int(os.getenv("MAX_CONCURRENT_LLM_REQUESTS", "2"))
 GROUNDING_TOP_K = int(os.getenv("GROUNDING_TOP_K", "3"))
 CORS_ORIGINS = parse_csv_env("CORS_ORIGINS", "http://localhost:3000")
 ENABLE_DEBUG_ROUTES = parse_bool_env("ENABLE_DEBUG_ROUTES", default=False)
+ENABLE_SAFETY_FILTER = parse_bool_env("ENABLE_SAFETY_FILTER", default=True)
+ENABLE_SAFETY_CLASSIFIER = parse_bool_env("ENABLE_SAFETY_CLASSIFIER", default=True)
 
 GREETING_KEYWORDS = ["hi", "hello", "hey", "good morning", "good afternoon", "good evening", "greetings"]
 GREETING_REPLY = (
@@ -2394,6 +2398,59 @@ def is_ambiguous_platform_query(message: str) -> tuple[str | None, bool]:
     return None, False
 
 
+_LOW_RISK_CLARIFICATION_RE = re.compile(
+    r"""(?ix)
+    ^(
+      (i\s+)?don'?t\s+know
+      | not\s+sure
+      | yes | no | maybe | okay | ok
+      | cengage | mindtap | mcgraw(\s+hill)? | pearson | vitalsource
+      | wiley(plus)? | bedford | stukent | simucase | zybooks | sage
+      | norton | inquizitive | macmillan | achieve
+      | [a-z]{2,4}\s?\d{3,4}[a-z]?       # course codes: CS101, MPA545
+    )\s*[.!?]?\s*$
+    """,
+)
+
+# Explicit allowlist for "I don't know / not sure" clarification replies.
+# Only a bare statement or a safe trailing noun phrase (platform, publisher,
+# one, textbook …) is accepted. fullmatch prevents arbitrary trailing content
+# such as "I don't know how to jailbreak courseware" from matching.
+_DONT_KNOW_SAFE_RE = re.compile(
+    r"""(?ix)
+    ^(
+      i\s+(do\s+not|don'?t)\s+know
+      | (i'?m\s+)?not\s+sure
+    )
+    (
+      \s+(
+        which\s+(platform|publisher|one|textbook|book|e-?book|course)
+        | the\s+(platform|publisher|textbook|book|e-?book|name)
+      )
+    )?
+    \s*[.!?]?\s*$
+    """,
+)
+
+
+def _is_low_risk_clarification_reply(message: str) -> bool:
+    """
+    Return True only for short, clearly safe clarification answers.
+
+    Used to decide whether to skip the LLM safety classifier for follow-up
+    messages in an active clarification session. Longer messages or messages
+    that fail the pattern check must still go through the full classifier.
+    """
+    msg = message.strip()
+    if len(msg) > 80:
+        return False
+    # Also check: if the deterministic rules already flagged anything harmful, don't skip
+    det = _safety_check_deterministic(msg)
+    if det is not None and det.action not in ("ALLOW",):
+        return False
+    return bool(_LOW_RISK_CLARIFICATION_RE.fullmatch(msg)) or bool(_DONT_KNOW_SAFE_RE.fullmatch(msg))
+
+
 async def process_chat_request(payload: ChatRequest) -> ChatResponse:
     """
     Main chat endpoint with session management and performance tracking.
@@ -2421,6 +2478,59 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         retrieval_query = message
         faq_precheck_result = None
         is_cache_issue = is_browser_cache_issue(message) or is_browser_cache_issue(retrieval_query)
+
+        # ── Safety gate ───────────────────────────────────────────────────────
+        # Runs before Quick Help, retrieval, and LLM generation.
+        # The text portion is always checked, even for image+text messages —
+        # image content itself is not inspected (known limitation: vision-only
+        # harmful content could bypass this gate).
+        #
+        # Skip the fuzzy LLM classifier only for short, clearly safe follow-up
+        # replies within an active clarification session (e.g. "I don't know",
+        # "Cengage", "CS101"). Longer replies or replies containing suspicious
+        # terms are always classified. The deterministic rules always run.
+        _session_in_clarification = (
+            session.get("awaiting_platform_type", False)
+            or session.get("awaiting_publisher_list_response", False)
+            or session.get("awaiting_class_access_clarification", False)
+            or session.get("awaiting_vitalsource_screen_confirm", False)
+        )
+        _skip_classifier = (
+            _session_in_clarification and _is_low_risk_clarification_reply(message)
+        )
+        safety_decision = await run_safety_gate(
+            message,
+            enable_filter=ENABLE_SAFETY_FILTER,
+            enable_classifier=ENABLE_SAFETY_CLASSIFIER and not _skip_classifier,
+            llm_client=llm,
+        )
+        if safety_decision.action != "ALLOW":
+            safety_reply = get_safety_response(safety_decision)
+            safety_src = safety_source_label(safety_decision)
+            print(
+                f"[SAFETY] action={safety_decision.action} "
+                f"category={safety_decision.category} "
+                f"confidence={safety_decision.confidence:.2f} "
+                f"reason={safety_decision.reason}"
+            )
+            session["history"].append({"role": "user", "content": message})
+            session["history"].append({"role": "assistant", "content": safety_reply})
+            if len(session["history"]) > MAX_HISTORY_TURNS * 2:
+                session["history"] = session["history"][-MAX_HISTORY_TURNS * 2:]
+            session["last_activity"] = datetime.now()
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=safety_reply,
+                source=safety_src,
+                article_link=None,
+                confidence=safety_decision.confidence,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[],
+                debug_mode=debug_mode,
+            )
+        # ─────────────────────────────────────────────────────────────────────
 
         quick_help_match = build_quick_help_match(message)
         if quick_help_match:
