@@ -39,6 +39,20 @@ def _load_yaml(path: Path) -> dict:
 
 # ── Schema validators ─────────────────────────────────────────────────────────
 
+def _validate_alias_list(path: Path, key: str, field: str, value: object) -> None:
+    """Assert that value is a non-empty list of non-empty strings."""
+    if not isinstance(value, list) or not value:
+        raise ConfigLoadError(
+            f"{path}: platform '{key}' field '{field}' must be a non-empty list"
+        )
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise ConfigLoadError(
+                f"{path}: platform '{key}' field '{field}' contains an invalid entry"
+                f" (every alias must be a non-empty string, got {item!r})"
+            )
+
+
 def _validate_platforms(path: Path, raw: dict) -> list[dict]:
     """
     Validate platforms config.  Returns the validated platform list.
@@ -55,10 +69,9 @@ def _validate_platforms(path: Path, raw: dict) -> list[dict]:
                 raise ConfigLoadError(
                     f"{path}: platform '{_label}' is missing required field '{field}'"
                 )
-        if not isinstance(p["aliases"], list) or not p["aliases"]:
-            raise ConfigLoadError(
-                f"{path}: platform '{p['key']}' field 'aliases' must be a non-empty list"
-            )
+        _validate_alias_list(path, p["key"], "aliases", p["aliases"])
+        if p.get("metadata_aliases") is not None:
+            _validate_alias_list(path, p["key"], "metadata_aliases", p["metadata_aliases"])
         if p.get("publisher_list_position") is not None:
             if not p.get("publisher_list_label"):
                 raise ConfigLoadError(
@@ -91,7 +104,12 @@ def _validate_clarification(path: Path, raw: dict) -> dict:
 
 def _validate_intents(path: Path, raw: dict) -> dict:
     """Validate intents config. Returns the raw dict on success."""
-    for section in ("ia_keywords", "opt_out_policy_signals", "informational_patterns"):
+    for section in (
+        "ia_keywords",
+        "opt_out_policy_signals",
+        "opt_out_troubleshooting_exclusions",
+        "informational_patterns",
+    ):
         if not raw.get(section):
             raise ConfigLoadError(
                 f"{path}: required section '{section}' is missing or empty"

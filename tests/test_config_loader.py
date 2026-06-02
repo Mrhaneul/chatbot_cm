@@ -328,10 +328,50 @@ class TestValidatePlatformsFailures:
         with pytest.raises(ConfigLoadError, match="MY_PLATFORM"):
             _validate_platforms(self._path(), data)
 
+    def test_aliases_contains_integer_raises(self):
+        data = {"platforms": [
+            {"key": "CENGAGE", "rag_key": "cengage", "display_name": "Cengage",
+             "aliases": [123]}
+        ]}
+        with pytest.raises(ConfigLoadError, match="non-empty string"):
+            _validate_platforms(self._path(), data)
+
+    def test_aliases_contains_empty_string_raises(self):
+        data = {"platforms": [
+            {"key": "CENGAGE", "rag_key": "cengage", "display_name": "Cengage",
+             "aliases": [""]}
+        ]}
+        with pytest.raises(ConfigLoadError, match="non-empty string"):
+            _validate_platforms(self._path(), data)
+
+    def test_metadata_aliases_contains_integer_raises(self):
+        data = {"platforms": [
+            {"key": "CENGAGE", "rag_key": "cengage", "display_name": "Cengage",
+             "aliases": ["cengage"], "metadata_aliases": [123]}
+        ]}
+        with pytest.raises(ConfigLoadError, match="non-empty string"):
+            _validate_platforms(self._path(), data)
+
+    def test_metadata_aliases_contains_empty_string_raises(self):
+        data = {"platforms": [
+            {"key": "CENGAGE", "rag_key": "cengage", "display_name": "Cengage",
+             "aliases": ["cengage"], "metadata_aliases": [""]}
+        ]}
+        with pytest.raises(ConfigLoadError, match="non-empty string"):
+            _validate_platforms(self._path(), data)
+
     def test_valid_platform_without_publisher_list_passes(self):
         data = {"platforms": [
             {"key": "CLIFTON", "rag_key": "clifton", "display_name": "CliftonStrengths",
              "aliases": ["clifton"]}
+        ]}
+        result = _validate_platforms(self._path(), data)
+        assert len(result) == 1
+
+    def test_valid_platform_with_metadata_aliases_passes(self):
+        data = {"platforms": [
+            {"key": "CENGAGE", "rag_key": "cengage", "display_name": "Cengage",
+             "aliases": ["cengage", "mindtap"], "metadata_aliases": ["cengage", "mindtap"]}
         ]}
         result = _validate_platforms(self._path(), data)
         assert len(result) == 1
@@ -360,14 +400,38 @@ class TestValidateIntentsFailures:
             _validate_intents(self._path(), data)
 
     def test_missing_informational_patterns_raises(self):
-        data = {"ia_keywords": ["access"], "opt_out_policy_signals": ["opt out"]}
+        data = {
+            "ia_keywords": ["access"],
+            "opt_out_policy_signals": ["opt out"],
+            "opt_out_troubleshooting_exclusions": ["cannot access"],
+        }
         with pytest.raises(ConfigLoadError, match="informational_patterns"):
+            _validate_intents(self._path(), data)
+
+    def test_missing_opt_out_troubleshooting_exclusions_raises(self):
+        data = {
+            "ia_keywords": ["access"],
+            "opt_out_policy_signals": ["opt out"],
+            "informational_patterns": ["what is"],
+        }
+        with pytest.raises(ConfigLoadError, match="opt_out_troubleshooting_exclusions"):
+            _validate_intents(self._path(), data)
+
+    def test_empty_opt_out_troubleshooting_exclusions_raises(self):
+        data = {
+            "ia_keywords": ["access"],
+            "opt_out_policy_signals": ["opt out"],
+            "opt_out_troubleshooting_exclusions": [],
+            "informational_patterns": ["what is"],
+        }
+        with pytest.raises(ConfigLoadError, match="opt_out_troubleshooting_exclusions"):
             _validate_intents(self._path(), data)
 
     def test_valid_intents_config_passes(self):
         data = {
             "ia_keywords": ["access"],
             "opt_out_policy_signals": ["opt out"],
+            "opt_out_troubleshooting_exclusions": ["cannot access"],
             "informational_patterns": ["what is"],
         }
         result = _validate_intents(self._path(), data)
