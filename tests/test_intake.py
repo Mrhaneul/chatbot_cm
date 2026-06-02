@@ -207,6 +207,10 @@ class TestExtractCourseCode:
         result = extract_course_code("class cs101 is missing book")
         assert result == "CS101"
 
+    def test_course_code_is_optional_for_phase_3_completion(self):
+        profile = IntakeProfile(platform="CENGAGE", issue_type="access", course_code=None)
+        assert intake_is_complete(profile)
+
 
 class TestExtractMaterialType:
     def test_textbook(self):
@@ -245,9 +249,34 @@ class TestShouldEnterIntake:
     def test_enters_for_vague_message_no_platform(self):
         assert should_enter_intake("I don't have my textbook", self._empty_session())
 
-    def test_skips_when_platform_detected(self):
+    def test_skips_when_platform_and_issue_are_both_detected(self):
         # VitalSource alias in message — no intake needed
         assert not should_enter_intake("my VitalSource book is missing", self._empty_session())
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "VitalSource issue.",
+            "Cengage is not working.",
+            "Pearson problem.",
+            "My McGraw Hill is confusing.",
+            "I have a Cengage question.",
+            "McGraw Hill does not show anything.",
+        ],
+    )
+    def test_enters_for_platform_present_issue_missing_vague_messages(self, message):
+        assert should_enter_intake(message, self._empty_session())
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "How do I access my Cengage MindTap book?",
+            "I cannot open my McGraw Hill Connect assignment.",
+            "How do I create a VitalSource Bookshelf account?",
+        ],
+    )
+    def test_skips_for_specific_platform_questions(self, message):
+        assert not should_enter_intake(message, self._empty_session())
 
     def test_skips_when_intake_profile_active(self):
         session = {"intake_profile": {"platform": None, "issue_type": None, "turns_spent": 1, "original_message": "x", "material_type": None, "course_code": None}}
@@ -387,8 +416,8 @@ class TestMultiTurnLifecycle:
         assert not intake_is_complete(profile)
         assert intake_next_question(profile) is None
 
-    def test_bypass_when_platform_in_first_message(self):
-        """Messages that mention a platform skip intake entirely."""
+    def test_specific_platform_issue_bypasses_intake(self):
+        """Specific platform questions with an issue type skip intake."""
         session = self._new_session()
         msg = "I can't access VitalSource"
         assert not should_enter_intake(msg, session)

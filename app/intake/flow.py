@@ -19,10 +19,35 @@ from app.intake.slot_extractor import (
 
 _MAX_INTAKE_TURNS = 3
 
+_PLATFORM_LOW_INFO_PATTERNS = (
+    "issue",
+    "problem",
+    "question",
+    "not working",
+    "does not work",
+    "doesn't work",
+    "confusing",
+    "does not show",
+    "doesn't show",
+    "not show anything",
+    "not showing anything",
+)
+
 
 def is_vague_message(message: str) -> bool:
     """True when the message matches a vague-complaint pattern."""
     return bool(VAGUE_PATTERN_RE.search(message.strip()))
+
+
+def _is_platform_low_info_message(message: str) -> bool:
+    """
+    True for platform-present complaints that name the platform but still do
+    not give a specific issue type, e.g. "Cengage is not working."
+    """
+    if extract_platform(message) is None or extract_issue_type(message) is not None:
+        return False
+    msg_lower = message.lower()
+    return any(pattern in msg_lower for pattern in _PLATFORM_LOW_INFO_PATTERNS)
 
 
 def should_enter_intake(message: str, session: dict) -> bool:
@@ -32,8 +57,11 @@ def should_enter_intake(message: str, session: dict) -> bool:
     Returns False when:
     - An intake_profile is already active (mid-intake).
     - Any legacy clarification flag is active.
-    - The message contains an unambiguous platform signal (bypass intake).
     - The message is not vague.
+
+    A platform signal alone does not bypass intake. Platform-present vague
+    messages such as "Cengage is not working" still need an issue slot, so
+    they enter intake with the platform prefilled and ask the next question.
     """
     if session.get("intake_profile"):
         return False
@@ -44,9 +72,7 @@ def should_enter_intake(message: str, session: dict) -> bool:
         or session.get("awaiting_class_access_clarification")
     ):
         return False
-    if extract_platform(message) is not None:
-        return False
-    return is_vague_message(message)
+    return is_vague_message(message) or _is_platform_low_info_message(message)
 
 
 def update_profile(profile: IntakeProfile, message: str) -> IntakeProfile:

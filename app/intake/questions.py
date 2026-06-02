@@ -31,6 +31,9 @@ VAGUE_PATTERN_RE: re.Pattern = re.compile(
 
 # -- Slot questions ------------------------------------------------------------
 # Keys are the slot that IS missing. Values are the questions Lance asks.
+# Course code is intentionally optional in Phase 3. Platform + issue_type are
+# enough to route to useful instructions, and asking for course code here would
+# add friction without improving current retrieval quality.
 PLATFORM_QUESTION = (
     "Which platform or publisher is your textbook on? "
     "For example: VitalSource, Cengage MindTap, Pearson MyLab, "

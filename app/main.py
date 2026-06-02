@@ -2342,6 +2342,11 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         has_image = bool(getattr(payload, "image_base64", None))
         retrieval_query = message
         faq_precheck_result = None
+        _enriched_query = None
+        _intake_completed = False
+        _completed_intake_platform = None
+        _completed_intake_issue_type = None
+        _completed_intake_material_type = None
         is_cache_issue = is_browser_cache_issue(message) or is_browser_cache_issue(retrieval_query)
 
         # ── Safety gate ───────────────────────────────────────────────────────
@@ -2442,6 +2447,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 session["stored_intent"] = "IA_ACCESS_ISSUE"
                 # Continue below with enriched retrieval query.
                 _enriched_query = profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
+                _intake_completed = True
+                _completed_intake_platform = profile.platform
+                _completed_intake_issue_type = profile.issue_type
+                _completed_intake_material_type = profile.material_type
             elif profile.is_expired():
                 print(f"[INTAKE] Expired after {profile.turns_spent} turn(s) — using fallback")
                 session["intake_profile"] = None
@@ -2479,9 +2488,6 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     recommended_pdfs=[],
                     debug_mode=debug_mode,
                 )
-        else:
-            _enriched_query = None
-
         # ── Intake: first vague message — start intake if appropriate ─────────
         if should_enter_intake(message, session):
             new_profile = IntakeProfile(original_message=message)
@@ -2490,6 +2496,12 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 # Unlikely on first turn, but handle gracefully.
                 session["intake_profile"] = None
                 _enriched_query = new_profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
+                _intake_completed = True
+                _completed_intake_platform = new_profile.platform
+                _completed_intake_issue_type = new_profile.issue_type
+                _completed_intake_material_type = new_profile.material_type
+                session["stored_platform"] = new_profile.platform
+                session["stored_intent"] = "IA_ACCESS_ISSUE"
             else:
                 question = intake_next_question(new_profile)
                 session["intake_profile"] = new_profile.to_dict()
@@ -2520,10 +2532,20 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         explicit_textbook_selection = False
         skip_platform_ambiguity_clarification = False
 
-        # If intake just completed, override retrieval query with enriched version.
-        if _enriched_query is not None:
+        # If intake just completed, force the IA instructions route and keep the
+        # enriched query intact for retrieval. This prevents completed intake
+        # follow-ups like "I can't access it" from being classified as FAQ.
+        if _intake_completed:
+            if (
+                _completed_intake_issue_type in {"access", "missing", "account"}
+                or _completed_intake_platform is not None
+                or _completed_intake_material_type is not None
+            ):
+                intent = "IA_ACCESS_ISSUE"
             retrieval_query = _enriched_query
-            platform = platform or session.get("stored_platform")
+            platform = _completed_intake_platform
+            session["stored_platform"] = platform
+            session["stored_intent"] = "IA_ACCESS_ISSUE"
 
         if is_ambiguous_refund_policy_query(message):
             clarification = ambiguous_refund_clarification_reply()
@@ -2867,7 +2889,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 debug_mode=debug_mode
             )
         
-        platform = platform_temp
+        platform = _completed_intake_platform if _intake_completed else platform_temp
 
         print(f"[PLATFORM DEBUG EARLY] platform_temp = {platform_temp}")
         print(f"[PLATFORM DEBUG EARLY] platform = {platform}")
@@ -3374,6 +3396,12 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             
             if platform is None:
                 platform = detect_platform_from_text(message)
+            if _intake_completed:
+                intent = "IA_ACCESS_ISSUE"
+                platform = _completed_intake_platform
+                retrieval_query = _enriched_query
+                session["stored_platform"] = platform
+                session["stored_intent"] = "IA_ACCESS_ISSUE"
             
             print(f"[PLATFORM DEBUG] Detected platform: {platform}")
 
@@ -3426,7 +3454,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     intent = "IA_ACCESS_ISSUE"
                     print("[INTENT DEBUG] Platform clarification detected - preserving IA_ACCESS_ISSUE intent")
             
-            if not is_platform_clarification:
+            if _intake_completed:
+                intent = "IA_ACCESS_ISSUE"
+                print("[INTENT DEBUG] Intake completed - preserving IA_ACCESS_ISSUE intent")
+            elif not is_platform_clarification:
                 intent = detect_intent(message)  # ✨ THIS IS THE CRITICAL LINE!
                 print(f"[INTENT DEBUG] Called detect_intent(), result: {intent}")
             
@@ -3504,6 +3535,13 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             print(f"[INTENT DEBUG] Browser cache issue override → GENERAL_FAQ (cache detected in query or image)")
 
         # NOW the intent is set!
+        if _intake_completed:
+            intent = "IA_ACCESS_ISSUE"
+            platform = _completed_intake_platform
+            retrieval_query = _enriched_query
+            session["stored_platform"] = platform
+            session["stored_intent"] = "IA_ACCESS_ISSUE"
+
         # 1. Intent detection happens somewhere up here
         print(f"[INTENT DEBUG] Final intent: {intent}")
 
@@ -3571,6 +3609,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # already in IA flow, return platform instructions directly.
         if (
             intent == "IA_ACCESS_ISSUE"
+            and not _intake_completed
             and platform is not None
             and len(message.split()) <= 5
             and session.get("stored_intent") == "IA_ACCESS_ISSUE"
@@ -3907,7 +3946,6 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         try:
             # --- Vision retrieval augmentation ---
             image_context = {}
-            retrieval_query = message
 
             if payload.image_base64:
                 from app.llm.llama_client import analyze_image_for_retrieval, build_augmented_query
@@ -3941,7 +3979,9 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             elif intent == "IA_ACCESS_ISSUE":
                 # Preserve query set in awaiting_platform_type TEXTBOOK_EBOOK handler —
                 # do not let conversation context pollute it (causes MacMillan false-match).
-                if not explicit_textbook_selection:
+                if _intake_completed:
+                    enhanced_query = retrieval_query
+                elif not explicit_textbook_selection:
                     enhanced_query = enhance_query_with_conversation_context(message, session["history"])
 
                 # Deterministic override: "Read Now button missing" is a general

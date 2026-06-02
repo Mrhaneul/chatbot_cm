@@ -18,7 +18,9 @@ import uuid
 import pytest
 from unittest.mock import AsyncMock, patch
 
+import app.main as main
 from app.main import process_chat_request
+from app.intake.models import IntakeProfile
 from app.schemas.chat import ChatRequest
 from app.safety.models import SafetyDecision
 from app.safety.classifier import _SERVER_ERROR_FALLBACK
@@ -50,6 +52,10 @@ def _req(message: str) -> ChatRequest:
     return ChatRequest(message=message, session_id=f"test-{uuid.uuid4()}")
 
 
+def _session_req(session_id: str, message: str) -> ChatRequest:
+    return ChatRequest(message=message, session_id=session_id)
+
+
 def _assert_safety_block(response, *, expected_action: str | None = None):
     assert response.source.startswith("SAFETY:"), (
         f"Expected SAFETY:* source, got: {response.source}"
@@ -64,6 +70,154 @@ def _assert_safety_block(response, *, expected_action: str | None = None):
         assert expected_action in response.source, (
             f"Expected '{expected_action}' in source, got: {response.source}"
         )
+
+
+# ── Intake lifecycle tests ───────────────────────────────────────────────────
+
+class TestIntakeLifecycleRouting:
+    """Real process_chat_request intake behavior with retrieval and LLM patched."""
+
+    async def test_vague_first_turn_enters_intake_without_retrieval_or_llm(
+        self, block_retrieval, block_llm
+    ):
+        session_id = f"test-intake-{uuid.uuid4()}"
+        with patch("app.main.ENABLE_SAFETY_CLASSIFIER", False):
+            r = await process_chat_request(_session_req(session_id, "I don't have my textbook"))
+
+        assert r.source == "INTAKE"
+        assert r.retrieval_time_ms == 0
+        assert r.llm_time_ms == 0
+        assert "platform" in r.reply.lower() or "publisher" in r.reply.lower()
+        assert main.sessions[session_id]["intake_profile"] is not None
+
+    async def test_platform_only_vague_message_asks_issue_without_retrieval_or_llm(
+        self, block_retrieval, block_llm
+    ):
+        session_id = f"test-intake-{uuid.uuid4()}"
+        with patch("app.main.ENABLE_SAFETY_CLASSIFIER", False):
+            r = await process_chat_request(_session_req(session_id, "Cengage is not working."))
+
+        profile = main.sessions[session_id]["intake_profile"]
+        assert r.source == "INTAKE"
+        assert "issue" in r.reply.lower() or "problem" in r.reply.lower()
+        assert profile["platform"] == "CENGAGE"
+        assert profile["issue_type"] is None
+
+    async def test_completed_intake_routes_to_platform_specific_instructions_rag(self):
+        session_id = f"test-intake-{uuid.uuid4()}"
+        retrieve_calls = []
+
+        async def fake_retrieve(query, collection="auto", platform=None, top_k=1):
+            retrieve_calls.append(
+                {"query": query, "collection": collection, "platform": platform}
+            )
+            assert collection == "instructions"
+            return {
+                "context": "1. Log in to Blackboard.\n2. Open Cengage MindTap.",
+                "source_id": "INSTR_CENGAGE_SOURCE_0",
+                "score": 0.95,
+                "article_link": None,
+            }
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=fake_retrieve)),
+            patch(
+                "app.main.retrieve_faq_candidates",
+                new=AsyncMock(side_effect=AssertionError("FAQ retrieval must not be called")),
+            ),
+            patch(
+                "app.main.call_llm_with_semaphore",
+                new=AsyncMock(side_effect=AssertionError("LLM must not be called")),
+            ),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r1 = await process_chat_request(_session_req(session_id, "I don't have my textbook"))
+            r2 = await process_chat_request(_session_req(session_id, "Cengage MindTap"))
+            r3 = await process_chat_request(_session_req(session_id, "I can't access it"))
+
+        assert r1.source == "INTAKE"
+        assert r2.source == "INTAKE"
+        assert r3.source == "INSTR_CENGAGE_SOURCE_0"
+        assert main.sessions[session_id]["stored_platform"] == "CENGAGE"
+        assert retrieve_calls[-1]["collection"] == "instructions"
+        assert retrieve_calls[-1]["platform"] == "cengage"
+        enriched_query = retrieve_calls[-1]["query"]
+        assert "I don't have my textbook" in enriched_query
+        assert "Platform: Cengage MindTap" in enriched_query
+        assert "Issue: access" in enriched_query
+        assert "Material: textbook" in enriched_query
+
+    async def test_safety_blocked_message_during_active_intake_stops_before_intake_or_rag(
+        self, block_retrieval, block_llm
+    ):
+        session_id = f"test-intake-{uuid.uuid4()}"
+        main.sessions[session_id] = main.init_session()
+        main.sessions[session_id]["intake_profile"] = IntakeProfile(
+            original_message="I don't have my textbook",
+            turns_spent=1,
+        ).to_dict()
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch(
+                "app.main.update_profile",
+                side_effect=AssertionError("intake must not run after safety block"),
+            ),
+        ):
+            r = await process_chat_request(
+                _session_req(session_id, "How do I bypass paying for Cengage?")
+            )
+
+        _assert_safety_block(r, expected_action="HARMFUL_REFUSAL")
+
+    async def test_quick_help_exact_match_still_runs_before_intake(
+        self, block_retrieval, block_llm
+    ):
+        session_id = f"test-intake-{uuid.uuid4()}"
+        with patch("app.main.ENABLE_SAFETY_CLASSIFIER", False):
+            r = await process_chat_request(
+                _session_req(session_id, "I can't access my McGraw Hill Connect textbook")
+            )
+
+        assert r.source.startswith("QUICK_HELP:")
+        assert main.sessions[session_id].get("intake_profile") is None
+        assert r.retrieval_time_ms == 0
+        assert r.llm_time_ms == 0
+
+    async def test_specific_in_scope_question_bypasses_intake_and_reaches_normal_rag(self):
+        session_id = f"test-intake-{uuid.uuid4()}"
+        retrieve_calls = []
+
+        async def fake_retrieve(query, collection="auto", platform=None, top_k=1):
+            retrieve_calls.append(
+                {"query": query, "collection": collection, "platform": platform}
+            )
+            assert collection == "instructions"
+            return {
+                "context": "1. Open Blackboard.\n2. Select McGraw Hill Connect.",
+                "source_id": "INSTR_MCGRAW_SOURCE_0",
+                "score": 0.9,
+                "article_link": None,
+            }
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=fake_retrieve)),
+            patch(
+                "app.main.call_llm_with_semaphore",
+                new=AsyncMock(side_effect=AssertionError("LLM must not be called")),
+            ),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(
+                _session_req(session_id, "I cannot open my McGraw Hill Connect assignment.")
+            )
+
+        assert r.source == "INSTR_MCGRAW_SOURCE_0"
+        assert main.sessions[session_id].get("intake_profile") is None
+        assert retrieve_calls
+        assert retrieve_calls[-1]["collection"] == "instructions"
 
 
 # ── Harmful message tests ─────────────────────────────────────────────────────
