@@ -1,0 +1,403 @@
+"""
+tests/test_intake.py
+
+Unit tests for the Phase 3 intake / slot-filling module.
+Covers: models, slot_extractor, questions, flow, and multi-turn lifecycle.
+"""
+from __future__ import annotations
+
+import pytest
+
+from app.intake.models import IntakeProfile
+from app.intake.questions import VAGUE_PATTERN_RE, NEXT_QUESTION, INTAKE_FALLBACK_MESSAGE
+from app.intake.slot_extractor import (
+    extract_platform,
+    extract_issue_type,
+    extract_course_code,
+    extract_material_type,
+)
+from app.intake.flow import (
+    is_vague_message,
+    should_enter_intake,
+    update_profile,
+    next_question as intake_next_question,
+    intake_is_complete,
+    intake_fallback_message,
+)
+
+
+# ── IntakeProfile ─────────────────────────────────────────────────────────────
+
+class TestIntakeProfileBasics:
+    def test_empty_profile_not_complete(self):
+        p = IntakeProfile()
+        assert not p.is_complete()
+
+    def test_platform_only_not_complete(self):
+        p = IntakeProfile(platform="CENGAGE")
+        assert not p.is_complete()
+
+    def test_issue_type_only_not_complete(self):
+        p = IntakeProfile(issue_type="access")
+        assert not p.is_complete()
+
+    def test_both_slots_complete(self):
+        p = IntakeProfile(platform="CENGAGE", issue_type="access")
+        assert p.is_complete()
+
+    def test_not_expired_at_zero(self):
+        p = IntakeProfile(turns_spent=0)
+        assert not p.is_expired()
+
+    def test_expired_at_max_turns(self):
+        p = IntakeProfile(turns_spent=3)
+        assert p.is_expired()
+
+    def test_not_expired_below_max(self):
+        p = IntakeProfile(turns_spent=2)
+        assert not p.is_expired()
+
+
+class TestIntakeProfileRoundtrip:
+    def test_roundtrip_empty(self):
+        p = IntakeProfile()
+        assert IntakeProfile.from_dict(p.to_dict()) == p
+
+    def test_roundtrip_full(self):
+        p = IntakeProfile(
+            platform="VITALSOURCE",
+            issue_type="missing",
+            material_type="textbook",
+            course_code="ENGL1301",
+            turns_spent=2,
+            original_message="my book is gone",
+        )
+        assert IntakeProfile.from_dict(p.to_dict()) == p
+
+    def test_from_dict_missing_keys(self):
+        p = IntakeProfile.from_dict({})
+        assert p.platform is None
+        assert p.turns_spent == 0
+
+
+class TestBuildEnrichedQuery:
+    _DISPLAY = {"CENGAGE": "Cengage MindTap", "VITALSOURCE": "VitalSource"}
+
+    def test_just_original_message_when_no_slots(self):
+        p = IntakeProfile(original_message="help me")
+        result = p.build_enriched_query(self._DISPLAY)
+        assert result == "help me"
+
+    def test_includes_platform_display_name(self):
+        p = IntakeProfile(original_message="my book", platform="CENGAGE")
+        result = p.build_enriched_query(self._DISPLAY)
+        assert "Cengage MindTap" in result
+
+    def test_includes_issue_type(self):
+        p = IntakeProfile(original_message="help", issue_type="access")
+        result = p.build_enriched_query(self._DISPLAY)
+        assert "access" in result
+
+    def test_includes_course_code(self):
+        p = IntakeProfile(original_message="help", course_code="CS101")
+        result = p.build_enriched_query(self._DISPLAY)
+        assert "CS101" in result
+
+    def test_unknown_platform_key_skipped(self):
+        p = IntakeProfile(original_message="help", platform="UNKNOWN_KEY")
+        result = p.build_enriched_query(self._DISPLAY)
+        assert "UNKNOWN_KEY" not in result
+
+
+# ── VaguePatternRegex ─────────────────────────────────────────────────────────
+
+class TestVaguePatternRegex:
+    def _match(self, text: str) -> bool:
+        return bool(VAGUE_PATTERN_RE.search(text))
+
+    def test_dont_have_textbook(self):
+        assert self._match("I don't have my textbook")
+
+    def test_dont_have_book(self):
+        assert self._match("I don't have my book")
+
+    def test_book_is_missing(self):
+        assert self._match("my book is missing")
+
+    def test_it_doesnt_work(self):
+        assert self._match("It doesn't work")
+
+    def test_not_working(self):
+        assert self._match("It's not working")
+
+    def test_i_need_help_exact(self):
+        assert self._match("I need help.")
+
+    def test_i_cant_access_materials(self):
+        assert self._match("I can't access my materials")
+
+    def test_i_cant_find_anything(self):
+        assert self._match("I can't find anything")
+
+    def test_platform_mention_not_vague(self):
+        # "I can't access Cengage" should NOT match vague patterns
+        # (no platform keyword in patterns — this tests that specific platform sentences
+        # don't accidentally match generic vague patterns)
+        assert not self._match("I can't access Cengage MindTap")
+
+    def test_specific_refund_question_not_vague(self):
+        assert not self._match("What is the textbook refund policy?")
+
+    def test_greeting_not_vague(self):
+        assert not self._match("Hello, can you help me?")
+
+
+# ── SlotExtractor ─────────────────────────────────────────────────────────────
+
+class TestExtractPlatform:
+    def test_cengage_detected(self):
+        assert extract_platform("I can't access Cengage") is not None
+
+    def test_vitalsource_detected(self):
+        result = extract_platform("my VitalSource book won't load")
+        assert result is not None
+
+    def test_no_platform_returns_none(self):
+        assert extract_platform("my book is missing") is None
+
+    def test_ambiguous_two_platforms_returns_none(self):
+        # Two platforms mentioned — should return None (ambiguous)
+        result = extract_platform("I have Cengage and VitalSource")
+        assert result is None
+
+    def test_case_insensitive(self):
+        result = extract_platform("CENGAGE MINDTAP won't load")
+        assert result is not None
+
+
+class TestExtractIssueType:
+    def test_access_signal(self):
+        assert extract_issue_type("I can't access the book") == "access"
+
+    def test_missing_signal(self):
+        assert extract_issue_type("my textbook is missing") == "missing"
+
+    def test_account_signal(self):
+        assert extract_issue_type("I forgot my password") == "account"
+
+    def test_no_signal_returns_none(self):
+        assert extract_issue_type("general question") is None
+
+    def test_account_priority_over_access(self):
+        assert extract_issue_type("I can't login to my account") == "account"
+
+
+class TestExtractCourseCode:
+    def test_standard_code(self):
+        assert extract_course_code("for CS101 class") == "CS101"
+
+    def test_code_with_space(self):
+        result = extract_course_code("ENGL 1301 textbook")
+        assert result == "ENGL1301"
+
+    def test_no_code_returns_none(self):
+        assert extract_course_code("I need help with my book") is None
+
+    def test_code_case_insensitive(self):
+        result = extract_course_code("class cs101 is missing book")
+        assert result == "CS101"
+
+
+class TestExtractMaterialType:
+    def test_textbook(self):
+        assert extract_material_type("my textbook is missing") == "textbook"
+
+    def test_ebook(self):
+        assert extract_material_type("the ebook won't open") == "textbook"
+
+    def test_workbook(self):
+        assert extract_material_type("the workbook is not there") == "workbook"
+
+    def test_lab(self):
+        assert extract_material_type("my lab manual is gone") == "lab"
+
+    def test_no_material_returns_none(self):
+        assert extract_material_type("I have a question") is None
+
+
+# ── Flow functions ────────────────────────────────────────────────────────────
+
+class TestIsVagueMessage:
+    def test_true_for_vague(self):
+        assert is_vague_message("I don't have my textbook")
+
+    def test_false_for_specific(self):
+        assert not is_vague_message("How do I access Cengage MindTap?")
+
+    def test_false_for_greeting(self):
+        assert not is_vague_message("Hi there!")
+
+
+class TestShouldEnterIntake:
+    def _empty_session(self):
+        return {}
+
+    def test_enters_for_vague_message_no_platform(self):
+        assert should_enter_intake("I don't have my textbook", self._empty_session())
+
+    def test_skips_when_platform_detected(self):
+        # VitalSource alias in message — no intake needed
+        assert not should_enter_intake("my VitalSource book is missing", self._empty_session())
+
+    def test_skips_when_intake_profile_active(self):
+        session = {"intake_profile": {"platform": None, "issue_type": None, "turns_spent": 1, "original_message": "x", "material_type": None, "course_code": None}}
+        assert not should_enter_intake("I don't have my book", session)
+
+    def test_skips_when_awaiting_platform_type(self):
+        session = {"awaiting_platform_type": True}
+        assert not should_enter_intake("I don't have my book", session)
+
+    def test_skips_when_awaiting_publisher_list(self):
+        session = {"awaiting_publisher_list_response": True}
+        assert not should_enter_intake("I don't have my book", session)
+
+    def test_skips_for_non_vague_message(self):
+        assert not should_enter_intake("What is the refund policy?", self._empty_session())
+
+
+class TestUpdateProfile:
+    def test_fills_platform(self):
+        p = IntakeProfile(original_message="help")
+        p = update_profile(p, "I use Cengage MindTap")
+        assert p.platform is not None
+
+    def test_fills_issue_type(self):
+        p = IntakeProfile(original_message="help", platform="CENGAGE")
+        p = update_profile(p, "I can't access it")
+        assert p.issue_type == "access"
+
+    def test_increments_turns(self):
+        p = IntakeProfile(original_message="help", turns_spent=1)
+        p = update_profile(p, "cengage")
+        assert p.turns_spent == 2
+
+    def test_does_not_overwrite_existing_platform(self):
+        p = IntakeProfile(original_message="help", platform="CENGAGE")
+        p = update_profile(p, "I use VitalSource now")
+        assert p.platform == "CENGAGE"
+
+
+class TestNextQuestion:
+    def test_asks_platform_first(self):
+        p = IntakeProfile()
+        q = intake_next_question(p)
+        assert q == NEXT_QUESTION["platform"]
+
+    def test_asks_issue_after_platform(self):
+        p = IntakeProfile(platform="CENGAGE")
+        q = intake_next_question(p)
+        assert q == NEXT_QUESTION["issue_type"]
+
+    def test_none_when_complete(self):
+        p = IntakeProfile(platform="CENGAGE", issue_type="access")
+        assert intake_next_question(p) is None
+
+    def test_none_when_expired(self):
+        p = IntakeProfile(turns_spent=3)
+        assert intake_next_question(p) is None
+
+
+class TestIntakeFallbackMessage:
+    def test_returns_string(self):
+        assert isinstance(intake_fallback_message(), str)
+        assert len(intake_fallback_message()) > 0
+
+    def test_matches_constant(self):
+        assert intake_fallback_message() == INTAKE_FALLBACK_MESSAGE
+
+
+# ── Multi-turn lifecycle tests ────────────────────────────────────────────────
+
+class TestMultiTurnLifecycle:
+    """
+    Simulate the call sequence that app/main.py would perform.
+    """
+
+    def _new_session(self) -> dict:
+        return {}
+
+    def _display_names(self) -> dict:
+        return {"CENGAGE": "Cengage MindTap", "VITALSOURCE": "VitalSource"}
+
+    def test_full_two_turn_completion(self):
+        """Vague → platform answer → issue answer → complete."""
+        session = self._new_session()
+
+        # Turn 1: vague message enters intake
+        msg1 = "I don't have my textbook"
+        assert should_enter_intake(msg1, session)
+        profile = IntakeProfile(original_message=msg1)
+        profile = update_profile(profile, msg1)
+        assert not intake_is_complete(profile)
+        q1 = intake_next_question(profile)
+        assert "platform" in q1.lower() or "publisher" in q1.lower()
+        session["intake_profile"] = profile.to_dict()
+
+        # Turn 2: student says "Cengage" — fills platform slot
+        msg2 = "It's Cengage MindTap"
+        profile = IntakeProfile.from_dict(session["intake_profile"])
+        profile = update_profile(profile, msg2)
+        assert profile.platform is not None
+        assert not intake_is_complete(profile)  # still need issue_type
+        q2 = intake_next_question(profile)
+        assert "issue" in q2.lower() or "problem" in q2.lower() or "trouble" in q2.lower()
+        session["intake_profile"] = profile.to_dict()
+
+        # Turn 3: student says "I can't access it" — fills issue_type
+        msg3 = "I can't access it"
+        profile = IntakeProfile.from_dict(session["intake_profile"])
+        profile = update_profile(profile, msg3)
+        assert intake_is_complete(profile)
+        session["intake_profile"] = None
+
+        enriched = profile.build_enriched_query(self._display_names())
+        assert "Cengage MindTap" in enriched
+        assert "access" in enriched
+
+    def test_single_turn_completion(self):
+        """Message already contains platform + issue signals → complete after first update."""
+        session = self._new_session()
+        # Not truly vague — contains both platform and issue. should_enter_intake would
+        # return False for this (platform detected). But we test update_profile directly.
+        msg = "I can't access my Cengage textbook"
+        profile = IntakeProfile(original_message=msg)
+        profile = update_profile(profile, msg)
+        assert intake_is_complete(profile)
+
+    def test_expiry_after_max_turns(self):
+        """After _MAX_INTAKE_TURNS turns with no completion, profile expires."""
+        session = self._new_session()
+        msg1 = "I don't have my textbook"
+        profile = IntakeProfile(original_message=msg1)
+
+        for _ in range(3):
+            profile = update_profile(profile, "I don't know")
+
+        assert profile.is_expired()
+        assert not intake_is_complete(profile)
+        assert intake_next_question(profile) is None
+
+    def test_bypass_when_platform_in_first_message(self):
+        """Messages that mention a platform skip intake entirely."""
+        session = self._new_session()
+        msg = "I can't access VitalSource"
+        assert not should_enter_intake(msg, session)
+
+    def test_safety_not_bypassed_by_intake_flag(self):
+        """
+        Intake session flag does NOT change should_enter_intake for same session —
+        the mid-intake path is handled by the non-None intake_profile check.
+        """
+        session = {"intake_profile": {"platform": None, "issue_type": None, "turns_spent": 1, "original_message": "x", "material_type": None, "course_code": None}}
+        # A vague follow-up should NOT re-enter intake (mid-intake is handled separately)
+        assert not should_enter_intake("I still don't have my book", session)

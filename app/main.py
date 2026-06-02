@@ -61,6 +61,15 @@ from app.config.loader import (
     PLATFORMS_FOR_API,
 )
 
+from app.intake.models import IntakeProfile
+from app.intake.flow import (
+    should_enter_intake,
+    update_profile,
+    next_question as intake_next_question,
+    intake_is_complete,
+    intake_fallback_message,
+)
+
 from app.admin import admin_router
 from fastapi.responses import FileResponse
 from app.admin_auth import verify_admin_credentials
@@ -2416,6 +2425,91 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 debug_mode=debug_mode,
             )
 
+        # ── Intake: mid-flow turn (existing intake_profile in session) ───────────
+        _raw_profile = session.get("intake_profile")
+        if _raw_profile is not None:
+            profile = IntakeProfile.from_dict(_raw_profile)
+            profile = update_profile(profile, message)
+            if intake_is_complete(profile):
+                # Slots filled — enrich query and fall through to normal RAG.
+                print(
+                    f"[INTAKE] Complete: platform={profile.platform} "
+                    f"issue={profile.issue_type} after {profile.turns_spent} turn(s)"
+                )
+                session["intake_profile"] = None
+                # Seed session flags so existing RAG path picks up correctly.
+                session["stored_platform"] = profile.platform
+                session["stored_intent"] = "IA_ACCESS_ISSUE"
+                # Continue below with enriched retrieval query.
+                _enriched_query = profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
+            elif profile.is_expired():
+                print(f"[INTAKE] Expired after {profile.turns_spent} turn(s) — using fallback")
+                session["intake_profile"] = None
+                fallback = intake_fallback_message()
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": fallback})
+                session["last_activity"] = datetime.now()
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=fallback,
+                    source="INTAKE",
+                    article_link=None,
+                    confidence=0.0,
+                    retrieval_time_ms=0,
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[],
+                    debug_mode=debug_mode,
+                )
+            else:
+                question = intake_next_question(profile)
+                session["intake_profile"] = profile.to_dict()
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": question})
+                session["last_activity"] = datetime.now()
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=question,
+                    source="INTAKE",
+                    article_link=None,
+                    confidence=0.0,
+                    retrieval_time_ms=0,
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[],
+                    debug_mode=debug_mode,
+                )
+        else:
+            _enriched_query = None
+
+        # ── Intake: first vague message — start intake if appropriate ─────────
+        if should_enter_intake(message, session):
+            new_profile = IntakeProfile(original_message=message)
+            new_profile = update_profile(new_profile, message)
+            if intake_is_complete(new_profile):
+                # Unlikely on first turn, but handle gracefully.
+                session["intake_profile"] = None
+                _enriched_query = new_profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
+            else:
+                question = intake_next_question(new_profile)
+                session["intake_profile"] = new_profile.to_dict()
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": question})
+                session["last_activity"] = datetime.now()
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=question,
+                    source="INTAKE",
+                    article_link=None,
+                    confidence=0.0,
+                    retrieval_time_ms=0,
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[],
+                    debug_mode=debug_mode,
+                )
+        # ─────────────────────────────────────────────────────────────────────
+
         # Initialize variables
         platform = None
         # Detect platform early for direct mentions
@@ -2425,6 +2519,11 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         is_vague_query = False
         explicit_textbook_selection = False
         skip_platform_ambiguity_clarification = False
+
+        # If intake just completed, override retrieval query with enriched version.
+        if _enriched_query is not None:
+            retrieval_query = _enriched_query
+            platform = platform or session.get("stored_platform")
 
         if is_ambiguous_refund_policy_query(message):
             clarification = ambiguous_refund_clarification_reply()
