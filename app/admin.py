@@ -63,11 +63,62 @@ def _validate_txt_content(content: str) -> Optional[str]:
     return None
 
 
-def _copy_txt(content: bytes, filename: str, content_type: str) -> Path:
+def _content_root(content_type: str) -> Path:
+    return FAQ_DIR if content_type == "faq" else INSTRUCTIONS_DIR
+
+
+def _safe_relative_path(value: str | None, *, allow_empty: bool = False) -> Path:
+    """
+    Normalize a staff-provided relative path and reject absolute/traversal paths.
+    """
+    raw = (value or "").strip().replace("\\", "/")
+    if not raw:
+        if allow_empty:
+            return Path()
+        raise ValueError("Path must not be empty.")
+
+    candidate = Path(raw)
+    if candidate.is_absolute() or any(part in {"..", ""} for part in candidate.parts):
+        raise ValueError("Use a relative path inside the content directory.")
+    return candidate
+
+
+def _resolve_content_path(root: Path, relative_path: str) -> Path:
+    rel_path = _safe_relative_path(relative_path)
+    resolved_root = root.resolve()
+    resolved_target = (root / rel_path).resolve()
+    if resolved_root != resolved_target and resolved_root not in resolved_target.parents:
+        raise ValueError("Path escapes the content directory.")
+    return resolved_target
+
+
+def _content_relative_path(path: Path, root: Path) -> str:
+    return path.relative_to(root).as_posix()
+
+
+def _list_txt_files(root: Path) -> list[str]:
+    if not root.exists():
+        return []
+    return sorted(
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*.txt")
+        if path.is_file()
+    )
+
+
+def _copy_txt(
+    content: bytes,
+    filename: str,
+    content_type: str,
+    target_folder: str | None = None,
+) -> Path:
     """Save uploaded .txt bytes to the correct data/ subfolder."""
-    dest_dir = FAQ_DIR if content_type == "faq" else INSTRUCTIONS_DIR
+    dest_root = _content_root(content_type)
+    safe_filename = _safe_relative_path(filename).name
+    safe_folder = _safe_relative_path(target_folder, allow_empty=True)
+    dest_dir = _resolve_content_path(dest_root, safe_folder.as_posix()) if safe_folder.parts else dest_root
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest_path = dest_dir / filename
+    dest_path = dest_dir / safe_filename
     dest_path.write_bytes(content)
     return dest_path
 
@@ -225,6 +276,7 @@ def _upload_all_pdfs(
 async def add_content(
     content_type: str             = Form(...),
     txt_file:     UploadFile      = File(...),
+    target_folder: str | None      = Form(default=None),
     pdf_files:    List[UploadFile] = File(default=[]),
     pdf_labels:   List[str]        = Form(default=[]),
 ):
@@ -309,13 +361,14 @@ async def add_content(
 
     # ── Copy .txt to data/ subfolder ───────────────────────────────────────────
     try:
-        txt_dest = _copy_txt(txt_bytes, txt_file.filename, content_type)
+        txt_dest = _copy_txt(txt_bytes, txt_file.filename, content_type, target_folder)
     except Exception as e:
         return JSONResponse(status_code=500, content={
             "success":     False,
             "failed_step": "upload_txt",
             "message":     f"Failed to save file: {str(e)}"
         })
+    txt_relative_path = _content_relative_path(txt_dest, _content_root(content_type))
 
     # ── Run FAISS ingestion ────────────────────────────────────────────────────
     try:
@@ -343,7 +396,7 @@ async def add_content(
     if pdfs_uploaded > 0:
         successful_doc_ids = [r["doc_id"] for r in pdf_results if r.get("doc_id")]
         try:
-            _write_txt_to_pdf_map(txt_file.filename, successful_doc_ids)
+            _write_txt_to_pdf_map(txt_relative_path, successful_doc_ids)
         except Exception as e:
             print(f"[WARN] txt_to_pdf_map write failed: {e}")
 
@@ -357,6 +410,7 @@ async def add_content(
     return JSONResponse(content={
         "success":        True,
         "txt_dest":       str(txt_dest),
+        "txt_relative_path": txt_relative_path,
         "ingest_detail":  ingest_detail,
         "pdf_results":    pdf_results,
         "pdfs_uploaded":  pdfs_uploaded,
@@ -369,8 +423,8 @@ async def add_content(
 @admin_router.get("/list-content")
 async def list_content():
     """Return sorted lists of all .txt files in data/faqs/ and data/instructions/."""
-    faqs         = sorted([f.name for f in FAQ_DIR.glob("*.txt")])         if FAQ_DIR.exists()         else []
-    instructions = sorted([f.name for f in INSTRUCTIONS_DIR.glob("*.txt")]) if INSTRUCTIONS_DIR.exists() else []
+    faqs         = _list_txt_files(FAQ_DIR)
+    instructions = _list_txt_files(INSTRUCTIONS_DIR)
     return JSONResponse(content={"faqs": faqs, "instructions": instructions})
 
 
@@ -401,10 +455,16 @@ async def remove_content(
             "message": "content_type must be 'faq' or 'instruction'."
         })
 
-    target_dir  = FAQ_DIR if content_type == "faq" else INSTRUCTIONS_DIR
-    target_file = target_dir / filename
+    target_dir  = _content_root(content_type)
+    try:
+        target_file = _resolve_content_path(target_dir, filename)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={
+            "success": False,
+            "message": str(exc)
+        })
 
-    if not target_file.exists():
+    if not target_file.exists() or not target_file.is_file():
         return JSONResponse(status_code=404, content={
             "success": False,
             "message": f"'{filename}' not found in the {content_type} directory."

@@ -153,6 +153,30 @@ def extract_source_filename(retrieval_context: str) -> Optional[str]:
     return None
 
 
+def get_retrieval_source_filename(retrieval_result: Optional[Dict]) -> Optional[str]:
+    """
+    Return the source .txt path for a retrieval result.
+
+    Prefer structured metadata because parent-source expansion can replace the
+    raw chunk context and remove the [META:{...}] header. Fall back to legacy
+    context parsing for older retrieval results and flat-file deployments.
+    """
+    if not retrieval_result:
+        return None
+
+    metadata = retrieval_result.get("metadata")
+    if isinstance(metadata, dict):
+        source_file = metadata.get("source_file")
+        if isinstance(source_file, str) and source_file.strip():
+            return source_file.strip()
+
+    context = retrieval_result.get("context")
+    if isinstance(context, str) and context:
+        return extract_source_filename(context)
+
+    return None
+
+
 def get_pdf_from_firestore(doc_id: str) -> Optional[Dict]:
     """Fetch a single PDF document from Firestore by doc_id"""
     try:
@@ -261,7 +285,7 @@ def get_pdf_recommendations(
 
     # ===== PRIMARY RECOMMENDATIONS (from retrieval) =====
     if retrieval_result and retrieval_result.get("context"):
-        source_filename = extract_source_filename(retrieval_result["context"])
+        source_filename = get_retrieval_source_filename(retrieval_result)
 
         if source_filename:
             retrieval_score = retrieval_result.get("score", 0.0)
