@@ -1,0 +1,94 @@
+# config/intents.yaml
+# ---------------------------------------------------------------------------
+# Keyword lists used by detect_intent() to classify incoming messages.
+# Edit here -- no code changes needed.
+# ---------------------------------------------------------------------------
+
+# Triggers GENERAL_FAQ when present (unless troubleshooting context also present)
+opt_out_policy_signals:
+  - opt out
+  - opt-out
+  - opting out
+  - opted out
+  - physical textbook
+  - physical copy
+  - print textbook
+  - buy a textbook
+  - purchase textbook
+  - purchase a textbook
+  - buy textbook
+  - available in the
+  - student store
+
+# Suppresses opt_out_policy_signals when these appear alongside them
+opt_out_troubleshooting_exclusions:
+  - cannot access
+  - "can't access"
+  - cant access
+  - no read now
+  - read now button
+  - read now
+  - not showing
+  - only shows
+  - only gives
+  - only option
+  - green check
+  - checkmark
+  - opted in
+  - still cannot
+  - "still can't"
+  - still cant
+
+# Triggers IA_ACCESS_ISSUE when combined with a platform or textbook mention
+ia_keywords:
+  - opted in
+  - "can't access"
+  - cant access
+  - cannot access
+  - unable to access
+  - trouble accessing
+  - access issue
+  - access problem
+  - not working
+  - "doesn't work"
+  - doesnt work
+  - "won't open"
+  - wont open
+  - need access
+  - need to access
+  - how do i access
+  - how to access
+  - access
+  - help with
+  - help
+  - having trouble
+  - trouble with
+  - having issues
+  - issues with
+  - email is wrong
+  - wrong email
+  - email error
+  - incorrect email
+  - email address is wrong
+  - says my email
+  - create account
+  - set up account
+  - create a vitalsource
+  - need to create
+
+# Triggers GENERAL_FAQ for informational questions not involving platform access
+informational_patterns:
+  - what is
+  - what's
+  - what are
+  - how does
+  - how do
+  - how can i
+  - tell me about
+  - explain
+  - describe
+  - can you tell me
+  - i want to know
+  - help me understand
+  - definition of
+  - define

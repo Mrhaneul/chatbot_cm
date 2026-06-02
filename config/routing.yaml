@@ -1,0 +1,19 @@
+# config/routing.yaml
+# ---------------------------------------------------------------------------
+# Greeting detection keywords and the reply Lance sends when a greeting is
+# the entire message.  Edit here -- no code changes needed.
+# ---------------------------------------------------------------------------
+
+greeting:
+  keywords:
+    - hi
+    - hello
+    - hey
+    - good morning
+    - good afternoon
+    - good evening
+    - greetings
+  reply: >-
+    Hi! I'm Lance, your Campus Store AI Assistant.
+    I can help with Immediate Access, textbook access, returns, and store policies.
+    What can I help you with today?

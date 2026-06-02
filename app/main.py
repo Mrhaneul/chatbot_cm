@@ -45,6 +45,21 @@ from app.safety import run_safety_gate, get_safety_response, safety_source_label
 from app.safety.deterministic_rules import check_deterministic as _safety_check_deterministic
 
 from app.utils.logging_config import configure_logging
+from app.config.loader import (
+    PLATFORM_ALIASES,
+    PLATFORM_DISPLAY_NAMES,
+    PLATFORM_RETRIEVAL_KEY,
+    PUBLISHER_LIST_TEXT,
+    PUBLISHER_LIST_MAP,
+    GREETING_KEYWORDS,
+    GREETING_REPLY,
+    PLATFORM_CLARIFICATION_MESSAGE,
+    IA_KEYWORDS,
+    OPT_OUT_POLICY_SIGNALS,
+    OPT_OUT_TROUBLESHOOTING_EXCLUSIONS,
+    INFORMATIONAL_PATTERNS,
+    PLATFORMS_FOR_API,
+)
 
 from app.admin import admin_router
 from fastapi.responses import FileResponse
@@ -112,19 +127,6 @@ CORS_ORIGINS = parse_csv_env("CORS_ORIGINS", "http://localhost:3000")
 ENABLE_DEBUG_ROUTES = parse_bool_env("ENABLE_DEBUG_ROUTES", default=False)
 ENABLE_SAFETY_FILTER = parse_bool_env("ENABLE_SAFETY_FILTER", default=True)
 ENABLE_SAFETY_CLASSIFIER = parse_bool_env("ENABLE_SAFETY_CLASSIFIER", default=True)
-
-GREETING_KEYWORDS = ["hi", "hello", "hey", "good morning", "good afternoon", "good evening", "greetings"]
-GREETING_REPLY = (
-    "Hi! I'm Lance, your Campus Store AI Assistant. "
-    "I can help with Immediate Access, textbook access, returns, and store policies. "
-    "What can I help you with today?"
-)
-PLATFORM_CLARIFICATION_MESSAGE = (
-    "I can help you with textbook access! To give you the most accurate instructions, "
-    "could you please specify which platform or publisher your textbook uses? "
-    "Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, "
-    "Sage, SimuCase, etc."
-)
 
 # Create FastAPI app FIRST
 app = FastAPI(title="Campus Store Chatbot (Session-Safe + Performance Tracking)")
@@ -194,83 +196,6 @@ async def readyz():
         return payload
     payload["status"] = "not_ready"
     raise HTTPException(status_code=503, detail=payload)
-
-PLATFORM_ALIASES: Dict[str, list[str]] = {
-    "CENGAGE": ["cengage", "mindtap", "cnow", "cnowv2"],
-    "MCGRAW_HILL": ["mcgraw", "mcgraw hill", "connect", "aleks"],
-    "PEARSON": ["pearson", "mylab", "mastering"],
-    "WILEY": ["wiley", "wileyplus"],
-    "MACMILLAN": ["macmillan", "achieve"],
-    "SAGE": ["sage", "vantage"],
-    "BEDFORD": ["bedford"],
-    "CLIFTON": ["clifton", "cliftonstrengths", "strengthsquest"],
-    "SIMUCASE": ["simucase", "simucace"],
-    "ZYBOOKS": ["zybooks", "zybook"],
-    "STUKENT": ["stukent"],
-    "VITALSOURCE": ["vitalsource"],
-    "INQUIZITIVE": [
-        "inquizitive",
-        "inquizitve",
-        "inquiztive",
-        "inquisitive",
-        "little seagull",
-        "norton",
-        "seagull handbook",
-    ],
-}
-
-# Maps detected platform keys to their FAISS index keys (for platforms that share an index).
-PLATFORM_RETRIEVAL_KEY: Dict[str, str] = {
-    "VITALSOURCE": "bedford",  # VitalSource and Bedford share the same Bookshelf platform/index
-}
-
-PLATFORM_DISPLAY_NAMES: Dict[str, str] = {
-    "CENGAGE": "Cengage MindTap",
-    "MCGRAW_HILL": "McGraw Hill Connect",
-    "PEARSON": "Pearson MyLab/Mastering",
-    "WILEY": "WileyPlus",
-    "MACMILLAN": "Macmillan Achieve",
-    "SAGE": "Sage Vantage",
-    "BEDFORD": "Bedford Bookshelf",
-    "CLIFTON": "CliftonStrengths",
-    "SIMUCASE": "SimuCase",
-    "ZYBOOKS": "zyBooks",
-    "STUKENT": "Stukent",
-    "VITALSOURCE": "VitalSource",
-    "INQUIZITIVE": "InQuizitive",
-}
-
-# ── Unrecognized-platform publisher list ──────────────────────────────────────
-PUBLISHER_LIST_TEXT = (
-    "1. Bedford Bookshelf\n"
-    "2. Pearson (MyLab, Modified, Mastering)\n"
-    "3. Cengage (MindTap, CNowV2)\n"
-    "4. Norton (InQuizitive)\n"
-    "5. McGraw Hill (Connect)\n"
-    "6. Macmillan / Mac Higher (Achieve)\n"
-    "7. Stukent\n"
-    "8. SimuCase\n"
-    "9. Sage\n"
-    "10. VitalSource\n"
-    "11. WileyPlus\n"
-    "12. ZyBooks (ZyLabs)"
-)
-
-# Maps numeric answers (1–12) to platform keys recognised by detect_platform_from_text
-PUBLISHER_LIST_MAP: Dict[str, str] = {
-    "1": "bedford",
-    "2": "pearson",
-    "3": "cengage",
-    "4": "inquizitive",
-    "5": "mcgraw",
-    "6": "macmillan",
-    "7": "stukent",
-    "8": "simucase",
-    "9": "sage",
-    "10": "vitalsource",
-    "11": "wiley",
-    "12": "zybooks",
-}
 
 # Merge dynamic registry entries (added by add_instruction.py)
 _registry = load_registry()
@@ -717,25 +642,12 @@ def detect_intent(message: str) -> str:
     normalized = message.lower()
 
     # Opt-out and physical textbook policy questions must go to FAQ, not IA troubleshooting.
-    # "access" in ia_keywords is too broad and would otherwise match "immediate access"
+    # "access" in IA_KEYWORDS is too broad and would otherwise match "immediate access"
     # in a policy question, misrouting it to IA_ACCESS_ISSUE.
-    opt_out_policy_signals = [
-        "opt out", "opt-out", "opting out", "opted out",
-        "physical textbook", "physical copy", "print textbook",
-        "buy a textbook", "purchase textbook", "purchase a textbook",
-        "buy textbook", "available in the", "student store",
-    ]
     # Guard: if troubleshooting context is present, the "opt out" text is likely
     # describing the Blackboard button ("Want to opt out?"), not asking about policy.
-    opt_out_troubleshooting_exclusions = [
-        "cannot access", "can't access", "cant access",
-        "no read now", "read now button", "read now",
-        "not showing", "only shows", "only gives", "only option",
-        "green check", "checkmark", "opted in",
-        "still cannot", "still can't", "still cant",
-    ]
-    if any(s in normalized for s in opt_out_policy_signals) and not any(
-        t in normalized for t in opt_out_troubleshooting_exclusions
+    if any(s in normalized for s in OPT_OUT_POLICY_SIGNALS) and not any(
+        t in normalized for t in OPT_OUT_TROUBLESHOOTING_EXCLUSIONS
     ):
         return "GENERAL_FAQ"
 
@@ -749,64 +661,8 @@ def detect_intent(message: str) -> str:
     if is_general_ia_question(message) or is_access_code_question(message):
         return "GENERAL_FAQ"
 
-    # ✨ Check for informational questions FIRST
-    informational_patterns = [
-        "what is",
-        "what's",
-        "what are",
-        "how does",
-        "how do",
-        "how can i",
-        "tell me about",
-        "explain",
-        "describe",
-        "can you tell me",
-        "i want to know",
-        "help me understand",
-        "definition of",
-        "define",
-    ]
-    
-    # Immediate Access AND Textbook troubleshooting keywords
-    ia_keywords = [
-        "opted in",
-        "can't access",
-        "cant access",
-        "cannot access",
-        "unable to access",
-        "trouble accessing",
-        "access issue",
-        "access problem",
-        "not working",
-        "doesn't work",
-        "doesnt work",
-        "won't open",
-        "wont open",
-        "need access",       
-        "need to access",     
-        "how do i access",    
-        "how to access",
-        "access",
-        "help with",
-        "help",
-        "having trouble",
-        "trouble with",
-        "having issues",       # ✨ NEW
-        "issues with",         # ✨ NEW
-        "email is wrong",
-        "wrong email",
-        "email error",
-        "incorrect email",
-        "email address is wrong",
-        "says my email",
-        "create account",
-        "set up account",
-        "create a vitalsource",
-        "need to create",
-    ]
-    
     # Check if any IA keyword is present AND mentions a platform OR textbook
-    has_ia_keyword = any(keyword in normalized for keyword in ia_keywords)
+    has_ia_keyword = any(keyword in normalized for keyword in IA_KEYWORDS)
     
     # Platform mentions include aliases from PLATFORM_ALIASES plus textbook synonyms.
     mentions_platform_or_textbook = (
@@ -834,7 +690,7 @@ def detect_intent(message: str) -> str:
         return "IA_ACCESS_ISSUE"
 
     # Treat informational questions as GENERAL_FAQ only when they are not IA/platform access issues.
-    if any(pattern in normalized for pattern in informational_patterns):
+    if any(pattern in normalized for pattern in INFORMATIONAL_PATTERNS):
         print("[INTENT DEBUG] Informational question detected")
         return "GENERAL_FAQ"
     
@@ -4844,20 +4700,7 @@ if not ENABLE_DEBUG_ROUTES:
 @app.get("/platforms")
 async def get_platforms():
     """
-    Returns a list of supported platforms from platforms.yaml.
+    Returns supported platforms from config/platforms.yaml via the config loader.
+    Each entry has 'key' (rag_key), 'display_name', and 'keywords' (aliases).
     """
-    try:
-        with open(cfg.PLATFORMS_CONFIG, "r", encoding="utf-8") as fh:
-            platforms_data = yaml.safe_load(fh)
-            return platforms_data.get("platforms", [])
-    except FileNotFoundError:
-        raise HTTPException(
-            status_code=500,
-            detail=f"platforms.yaml not found at {cfg.PLATFORMS_CONFIG}. "
-                   "Ensure the config file exists and is accessible."
-        )
-    except yaml.YAMLError as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error parsing platforms.yaml: {e}"
-        )
+    return PLATFORMS_FOR_API

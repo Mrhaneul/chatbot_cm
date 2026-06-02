@@ -779,6 +779,22 @@ Test flows:
 
 ## 6. Phase 3 — Move Hardcoded Routing and Platform Knowledge Into Admin-Editable Config
 
+**Status: Partially complete** — 2026-06-02
+
+Implementation delivered:
+- `config/platforms.yaml` — all 13 platform definitions (aliases, display names, retrieval key overrides, publisher list)
+- `config/routing.yaml` — greeting keywords and reply text
+- `config/clarification_flows.yaml` — platform clarification prompt
+- `config/intents.yaml` — ia_keywords, opt_out_policy_signals, opt_out_troubleshooting_exclusions, informational_patterns
+- `app/config/loader.py` — validates at startup, raises ConfigLoadError with path/field in message, exports typed constants
+- `/platforms` endpoint now reads from `config/platforms.yaml` through the config loader
+- `app/rag/metadata_filtering.py` — PLATFORM_ALIASES now sourced from config loader
+
+Major platform, intent, greeting, and clarification constants were externalized. Some procedural routing logic remains in main.py for later phases.
+
+Known limitation / two-file situation:
+- `app/rag/platforms.yaml` is retained for ingest.py and retriever.py document ingestion (keyword matching during index build). It is a different schema (ingest keywords vs. user-message aliases) and different audience (indexing pipeline vs. routing layer). These two files serve different purposes and are intentionally kept separate. A future Phase 3b could unify them if the schemas converge.
+
 ### Goal
 
 Prepare for future changes such as Blackboard → Canvas without requiring code edits.
