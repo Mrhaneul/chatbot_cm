@@ -69,6 +69,7 @@ from app.intake.flow import (
     intake_is_complete,
     intake_fallback_message,
 )
+from app.intake.llm_planner import run_intake_planner, should_run_planner, get_question_for_decision
 
 from app.admin import admin_router
 from app.feedback import feedback_router
@@ -2522,6 +2523,31 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     recommended_pdfs=[],
                     debug_mode=debug_mode,
                 )
+
+        # ── LLM intake planner (catches vague cases deterministic missed) ──────
+        # Only runs when neither mid-flow intake nor deterministic first-turn
+        # intake handled this message, and the message is topic-relevant.
+        if not _intake_completed and should_run_planner(message):
+            planner_decision = await run_intake_planner(message)
+            if planner_decision.action == "ASK_CLARIFICATION":
+                question = get_question_for_decision(planner_decision)
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": question})
+                session["last_activity"] = datetime.now()
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=question,
+                    source="INTAKE",
+                    article_link=None,
+                    confidence=0.0,
+                    retrieval_time_ms=0,
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[],
+                    debug_mode=debug_mode,
+                )
+            if planner_decision.enriched_query:
+                retrieval_query = planner_decision.enriched_query
         # ─────────────────────────────────────────────────────────────────────
 
         # Initialize variables
@@ -4447,6 +4473,21 @@ async def chat_stream(payload: ChatRequest):
                     yield f"data: {json.dumps({'type': 'response', 'token': question, 'done': False})}\n\n"
                     yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
                     return
+
+            else:
+                # ── LLM intake planner (catches vague cases deterministic missed) ──
+                if should_run_planner(message):
+                    planner_decision = await run_intake_planner(message)
+                    if planner_decision.action == "ASK_CLARIFICATION":
+                        question = get_question_for_decision(planner_decision)
+                        session["history"].append({"role": "user", "content": message})
+                        session["history"].append({"role": "assistant", "content": question})
+                        session["last_activity"] = datetime.now()
+                        yield f"data: {json.dumps({'type': 'response', 'token': question, 'done': False})}\n\n"
+                        yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                        return
+                    if planner_decision.enriched_query:
+                        retrieval_query = planner_decision.enriched_query
 
             # Ask for platform before retrieval — prevents wrong-platform hallucination.
             # Skip when already overridden to GENERAL_FAQ (e.g. browser cache issue).

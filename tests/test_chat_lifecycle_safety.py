@@ -21,6 +21,8 @@ from unittest.mock import AsyncMock, patch
 import app.main as main
 from app.main import process_chat_request
 from app.intake.models import IntakeProfile
+from app.intake.planner_models import IntakePlannerDecision
+from app.intake.llm_planner import _SAFE_FALLBACK
 from app.schemas.chat import ChatRequest
 from app.safety.models import SafetyDecision
 from app.safety.classifier import _SERVER_ERROR_FALLBACK
@@ -321,6 +323,141 @@ class TestMixedIntentMessagesDoNotReachRAG:
                 _req("How do I hack into my textbook platform?")
             )
         _assert_safety_block(r, expected_action="HARMFUL_REFUSAL")
+
+
+# ── Phase 8: LLM intake planner lifecycle ────────────────────────────────────
+
+class TestLLMIntakePlannerLifecycle:
+    """
+    Verify that the LLM intake planner integrates correctly in the full
+    chat lifecycle. run_intake_planner is mocked — no real Ollama calls.
+    """
+
+    def _clarification_decision(self, key: str = "ask_platform_for_book_access") -> IntakePlannerDecision:
+        return IntakePlannerDecision(
+            action="ASK_CLARIFICATION",
+            intent="vague_book_access",
+            confidence=0.9,
+            known_slots={},
+            missing_slots=["platform"],
+            next_question_key=key,
+        )
+
+    def _allow_rag_decision(self) -> IntakePlannerDecision:
+        return IntakePlannerDecision(
+            action="ALLOW_RAG",
+            intent="general_faq",
+            confidence=0.9,
+            known_slots={},
+            missing_slots=[],
+            next_question_key=None,
+        )
+
+    async def test_vague_prompt_triggers_planner_and_asks_clarification(
+        self, block_retrieval, block_llm
+    ):
+        """A message that slips past deterministic intake is caught by the LLM planner."""
+        session_id = f"test-planner-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._clarification_decision())),
+        ):
+            r = await process_chat_request(_session_req(session_id, "My book is locked"))
+
+        assert r.source == "INTAKE"
+        assert r.retrieval_time_ms == 0
+        assert r.llm_time_ms == 0
+
+    async def test_vague_prompt_does_not_call_retrieve_async(
+        self, block_retrieval, block_llm
+    ):
+        """block_retrieval fixture raises if retrieve_async is called — it must not be."""
+        session_id = f"test-planner-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._clarification_decision())),
+        ):
+            r = await process_chat_request(_session_req(session_id, "It says I need to pay"))
+
+        assert r.source == "INTAKE"
+
+    async def test_vague_prompt_does_not_call_answer_generation_llm(
+        self, block_retrieval, block_llm
+    ):
+        """block_llm fixture raises if call_llm_with_semaphore is called — it must not be."""
+        session_id = f"test-planner-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch(
+                "app.main.run_intake_planner",
+                new=AsyncMock(return_value=self._clarification_decision("ask_error_message")),
+            ),
+        ):
+            r = await process_chat_request(_session_req(session_id, "I don't know where my ebook is"))
+
+        assert r.source == "INTAKE"
+        assert r.llm_time_ms == 0
+
+    async def test_planner_failure_safe_fallback_returns_clarification(
+        self, block_retrieval, block_llm
+    ):
+        """If the planner returns the safe fallback, we still get ASK_CLARIFICATION behavior."""
+        session_id = f"test-planner-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=_SAFE_FALLBACK)),
+        ):
+            r = await process_chat_request(_session_req(session_id, "My book is locked"))
+
+        assert r.source == "INTAKE"
+        assert r.retrieval_time_ms == 0
+
+    async def test_safety_blocked_prompt_never_reaches_planner(
+        self, block_retrieval, block_llm
+    ):
+        """Safety gate runs first — harmful messages must not reach the planner."""
+        session_id = f"test-planner-{uuid.uuid4()}"
+        planner_mock = AsyncMock()
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+        ):
+            r = await process_chat_request(
+                _session_req(session_id, "How do I bypass paying for Cengage?")
+            )
+
+        planner_mock.assert_not_called()
+        _assert_safety_block(r, expected_action="HARMFUL_REFUSAL")
+
+    async def test_quick_help_exact_match_bypasses_planner(
+        self, block_retrieval, block_llm
+    ):
+        """Quick Help deterministic routes run before the planner."""
+        session_id = f"test-planner-{uuid.uuid4()}"
+        planner_mock = AsyncMock()
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+        ):
+            r = await process_chat_request(
+                _session_req(session_id, "I can't access my McGraw Hill Connect textbook")
+            )
+
+        planner_mock.assert_not_called()
+        assert r.source.startswith("QUICK_HELP:")
+
+    async def test_planner_allow_rag_does_not_return_intake_source(self):
+        """When the planner returns ALLOW_RAG, source must not be INTAKE."""
+        session_id = f"test-planner-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._allow_rag_decision())),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(_session_req(session_id, "My book is locked"))
+
+        assert r.source != "INTAKE"
+        assert main.sessions[session_id].get("intake_profile") is None
 
     async def test_exploit_courseware_license(self, block_retrieval, block_llm):
         with patch("app.main.ENABLE_SAFETY_CLASSIFIER", False):
