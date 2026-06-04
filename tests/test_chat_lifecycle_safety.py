@@ -185,6 +185,41 @@ class TestIntakeLifecycleRouting:
         assert r.retrieval_time_ms == 0
         assert r.llm_time_ms == 0
 
+    # ── Book access regression (fix/intake-vague-book-access) ─────────────────
+
+    async def test_cant_access_to_my_book_enters_intake_without_rag_or_llm(
+        self, block_retrieval, block_llm
+    ):
+        """'I can't access to my book' is vague — must enter intake, not RAG."""
+        session_id = f"test-intake-{uuid.uuid4()}"
+        with patch("app.main.ENABLE_SAFETY_CLASSIFIER", False):
+            r = await process_chat_request(
+                _session_req(session_id, "I can't access to my book")
+            )
+
+        assert r.source == "INTAKE", (
+            f"Vague book access message should enter intake, got source={r.source!r}"
+        )
+        assert r.retrieval_time_ms == 0
+        assert r.llm_time_ms == 0
+        assert main.sessions[session_id]["intake_profile"] is not None
+
+    async def test_platform_specific_book_access_bypasses_intake_and_reaches_rag(self):
+        """'I can't access my Cengage MindTap book' has platform+issue — must skip intake."""
+        session_id = f"test-intake-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(
+                _session_req(session_id, "I can't access my Cengage MindTap book")
+            )
+
+        assert r.source != "INTAKE", (
+            f"Platform-specific access message should bypass intake, got source={r.source!r}"
+        )
+        assert main.sessions[session_id].get("intake_profile") is None
+
     async def test_specific_in_scope_question_bypasses_intake_and_reaches_normal_rag(self):
         session_id = f"test-intake-{uuid.uuid4()}"
         retrieve_calls = []
