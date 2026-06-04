@@ -33,6 +33,27 @@ The recommended strategy is:
 
 ---
 
+## Milestone: Maintainability + Safety Refactor Complete
+
+Completed phases:
+
+1. Safety Gate
+2. Config Externalization
+3. Interactive Intake
+4. Recursive Knowledge Directories
+5. Admin Content Editing
+6. Feedback Review Workflow
+
+Known limitations:
+
+- Vision-only harmful image content is not fully safety-classified.
+- Feedback storage is JSONL MVP storage; future high-concurrency deployment should use SQLite, Firestore, or another transactional store.
+- Existing production TXT files have not yet been moved into nested directories.
+- Some procedural routing logic remains in `main.py`.
+- `app/rag/platforms.yaml` remains for ingest/retrieval compatibility.
+
+---
+
 ## 1. Guiding Principles
 
 ### 1.1 Do not fine-tune first
