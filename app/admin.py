@@ -43,6 +43,11 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, B
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from app.admin_auth import verify_admin_credentials
+from app.feedback import (
+    FeedbackReviewUpdate,
+    list_feedback_records,
+    update_feedback_review,
+)
 from app.rag.metadata import parse_front_matter_text
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -764,6 +769,64 @@ async def remove_content(
 
 
 # ── Hot-reload index ─────────────────────────────────────────────────────────
+
+# ── Feedback review ───────────────────────────────────────────────────────────
+
+@admin_router.get("/feedback")
+async def list_feedback(
+    low_rating: bool = False,
+    source_label: str | None = None,
+    date: str | None = None,
+    reviewed: bool | None = None,
+    resolved: bool | None = None,
+):
+    """List saved student feedback for admin review."""
+    try:
+        records = list_feedback_records(
+            low_rating=low_rating,
+            source_label=source_label,
+            date=date,
+            reviewed=reviewed,
+            resolved=resolved,
+        )
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={
+            "success": False,
+            "message": f"Failed to load feedback: {exc}",
+        })
+    return JSONResponse(content={
+        "success": True,
+        "feedback": records,
+        "count": len(records),
+    })
+
+
+@admin_router.patch("/feedback/{feedback_id}")
+async def update_feedback(feedback_id: str, payload: FeedbackReviewUpdate = Body(...)):
+    """Mark feedback reviewed/resolved for admin triage."""
+    try:
+        record = update_feedback_review(feedback_id, payload)
+    except FileNotFoundError as exc:
+        return JSONResponse(status_code=404, content={
+            "success": False,
+            "message": str(exc),
+        })
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={
+            "success": False,
+            "message": str(exc),
+        })
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={
+            "success": False,
+            "message": f"Failed to update feedback: {exc}",
+        })
+    return JSONResponse(content={
+        "success": True,
+        "feedback": record,
+        "message": "Feedback review status updated.",
+    })
+
 
 @admin_router.post("/reload-index")
 async def reload_index():

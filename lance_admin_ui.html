@@ -151,7 +151,8 @@
   .type-selector { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
   .type-option { position: relative; }
-  .type-option input[type="radio"] { position: absolute; opacity: 0; width: 0; }
+  .type-option input[type="radio"],
+  .type-option input[type="checkbox"] { position: absolute; opacity: 0; width: 0; }
 
   .type-option label {
     display: block;
@@ -204,7 +205,8 @@
   .drop-zone.has-file .drop-primary { color: var(--success); }
 
   /* Text input */
-  input[type="text"] {
+  input[type="text"],
+  input[type="date"] {
     width: 100%;
     padding: 10px 14px;
     border: 1px solid var(--border);
@@ -217,12 +219,62 @@
     outline: none;
   }
 
-  input[type="text"]:focus {
+  input[type="text"]:focus,
+  input[type="date"]:focus {
     border-color: var(--cbu-blue);
     box-shadow: 0 0 0 3px rgba(0,37,84,0.08);
   }
 
   input[type="text"]::placeholder { color: var(--text-muted); }
+
+  .feedback-list { display: grid; gap: 12px; }
+  .feedback-item {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    background: var(--bg);
+  }
+  .feedback-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .feedback-rating { font-weight: 700; color: var(--cbu-blue); }
+  .feedback-status { color: var(--text-muted); }
+  .feedback-text { font-size: 13px; line-height: 1.45; margin: 8px 0; }
+  .feedback-label {
+    color: var(--text-muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    margin-top: 8px;
+  }
+  .feedback-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .feedback-actions button {
+    border: 1px solid var(--border);
+    background: #fff;
+    border-radius: var(--radius);
+    padding: 8px 10px;
+    cursor: pointer;
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--cbu-blue);
+  }
+  .empty-state {
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 18px;
+  }
 
   /* Toggle */
   .optional-toggle {
@@ -773,6 +825,7 @@
   <div class="tab-nav">
     <button class="tab-btn active" id="tab-add-btn" onclick="switchTab('add')">➕ Add Content</button>
     <button class="tab-btn" id="tab-edit-btn" onclick="switchTab('edit')">Edit Content</button>
+    <button class="tab-btn" id="tab-feedback-btn" onclick="switchTab('feedback')">Feedback</button>
     <button class="tab-btn remove-tab" id="tab-remove-btn" onclick="switchTab('remove')">🗑 Remove Content</button>
   </div>
 
@@ -975,6 +1028,70 @@
     </div>
 
   </div><!-- /panel-edit -->
+
+  <!-- FEEDBACK REVIEW PANEL -->
+  <div id="panel-feedback" style="display:none">
+
+    <h1 class="page-title">Feedback Review</h1>
+    <p class="page-subtitle">
+      Review student ratings and comments. Feedback is stored for evaluation only;
+      it does not retrain Lance or change answer behavior automatically.
+    </p>
+
+    <div class="result-banner" id="feedbackResultBanner">
+      <div class="result-icon" id="feedbackResultIcon"></div>
+      <div class="result-body">
+        <div class="result-title" id="feedbackResultTitle"></div>
+        <div class="result-detail" id="feedbackResultDetail"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="step-num">1</span>Filters</div>
+      <div class="field">
+        <label>Source label</label>
+        <input type="text" id="feedbackSourceFilter" placeholder="Example: FAQ_SOURCE_14">
+      </div>
+      <div class="field">
+        <label>Date</label>
+        <input type="date" id="feedbackDateFilter">
+      </div>
+      <div class="type-selector">
+        <div class="type-option">
+          <input type="checkbox" id="feedbackLowOnly">
+          <label for="feedbackLowOnly">
+            <div class="type-label-title">Low ratings only</div>
+            <div class="type-label-desc">Show ratings 1-2</div>
+          </label>
+        </div>
+        <div class="type-option">
+          <input type="checkbox" id="feedbackUnreviewedOnly">
+          <label for="feedbackUnreviewedOnly">
+            <div class="type-label-title">Unreviewed only</div>
+            <div class="type-label-desc">Hide items already reviewed</div>
+          </label>
+        </div>
+        <div class="type-option">
+          <input type="checkbox" id="feedbackUnresolvedOnly">
+          <label for="feedbackUnresolvedOnly">
+            <div class="type-label-title">Unresolved only</div>
+            <div class="type-label-desc">Hide resolved items</div>
+          </label>
+        </div>
+      </div>
+      <button class="submit-btn" onclick="loadFeedbackList()">
+        <span>Load Feedback</span>
+      </button>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="step-num">2</span>Items</div>
+      <div id="feedbackList" class="feedback-list">
+        <div class="empty-state">No feedback loaded.</div>
+      </div>
+    </div>
+
+  </div><!-- /panel-feedback -->
 
   <!-- ═══════════════ REMOVE CONTENT PANEL ═══════════════ -->
   <div id="panel-remove" style="display:none">
@@ -1389,11 +1506,14 @@
   function switchTab(tab) {
     document.getElementById('panel-add').style.display    = tab === 'add'    ? 'block' : 'none';
     document.getElementById('panel-edit').style.display   = tab === 'edit'   ? 'block' : 'none';
+    document.getElementById('panel-feedback').style.display = tab === 'feedback' ? 'block' : 'none';
     document.getElementById('panel-remove').style.display = tab === 'remove' ? 'block' : 'none';
     document.getElementById('tab-add-btn').classList.toggle('active',    tab === 'add');
     document.getElementById('tab-edit-btn').classList.toggle('active',   tab === 'edit');
+    document.getElementById('tab-feedback-btn').classList.toggle('active', tab === 'feedback');
     document.getElementById('tab-remove-btn').classList.toggle('active', tab === 'remove');
     if (tab === 'edit') loadContentList().then(populateEditDropdown);
+    if (tab === 'feedback') loadFeedbackList();
     if (tab === 'remove') loadContentList();
   }
 
@@ -1656,6 +1776,106 @@
   // ── Apply Changes (hot-reload) ──────────────────────────────────────────────
 
   let _pageToastTimer = null;
+
+  function showFeedbackResult(type, title, detail) {
+    const banner = document.getElementById('feedbackResultBanner');
+    banner.className = 'result-banner visible ' + type;
+    const icons = { success: '✓', error: '!', partial: '!' };
+    document.getElementById('feedbackResultIcon').textContent = icons[type] || '!';
+    document.getElementById('feedbackResultTitle').textContent = title;
+    document.getElementById('feedbackResultDetail').textContent = detail;
+    banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function escapeHtml(value) {
+    return String(value || '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  function feedbackStatusText(item) {
+    const reviewed = item.reviewed ? 'reviewed' : 'unreviewed';
+    const resolved = item.resolved ? 'resolved' : 'unresolved';
+    return `${reviewed} / ${resolved}`;
+  }
+
+  function renderFeedbackList(items) {
+    const list = document.getElementById('feedbackList');
+    if (!items.length) {
+      list.innerHTML = '<div class="empty-state">No feedback matches these filters.</div>';
+      return;
+    }
+    list.innerHTML = items.map(item => `
+      <div class="feedback-item">
+        <div class="feedback-head">
+          <div>
+            <span class="feedback-rating">${item.rating}/5</span>
+            <span>${escapeHtml(item.source_label)}</span>
+          </div>
+          <div class="feedback-status">${escapeHtml(feedbackStatusText(item))}</div>
+        </div>
+        <div class="feedback-label">${escapeHtml(item.timestamp)} · response ${escapeHtml(item.response_id)}</div>
+        <div class="feedback-text"><strong>Student:</strong> ${escapeHtml(item.original_user_message)}</div>
+        <div class="feedback-text"><strong>Lance:</strong> ${escapeHtml(item.lance_response)}</div>
+        ${item.comment ? `<div class="feedback-text"><strong>Comment:</strong> ${escapeHtml(item.comment)}</div>` : ''}
+        ${item.retrieved_source_file ? `<div class="feedback-label">Source file: ${escapeHtml(item.retrieved_source_file)}</div>` : ''}
+        <div class="feedback-actions">
+          <button onclick="markFeedback('${item.feedback_id}', true, null)">Mark Reviewed</button>
+          <button onclick="markFeedback('${item.feedback_id}', true, true)">Mark Resolved</button>
+          <button onclick="markFeedback('${item.feedback_id}', false, false)">Reopen</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function loadFeedbackList() {
+    const params = new URLSearchParams();
+    const source = document.getElementById('feedbackSourceFilter').value.trim();
+    const date = document.getElementById('feedbackDateFilter').value;
+    if (source) params.set('source_label', source);
+    if (date) params.set('date', date);
+    if (document.getElementById('feedbackLowOnly').checked) params.set('low_rating', 'true');
+    if (document.getElementById('feedbackUnreviewedOnly').checked) params.set('reviewed', 'false');
+    if (document.getElementById('feedbackUnresolvedOnly').checked) params.set('resolved', 'false');
+
+    try {
+      const response = await fetch(`/admin/feedback?${params}`, { headers: getAdminHeaders() });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        showFeedbackResult('error', 'Could not load feedback', result.message || 'The feedback list could not be loaded.');
+        return;
+      }
+      renderFeedbackList(result.feedback || []);
+    } catch (err) {
+      showFeedbackResult('error', 'Request failed', err.message);
+    }
+  }
+
+  async function markFeedback(feedbackId, reviewed, resolved) {
+    const payload = {};
+    if (reviewed !== null) payload.reviewed = reviewed;
+    if (resolved !== null) payload.resolved = resolved;
+
+    try {
+      const response = await fetch(`/admin/feedback/${feedbackId}`, {
+        method: 'PATCH',
+        headers: { ...getAdminHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        showFeedbackResult('error', 'Update failed', result.message || 'The feedback item was not updated.');
+        return;
+      }
+      showFeedbackResult('success', 'Feedback updated', result.message || 'Review status updated.');
+      await loadFeedbackList();
+    } catch (err) {
+      showFeedbackResult('error', 'Request failed', err.message);
+    }
+  }
 
   function showPageToast(type, msg) {
     const t = document.getElementById('pageToast');

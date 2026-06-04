@@ -71,6 +71,7 @@ from app.intake.flow import (
 )
 
 from app.admin import admin_router
+from app.feedback import feedback_router
 from fastapi.responses import FileResponse
 from app.admin_auth import verify_admin_credentials
 from fastapi import Depends
@@ -150,6 +151,7 @@ class NgrokMiddleware(BaseHTTPMiddleware):
 app.add_middleware(NgrokMiddleware)
 
 app.include_router(admin_router)
+app.include_router(feedback_router)
 
 @app.get("/admin")
 def admin_ui(username: str = Depends(verify_admin_credentials)):
@@ -4330,7 +4332,12 @@ async def chat(payload: ChatRequest):
     """
     Backward-compatible synchronous endpoint.
     """
-    return await process_chat_request(payload)
+    session_id = payload.session_id or str(uuid.uuid4())
+    payload.session_id = session_id
+    response = await process_chat_request(payload)
+    response.response_id = response.response_id or str(uuid.uuid4())
+    response.session_id = response.session_id or session_id
+    return response
 
 
 @app.post("/chat/stream")
@@ -4341,6 +4348,7 @@ async def chat_stream(payload: ChatRequest):
     token-by-token responses for the streaming UI path.
     """
     session_id = payload.session_id or str(uuid.uuid4())
+    response_id = str(uuid.uuid4())
     session = get_or_create_session(session_id)
     message = payload.message.strip()
 
@@ -4360,7 +4368,7 @@ async def chat_stream(payload: ChatRequest):
                 yield f"data: {json.dumps({'type': 'response', 'token': GREETING_REPLY, 'done': False})}\n\n"
                 yield (
                     "data: "
-                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'session_id': session_id, 'source': 'DETERMINISTIC_GREETING', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'DETERMINISTIC_GREETING', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
                 )
                 return
 
@@ -4399,7 +4407,7 @@ async def chat_stream(payload: ChatRequest):
                 yield f"data: {json.dumps({'type': 'response', 'token': PLATFORM_CLARIFICATION_MESSAGE, 'done': False})}\n\n"
                 yield (
                     "data: "
-                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'session_id': session_id, 'source': 'CLARIFICATION_NEEDED', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'CLARIFICATION_NEEDED', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
                 )
                 return
 
@@ -4460,7 +4468,7 @@ async def chat_stream(payload: ChatRequest):
                 yield f"data: {json.dumps({'token': escalation, 'done': False})}\n\n"
                 yield (
                     "data: "
-                    f"{json.dumps({'token': '', 'done': True, 'session_id': session_id, 'source': 'ESCALATION', 'confidence': confidence, 'recommended_pdfs': [], 'debug_mode': debug_mode})}\n\n"
+                    f"{json.dumps({'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'ESCALATION', 'confidence': confidence, 'recommended_pdfs': [], 'debug_mode': debug_mode})}\n\n"
                 )
                 return
 
@@ -4556,7 +4564,7 @@ async def chat_stream(payload: ChatRequest):
                     recommended_pdfs = []
                 yield (
                     "data: "
-                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'session_id': session_id, 'source': retrieval.get('source_id', 'LLM_VISION') if retrieval else 'LLM_VISION', 'confidence': confidence, 'recommended_pdfs': recommended_pdfs, 'debug_mode': debug_mode, 'thought': vision_thought})}\n\n"
+                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': retrieval.get('source_id', 'LLM_VISION') if retrieval else 'LLM_VISION', 'confidence': confidence, 'recommended_pdfs': recommended_pdfs, 'debug_mode': debug_mode, 'thought': vision_thought})}\n\n"
                 )
                 return
 
@@ -4626,14 +4634,14 @@ async def chat_stream(payload: ChatRequest):
             )
             yield (
                 "data: "
-                f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'session_id': session_id, 'source': source, 'confidence': confidence, 'recommended_pdfs': recommended_pdfs, 'debug_mode': debug_mode, 'thought': full_thought})}\n\n"
+                f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': source, 'confidence': confidence, 'recommended_pdfs': recommended_pdfs, 'debug_mode': debug_mode, 'thought': full_thought})}\n\n"
             )
 
         except Exception as e:
             print(f"[STREAM ERROR] {e}")
             yield (
                 "data: "
-                f"{json.dumps({'type': 'done', 'token': '[Error generating response]', 'done': True, 'session_id': session_id, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                f"{json.dumps({'type': 'done', 'token': '[Error generating response]', 'done': True, 'response_id': response_id, 'session_id': session_id, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
             )
 
     return StreamingResponse(
