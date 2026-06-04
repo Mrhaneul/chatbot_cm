@@ -16,6 +16,8 @@ Design constraints:
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import os
 import re
@@ -44,6 +46,16 @@ _TOPIC_KEYWORDS = frozenset({
 })
 
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+
+@contextlib.asynccontextmanager
+async def _optional_semaphore(sem: asyncio.Semaphore | None):
+    """Acquire sem if provided; otherwise proceed immediately."""
+    if sem is not None:
+        async with sem:
+            yield
+    else:
+        yield
 
 _SYSTEM_PROMPT = (
     "You are an intake classifier for a university campus store chatbot.\n\n"
@@ -141,12 +153,18 @@ def _validate_decision(raw: dict) -> IntakePlannerDecision | None:
     return decision
 
 
-async def run_intake_planner(message: str) -> IntakePlannerDecision:
+async def run_intake_planner(
+    message: str,
+    semaphore: asyncio.Semaphore | None = None,
+) -> IntakePlannerDecision:
     """
     Call the Ollama LLM and return a structured intake decision.
 
     Always returns a valid IntakePlannerDecision — never raises.
     On any failure the safe fallback (ASK_CLARIFICATION) is returned.
+
+    The optional semaphore parameter should be the same llm_semaphore used for
+    normal answer generation, keeping total Ollama concurrency bounded.
     """
     models = [PRIMARY_LLM_MODEL]
     if FALLBACK_LLM_MODEL and FALLBACK_LLM_MODEL != PRIMARY_LLM_MODEL:
@@ -169,21 +187,22 @@ async def run_intake_planner(message: str) -> IntakePlannerDecision:
         fallback_model = models[index + 1] if index < len(models) - 1 else None
         try:
             timeout = httpx.Timeout(_PLANNER_TIMEOUT, read=_PLANNER_TIMEOUT)
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                print(f"[PLANNER] model={model_name} message={message[:80]!r}")
-                response = await client.post(
-                    OLLAMA_CHAT_URL, json={**payload, "model": model_name}
-                )
-                if response.status_code >= 400:
-                    if fallback_model:
-                        print(
-                            f"[PLANNER WARN] {model_name} HTTP {response.status_code}, "
-                            f"retrying with {fallback_model}"
-                        )
-                        continue
-                    print(f"[PLANNER WARN] HTTP {response.status_code}, using safe fallback")
-                    return _SAFE_FALLBACK
-                break
+            async with _optional_semaphore(semaphore):
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    print(f"[PLANNER] model={model_name} message={message[:80]!r}")
+                    response = await client.post(
+                        OLLAMA_CHAT_URL, json={**payload, "model": model_name}
+                    )
+            if response.status_code >= 400:
+                if fallback_model:
+                    print(
+                        f"[PLANNER WARN] {model_name} HTTP {response.status_code}, "
+                        f"retrying with {fallback_model}"
+                    )
+                    continue
+                print(f"[PLANNER WARN] HTTP {response.status_code}, using safe fallback")
+                return _SAFE_FALLBACK
+            break
         except (httpx.ConnectError, httpx.TimeoutException) as exc:
             if fallback_model:
                 print(f"[PLANNER WARN] {model_name} unreachable ({exc}), retrying with {fallback_model}")
