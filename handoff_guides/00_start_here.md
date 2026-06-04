@@ -44,7 +44,7 @@ That's the entire system. The technical details below explain how each piece wor
 Lance has a library of pre-written content files - platform access instructions, browser cache guides, return policies, store hours, and more. When a student asks a question, Lance uses keyword detection and a vector search system called FAISS to find the most relevant content file. If the match is strong enough, it returns the answer directly. This takes 1-50 milliseconds and involves no AI generation whatsoever. This path handles the vast majority of real student questions.
 
 **Path 2 - Grounded LLM fallback (slower, uses AI):**
-When no pre-written content closely matches the question, Lance retrieves the most relevant content it can find and passes it to a local AI model (llama3.2, running via Ollama). The AI is strictly instructed to answer only from the retrieved content - it cannot make things up or use outside knowledge. If the retrieved content is too weak to support an answer, Lance skips the AI entirely and escalates to the Campus Store team instead.
+When no pre-written content closely matches the question, Lance retrieves the most relevant content it can find and passes it to a local AI model (Ollama, configured via `PRIMARY_LLM_MODEL` in `.env`). The AI is strictly instructed to answer only from the retrieved content - it cannot make things up or use outside knowledge. If the retrieved content is too weak to support an answer, Lance skips the AI entirely and escalates to the Campus Store team instead.
 
 This design means Lance is reliable for well-covered topics and honest about its limitations for everything else.
 
@@ -58,7 +58,7 @@ You do not need to understand every component to maintain Lance. This table show
 |---|---|---|---|
 | **FastAPI** | Python web framework | Handles all student chat requests, runs the routing logic | `09_core_scripts.md` |
 | **FAISS** | Vector search library | Finds the most relevant content for any given question | `03_rag_system.md` |
-| **Ollama + llama3.2** | Local AI model | Handles edge case questions the routing logic can't answer | `06_hosting_guide.md` |
+| **Ollama + local LLM** | Local AI model | Handles edge case questions the routing logic can't answer | `06_hosting_guide.md` |
 | **React frontend** | The chat UI | What students see and interact with in their browser | `05_ui_guide.md` |
 | **Firebase Hosting** | Google's web hosting | Hosts the chat UI at a public URL | `06_hosting_guide.md` |
 | **Firestore + Storage** | Google's database | Stores PDF guides shown in the right sidebar | `07_firestore_pdf_guide.md` |
@@ -81,13 +81,20 @@ You do not need to understand every component to maintain Lance. This table show
 **If you are IT staff:**
 1. Read `01_IT_handoff.md` - server setup, Ollama, uvicorn, restart procedures
 2. Read `06_hosting_guide.md` - current ngrok setup and the plan to migrate to a permanent network solution
-3. Keep `10_troubleshooting.md` bookmarked for when things go wrong
+3. Read `docs/environment-reference.md` and `docs/backup-restore-procedure.md`
+4. Keep `10_troubleshooting.md` bookmarked for when things go wrong
 
 **If you are a developer:**
 1. Read `03_rag_system.md` - how ingestion and retrieval works
 2. Read `09_core_scripts.md` - main.py routing logic and llama_client.py
 3. Read `04_dataset_guide.md` - how content files are structured
-4. The `README.md` in the project root has a full reference of routing functions and content files
+4. Read `docs/production-hardening-checklist.md` and `docs/manual-qa-checklist.md`
+5. The `README.md` in the project root has a full reference of routing functions and content files
+
+**If you are reviewing Phase 1-6 readiness before more development:**
+1. Read `docs/production-hardening-checklist.md`
+2. Run `scripts/phase7_regression.ps1`
+3. Use `docs/manual-qa-checklist.md` for browser/admin validation
 
 ---
 
