@@ -39,8 +39,12 @@ When no deterministic route matches, Lance retrieves the top relevant FAISS chun
 |   |-- main.py                     # FastAPI routes, chat logic, routing guards
 |   |-- admin.py                    # Admin API router (add/remove content, reload index)
 |   |-- admin_auth.py               # HTTP Basic Auth for admin routes
+|   |-- feedback.py                 # Local JSONL feedback storage and public feedback route
 |   |-- firebase_config.py          # Firebase initialization (env-driven)
 |   |-- pdf_recommendations.py      # Firestore PDF recommendation logic
+|   |-- config/
+|   |   `-- loader.py               # Validated YAML config loader for routing/safety/platform data
+|   |-- intake/                     # Interactive intake / slot-filling state machine
 |   |-- llm/
 |   |   `-- llama_client.py         # Ollama LLM client
 |   |-- rag/
@@ -50,7 +54,8 @@ When no deterministic route matches, Lance retrieves the top relevant FAISS chun
 |   |   |-- retriever.py            # FAISS retrieval + singleton get_retriever()
 |   |   |-- model.py                # Lazy embedding model loader
 |   |   |-- metadata.py             # Chunk metadata schemas + validation
-|   |   `-- platforms.yaml          # Single source of truth for platform keywords
+|   |   `-- platforms.yaml          # Ingest/retrieval platform keywords
+|   |-- safety/                     # Pre-RAG safety gate and deterministic rules
 |   |-- schemas/
 |   |   `-- chat.py                 # ChatRequest / ChatResponse Pydantic models
 |   `-- utils/
@@ -75,10 +80,21 @@ When no deterministic route matches, Lance retrieves the top relevant FAISS chun
 |   |       `-- api.ts              # API service layer
 |   `-- firebase.json               # Firebase Hosting config
 |-- tests/
+|   |-- test_safety_filter.py
+|   |-- test_chat_safety_integration.py
+|   |-- test_chat_lifecycle_safety.py
+|   |-- test_config_loader.py
 |   |-- test_api_platforms.py
+|   |-- test_intake.py
+|   |-- test_recursive_content_dirs.py
+|   |-- test_admin_content_editing.py
+|   |-- test_feedback.py
+|   |-- test_metadata_filtering.py
+|   |-- test_retrieval_scoring.py
+|   |-- test_quick_help_routes.py
+|   |-- test_audit_quick_help.py
+|   |-- test_metadata.py
 |   |-- test_browser_cache.py
-|   |-- test_case012.py
-|   |-- test_case_006_immediate_access_tab.py
 |   |-- test_ingest.py
 |   `-- test_retriever.py
 |-- research/
@@ -86,11 +102,13 @@ When no deterministic route matches, Lance retrieves the top relevant FAISS chun
 |   `-- lance_hardware_analysis.md  # Hardware procurement analysis and recommendation
 |-- emails/                         # Source .msg email files used for testing
 |-- scripts/
-|   `-- validate_indexes.py         # CI/local index validation script
+|   |-- validate_indexes.py
+|   |-- audit_quick_help.py
+|   `-- phase7_regression.ps1         # CI/local index validation script
 |-- .github/
 |   `-- workflows/
 |       `-- ci.yml
-|-- lance_admin_ui.html             # Admin UI: Add/Remove content, Apply Changes, Debug Mode
+|-- lance_admin_ui.html             # Admin UI: Add/Edit/Remove content, Feedback, Apply Changes
 |-- lance_add_content.py            # CLI script for content addition (multi-PDF support)
 |-- requirements.txt
 |-- pytest.ini
@@ -136,7 +154,7 @@ MAX_CONCURRENT_LLM_REQUESTS=2
 1. Start Ollama (required for the LLM fallback path):
    ```bash
    ollama serve
-   ollama run llama3.2
+   ollama run gemma4:e4b
    ```
 
 2. Start the API:
@@ -177,8 +195,9 @@ Protected by HTTP Basic Auth. Set `LANCE_ADMIN_USER` and `LANCE_ADMIN_PASSWORD` 
 
 Tabs:
 - **Add Content**: Upload a `.txt` file and optional PDF guides. Saves the file, rebuilds the FAISS index, uploads PDFs to Firebase Storage, and creates the `txt_to_pdf_map` entry in Firestore automatically.
-- **Remove Content**: Select an existing file from a dropdown and click Remove. Deletes the file, rebuilds the FAISS index, and cleans up the Firestore `txt_to_pdf_map` entry.
-- **Debug Mode**: Toggle the global default debug mode for all new sessions. When enabled, new sessions skip deterministic routing and use the grounded LLM fallback for every query. Useful for quality testing and comparison.
+- **Edit Content**: Open an existing flat or nested `.txt` file, validate YAML front matter, save safely, and create a timestamped backup.
+- **Remove Content**: Select an existing file from a dropdown and archive it. Lance rebuilds the FAISS index and cleans up the Firestore `txt_to_pdf_map` entry.
+- **Feedback**: Review student ratings/comments, filter low ratings and unresolved items, and mark feedback reviewed/resolved.
 
 Apply Changes button (bottom bar):
 - Hot-reloads the FAISS index into the running process without restarting `uvicorn`.
@@ -193,6 +212,24 @@ python lance_add_content.py --type faq \
     --txt data/faqs/your_file.txt \
     --pdf docs/guide1.pdf --pdf-label "Guide 1 Title" \
     --pdf docs/guide2.pdf --pdf-label "Guide 2 Title"
+```
+
+---
+
+## 5.1 Production Handoff Docs
+
+Phase 7 production hardening docs:
+
+- `docs/production-hardening-checklist.md`
+- `docs/environment-reference.md`
+- `docs/backup-restore-procedure.md`
+- `docs/feedback-review-workflow.md`
+- `docs/manual-qa-checklist.md`
+
+Milestone regression helper:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/phase7_regression.ps1
 ```
 
 ---
@@ -242,7 +279,13 @@ POST /session/debug-mode?session_id=<id>&enabled=true
 conda run -n campus-store-bot pytest -q
 ```
 
-All 27 tests should pass. Run from the project root.
+Run from the project root. The Phase 1–6 test suite covers safety, config, intake, recursive content, admin editing, feedback, metadata, retrieval scoring, and Quick Help routing.
+
+Milestone regression (Phases 1–6 targeted subset):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/phase7_regression.ps1
+```
 
 ---
 

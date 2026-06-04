@@ -6,17 +6,17 @@
 
 ## 1. What the Admin UI is
 
-The Lance Admin UI is a browser-based internal tool built specifically for the CBU Campus Store team. It provides a visual interface for managing everything Lance knows - adding new FAQ answers, uploading PDF guides, removing outdated content, and reloading the search index - all without opening a terminal or editing any code.
+The Lance Admin UI is a browser-based internal tool built specifically for the CBU Campus Store team. It provides a visual interface for managing everything Lance knows - adding new FAQ answers, editing existing knowledge files, uploading PDF guides, archiving outdated content, reviewing feedback, and reloading the search index - all without opening a terminal or editing any code.
 
 **When to use it:**
 - A new type of student question needs an answer -> Add Content
-- A policy changed and an existing answer is outdated -> Remove old, Add updated
+- A policy changed and an existing answer is outdated -> Edit Content
 - A PDF guide needs to be attached to a content file -> Add Content with PDF
 - Content was added but Lance is not using it yet -> Apply Changes
-- You want to test how Lance responds with and without AI -> Debug Mode
+- A response received a low rating -> Feedback
 
 **When NOT to use it:**
-- Fixing a routing bug (requires a developer and `app/main.py`)
+- Fixing a routing bug that cannot be solved with content/config changes
 - Restarting Ollama or uvicorn (requires IT and the terminal)
 - Deploying frontend changes (requires Firebase CLI)
 - Changing `.env` secrets (requires IT)
@@ -97,11 +97,47 @@ After uploading, click the **Apply Changes** button at the bottom of the page to
 
 ---
 
-## 4. Remove Content tab - walkthrough
+## 4. Edit Content tab - walkthrough
+
+The Edit Content tab is used when a published `.txt` answer needs a wording, policy, or troubleshooting update.
+
+### Step 1 - Select content type and file
+
+Choose General FAQ or Platform Instruction, then select the file from the dropdown. Nested folder paths are shown when content is organized under subfolders.
+
+### Step 2 - Edit text
+
+Keep the YAML front matter at the top of the file. Required fields:
+
+- `source_id`
+- `source_type`
+- `category`
+- `platform`
+- `issue_type`
+- `priority`
+
+### Step 3 - Validate
+
+Click **Validate Content** before saving. Invalid YAML front matter or missing required metadata is rejected with a clear error.
+
+### Step 4 - Save
+
+Click **Save Content**. The Admin UI will:
+
+1. Validate the file again
+2. Create a timestamped backup under `data/_archive/backups/`
+3. Save the edited `.txt` file
+4. Rebuild the FAISS index
+
+Click **Apply Changes** after saving, or restart the backend, so the running process loads the rebuilt index.
+
+---
+
+## 5. Remove Content tab - walkthrough
 
 ![Screenshot of Remove Content tab](img/img19.png)
 
-The Remove Content tab is used when content is outdated, incorrect, or no longer needed.
+The Remove Content tab is used when content is outdated, incorrect, or no longer needed. Removed files are archived rather than permanently deleted.
 
 ### Step 1 - Open the dropdown
 
@@ -114,12 +150,12 @@ Click the filename to select it. The selected file name appears in the field.
 ### Step 3 - Click Remove
 
 Click the **Remove** button. The Admin UI will:
-1. Delete the `.txt` file from disk
+1. Move the `.txt` file into `data/_archive/removed/`
 2. Rebuild the FAISS index without that file
 3. Clean up the `txt_to_pdf_map` entry in Firestore for that file
 
 **What is NOT automatically cleaned up:**
-- The PDF binary files in Firebase Storage - these remain even after the content file is removed
+- The PDF binary files in Firebase Storage - these remain even after the content file is archived
 - The `pdf_documents` entries in Firestore - these also remain
 
 If you want to fully clean up a removed PDF, delete it manually from the Firebase console:
@@ -128,19 +164,45 @@ If you want to fully clean up a removed PDF, delete it manually from the Firebas
 
 ### Step 4 - Apply Changes
 
-Click **Apply Changes** to hot-reload the index. Until you do this, Lance may still return answers from the removed file.
+Click **Apply Changes** to hot-reload the index. Until you do this, Lance may still return answers from the archived file.
 
 ---
 
-## 5. Apply Changes - the hot reload button
+## 6. Feedback tab - walkthrough
 
-The **Apply Changes** button appears at the bottom of the Admin UI page, visible on both tabs. It is labeled "Index sync" with a lightning bolt icon.
+The Feedback tab is used to review student ratings and comments. Feedback is review-only data; it does not train the model or automatically change content.
+
+### Filters
+
+Use filters to find:
+
+- Low ratings only
+- A specific source label
+- A specific date
+- Unreviewed items
+- Unresolved items
+
+### Review actions
+
+For each item, review the student message, Lance response, rating, optional comment, source label, confidence, and source file. Then:
+
+- Mark Reviewed once a staff member has examined it
+- Mark Resolved after a content, routing, or no-action decision is made
+- Reopen if the item needs more work
+
+See `docs/feedback-review-workflow.md` for the full triage process.
+
+---
+
+## 7. Apply Changes - the hot reload button
+
+The **Apply Changes** button appears at the bottom of the Admin UI page. It is labeled "Index sync" with a lightning bolt icon.
 
 **What it does:**
 Calls the `/admin/reload-index` endpoint on the backend, which reloads the FAISS index from disk into memory without restarting uvicorn. This makes any content additions or removals live immediately.
 
 **When to use it:**
-Click Apply Changes after every Add or Remove operation. If you add or remove multiple files in a row, one Apply Changes at the end is sufficient.
+Click Apply Changes after every Add, Edit, or Remove operation. If you make multiple content changes in a row, one Apply Changes at the end is sufficient.
 
 **What to do if it fails:**
 If the hot-reload fails, the page will show an error message with manual restart instructions:
@@ -155,39 +217,14 @@ Contact IT if you cannot access the terminal.
 
 ---
 
-## 6. Debug mode
-
-The Admin UI includes a Debug Mode toggle below the Remove Content tab.
-
-**What it does:**
-Sets the global default debug mode for all new sessions. When enabled, every new chat session starts in LLM mode - skipping deterministic routing and using the grounded AI fallback for every query. This is useful for quality testing across multiple conversations.
-
-**Global default vs per-session toggle:**
-
-| Where | What it controls | Who uses it |
-|---|---|---|
-| Admin UI debug toggle | Global default - affects all new sessions | Staff doing systematic quality testing |
-| Chat UI pill (Auto/LLM mode) | Current session only - does not affect other users | Staff testing a specific response |
-
-**Normal operation:** Debug mode should be OFF (Auto mode) in the Admin UI during normal operation. Only enable it when actively running quality tests, and disable it again when done.
-
-**How to use it for quality testing:**
-1. Enable debug mode in the Admin UI
-2. Open the chat UI in a new browser tab - the new session inherits LLM mode
-3. Ask the questions you want to test
-4. Compare responses to what Auto mode returns (toggle the chat UI pill for comparison)
-5. Disable debug mode in the Admin UI when testing is complete
-
----
-
-## 7. What the Admin UI cannot do
+## 8. What the Admin UI cannot do
 
 The Admin UI covers content management. The following tasks are outside its scope:
 
 | Task | How to do it instead |
 |---|---|
-| Fix a routing bug (wrong answer for a known question) | Developer edits `app/main.py` |
-| Add a new publisher platform to the detection logic | Developer edits `app/rag/platforms.yaml` and `app/main.py` |
+| Fix a routing bug that content/config cannot solve | Developer updates routing logic or tests |
+| Add a new publisher platform to detection/config | Developer updates `config/platforms.yaml` and ingestion config as needed |
 | Restart Ollama or uvicorn | IT uses the terminal |
 | Change admin username or password | IT edits `.env` file |
 | Deploy frontend changes | Developer or staff with Firebase CLI runs `firebase deploy` |
@@ -198,7 +235,7 @@ The Admin UI covers content management. The following tasks are outside its scop
 
 ---
 
-## 8. CLI alternative
+## 9. CLI alternative
 
 For developers who prefer working in the terminal, `lance_add_content.py` provides the same functionality as the Admin UI Add Content tab.
 
