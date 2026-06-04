@@ -57,6 +57,8 @@ def should_enter_intake(message: str, session: dict) -> bool:
     Returns False when:
     - An intake_profile is already active (mid-intake).
     - Any legacy clarification flag is active.
+    - The message already supplies both a platform and an issue type — intake
+      would complete immediately, so skip it and send the message directly to RAG.
     - The message is not vague.
 
     A platform signal alone does not bypass intake. Platform-present vague
@@ -71,6 +73,10 @@ def should_enter_intake(message: str, session: dict) -> bool:
         or session.get("awaiting_vitalsource_screen_confirm")
         or session.get("awaiting_class_access_clarification")
     ):
+        return False
+    # If both platform and issue type are already present, the message is specific
+    # enough for RAG — no clarification needed.
+    if extract_platform(message) is not None and extract_issue_type(message) is not None:
         return False
     return is_vague_message(message) or _is_platform_low_info_message(message)
 

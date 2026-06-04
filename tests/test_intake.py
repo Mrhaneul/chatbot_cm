@@ -139,6 +139,31 @@ class TestVaguePatternRegex:
     def test_i_cant_find_anything(self):
         assert self._match("I can't find anything")
 
+    # ── Book access regression (fix/intake-vague-book-access) ─────────────────
+    def test_cant_access_my_book(self):
+        assert self._match("I can't access my book")
+
+    def test_cant_access_to_my_book(self):
+        assert self._match("I can't access to my book")
+
+    def test_cant_open_my_textbook(self):
+        assert self._match("I can't open my textbook")
+
+    def test_dont_see_course_materials(self):
+        assert self._match("I don't see my course materials")
+
+    def test_ebook_is_missing(self):
+        assert self._match("My ebook is missing")
+
+    def test_book_is_not_working(self):
+        assert self._match("My book is not working")
+
+    def test_cant_get_into_my_textbook(self):
+        assert self._match("I can't get into my textbook")
+
+    def test_it_says_dont_have_access(self):
+        assert self._match("It says I don't have access")
+
     def test_platform_mention_not_vague(self):
         # "I can't access Cengage" should NOT match vague patterns
         # (no platform keyword in patterns — this tests that specific platform sentences
@@ -276,6 +301,35 @@ class TestShouldEnterIntake:
         ],
     )
     def test_skips_for_specific_platform_questions(self, message):
+        assert not should_enter_intake(message, self._empty_session())
+
+    # ── Book access regression (fix/intake-vague-book-access) ─────────────────
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "I can't access my book",
+            "I can't access to my book",
+            "I can't open my textbook",
+            "I don't see my course materials",
+            "My ebook is missing",
+            "My book is not working",
+            "I can't get into my textbook",
+            "It says I don't have access",
+        ],
+    )
+    def test_enters_for_vague_book_access_prompts(self, message):
+        assert should_enter_intake(message, self._empty_session())
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "I can't access my Cengage MindTap book",
+            "McGraw Hill Connect is asking for an access code",
+            "How do I create a VitalSource Bookshelf account",
+            "I don't have access to my Cengage book",
+        ],
+    )
+    def test_skips_for_platform_specific_book_access_prompts(self, message):
         assert not should_enter_intake(message, self._empty_session())
 
     def test_skips_when_intake_profile_active(self):

@@ -4394,6 +4394,60 @@ async def chat_stream(payload: ChatRequest):
                 intent = "GENERAL_FAQ"
                 print("[STREAM INTENT] Browser cache override → GENERAL_FAQ (cache detected in query or image)")
 
+            # ── Intake: mid-flow turn (user replied to an intake question) ────────
+            _raw_profile = session.get("intake_profile")
+            if _raw_profile is not None:
+                profile = IntakeProfile.from_dict(_raw_profile)
+                profile = update_profile(profile, message)
+                if intake_is_complete(profile):
+                    session["intake_profile"] = None
+                    session["stored_platform"] = profile.platform
+                    session["stored_intent"] = "IA_ACCESS_ISSUE"
+                    platform = profile.platform
+                    intent = "IA_ACCESS_ISSUE"
+                    retrieval_query = profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
+                    # fall through to retrieval
+                elif profile.is_expired():
+                    session["intake_profile"] = None
+                    fallback = intake_fallback_message()
+                    session["history"].append({"role": "user", "content": message})
+                    session["history"].append({"role": "assistant", "content": fallback})
+                    session["last_activity"] = datetime.now()
+                    yield f"data: {json.dumps({'type': 'response', 'token': fallback, 'done': False})}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                    return
+                else:
+                    question = intake_next_question(profile)
+                    session["intake_profile"] = profile.to_dict()
+                    session["history"].append({"role": "user", "content": message})
+                    session["history"].append({"role": "assistant", "content": question})
+                    session["last_activity"] = datetime.now()
+                    yield f"data: {json.dumps({'type': 'response', 'token': question, 'done': False})}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                    return
+
+            # ── Intake: first vague message ──────────────────────────────────────
+            elif should_enter_intake(message, session):
+                new_profile = IntakeProfile(original_message=message)
+                new_profile = update_profile(new_profile, message)
+                if intake_is_complete(new_profile):
+                    session["intake_profile"] = None
+                    session["stored_platform"] = new_profile.platform
+                    session["stored_intent"] = "IA_ACCESS_ISSUE"
+                    platform = new_profile.platform
+                    intent = "IA_ACCESS_ISSUE"
+                    retrieval_query = new_profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
+                    # fall through to retrieval
+                else:
+                    question = intake_next_question(new_profile)
+                    session["intake_profile"] = new_profile.to_dict()
+                    session["history"].append({"role": "user", "content": message})
+                    session["history"].append({"role": "assistant", "content": question})
+                    session["last_activity"] = datetime.now()
+                    yield f"data: {json.dumps({'type': 'response', 'token': question, 'done': False})}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                    return
+
             # Ask for platform before retrieval — prevents wrong-platform hallucination.
             # Skip when already overridden to GENERAL_FAQ (e.g. browser cache issue).
             if intent == "IA_ACCESS_ISSUE" and platform is None:

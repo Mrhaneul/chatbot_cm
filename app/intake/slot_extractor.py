@@ -23,6 +23,7 @@ _ACCESS_SIGNALS = [
     "can't access", "cannot access", "can't open", "cannot open",
     "won't load", "not loading", "access issue", "can't get in",
     "cannot get in", "won't let me in", "access denied",
+    "don't have access", "do not have access", "can't have access",
 ]
 _MISSING_SIGNALS = [
     "missing", "not there", "disappeared", "gone", "don't see",

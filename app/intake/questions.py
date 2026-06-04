@@ -9,19 +9,25 @@ from __future__ import annotations
 import re
 
 # -- Vague-pattern regex -------------------------------------------------------
-# Conservative: only clearly under-specified complaints with no platform signal.
-# Platform-specific messages (e.g. "I can't access Cengage") bypass intake entirely.
+# Matches clearly under-specified access/missing complaints.
+# Platform-specific messages that also supply an issue type bypass intake via
+# the should_enter_intake() platform+issue guard in flow.py.
 _VAGUE_PATTERNS: list[str] = [
     r"i (don'?t|do not) have (my )?(text ?book|book|materials?|course materials?)",
-    r"my (text ?book|book|materials?) (is |are )?(missing|not there|gone)",
+    r"my (text ?book|book|ebook|e-book|materials?) (is |are )?(missing|not there|gone)",
     r"(it (doesn'?t|won'?t|is not|isn'?t) work|not working|won'?t work)",
     r"i'?m (confused|stuck|lost|not sure (what|where|how))",
-    r"i (don'?t|do not) see (anything|it|my (book|text ?book|materials?))",
+    r"i (don'?t|do not) see (anything|it|my (course )?(book|text ?book|materials?))",
     r"i can'?t find (anything|it|my (book|text ?book|materials?))",
     r"^i need help\.?$",
-    r"i can'?t access (my )?(class )?materials?",
-    r"(can'?t|cannot) (get to|open|load) (my )?(book|text ?book|materials?)",
+    # "access" pattern: covers book/textbook/ebook and the grammatical "access to" variant.
+    r"i can'?t access (to )?(my )?(course )?(text ?book|book|ebook|e-book|class )?materials?",
+    r"i can'?t access (to )?(my )?(text ?book|book|ebook|e-book)",
+    # "get to/into/open/load" pattern: expanded to include "get into" and ebook.
+    r"(can'?t|cannot) (get (to|into)|open|load) (my )?(book|text ?book|ebook|e-book|materials?)",
     r"(having|i have) (an? )?(issue|problem|trouble) (with )?(my )?(book|text ?book|access|materials?)",
+    # "don't have access" — covers "I don't have access" and "It says I don't have access".
+    r"(i )?(don'?t|do not|can'?t) have access",
 ]
 
 VAGUE_PATTERN_RE: re.Pattern = re.compile(
