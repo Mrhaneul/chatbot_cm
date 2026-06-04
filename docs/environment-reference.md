@@ -43,6 +43,19 @@ This document lists the environment variables Lance reads at runtime. Keep real 
 | `ENABLE_SAFETY_FILTER` | Enables the Phase 1 safety gate. Keep enabled in production. | `true` |
 | `ENABLE_SAFETY_CLASSIFIER` | Enables optional LLM safety classifier after deterministic checks. | `true` |
 
+## LLM Intake Planner (Phase 8)
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `ENABLE_INTAKE_LLM_PLANNER` | Enables the LLM-assisted intake planner for ambiguous messages. | `true` |
+| `INTAKE_PLANNER_TIMEOUT` | Per-attempt timeout in seconds for the planner's Ollama call. | `8` |
+
+**Model selection:** the planner uses `PRIMARY_LLM_MODEL` and `FALLBACK_LLM_MODEL` — no separate model variable.
+
+**Concurrency:** planner Ollama calls are bounded by `MAX_CONCURRENT_LLM_REQUESTS` (the same `llm_semaphore` used for normal answer generation). Total Ollama pressure stays within the configured limit.
+
+**Fail-safe behavior:** if the planner times out, the LLM is unreachable, or the model returns invalid JSON, it fails closed to `ASK_CLARIFICATION` — never `ALLOW_RAG`. This means a downed Ollama will increase clarification questions but will never pass ambiguous messages through to retrieval unguarded.
+
 ## Admin Content And Feedback Storage
 
 | Variable | Purpose | Default |

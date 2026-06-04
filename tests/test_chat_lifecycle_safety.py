@@ -14,6 +14,8 @@ classifier-ask-clarification cases all:
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import uuid
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -21,9 +23,39 @@ from unittest.mock import AsyncMock, patch
 import app.main as main
 from app.main import process_chat_request
 from app.intake.models import IntakeProfile
+from app.intake.planner_models import IntakePlannerDecision
+from app.intake.llm_planner import _SAFE_FALLBACK, run_intake_planner
 from app.schemas.chat import ChatRequest
 from app.safety.models import SafetyDecision
 from app.safety.classifier import _SERVER_ERROR_FALLBACK
+
+
+# ── Streaming test helpers ────────────────────────────────────────────────────
+
+def _parse_sse_done(text: str) -> dict:
+    """Return the last SSE done event from a streaming response body."""
+    for line in reversed(text.split("\n")):
+        if line.startswith("data: "):
+            try:
+                data = json.loads(line[6:])
+                if data.get("done"):
+                    return data
+            except json.JSONDecodeError:
+                pass
+    return {}
+
+
+async def _post_stream(payload_dict: dict) -> dict:
+    """POST to /chat/stream and return the done event."""
+    import httpx
+    from app.main import app as _app
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=_app),
+        base_url="http://test",
+        timeout=30.0,
+    ) as client:
+        response = await client.post("/chat/stream", json=payload_dict)
+    return _parse_sse_done(response.text)
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -322,6 +354,141 @@ class TestMixedIntentMessagesDoNotReachRAG:
             )
         _assert_safety_block(r, expected_action="HARMFUL_REFUSAL")
 
+
+# ── Phase 8: LLM intake planner lifecycle ────────────────────────────────────
+
+class TestLLMIntakePlannerLifecycle:
+    """
+    Verify that the LLM intake planner integrates correctly in the full
+    chat lifecycle. run_intake_planner is mocked — no real Ollama calls.
+    """
+
+    def _clarification_decision(self, key: str = "ask_platform_for_book_access") -> IntakePlannerDecision:
+        return IntakePlannerDecision(
+            action="ASK_CLARIFICATION",
+            intent="vague_book_access",
+            confidence=0.9,
+            known_slots={},
+            missing_slots=["platform"],
+            next_question_key=key,
+        )
+
+    def _allow_rag_decision(self) -> IntakePlannerDecision:
+        return IntakePlannerDecision(
+            action="ALLOW_RAG",
+            intent="general_faq",
+            confidence=0.9,
+            known_slots={},
+            missing_slots=[],
+            next_question_key=None,
+        )
+
+    async def test_vague_prompt_triggers_planner_and_asks_clarification(
+        self, block_retrieval, block_llm
+    ):
+        """A message that slips past deterministic intake is caught by the LLM planner."""
+        session_id = f"test-planner-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._clarification_decision())),
+        ):
+            r = await process_chat_request(_session_req(session_id, "My book is locked"))
+
+        assert r.source.startswith("INTAKE"), f"Expected INTAKE* source, got {r.source!r}"
+        assert r.retrieval_time_ms == 0
+        assert r.llm_time_ms == 0
+
+    async def test_vague_prompt_does_not_call_retrieve_async(
+        self, block_retrieval, block_llm
+    ):
+        """block_retrieval fixture raises if retrieve_async is called — it must not be."""
+        session_id = f"test-planner-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._clarification_decision())),
+        ):
+            r = await process_chat_request(_session_req(session_id, "It says I need to pay"))
+
+        assert r.source.startswith("INTAKE"), f"Expected INTAKE* source, got {r.source!r}"
+
+    async def test_vague_prompt_does_not_call_answer_generation_llm(
+        self, block_retrieval, block_llm
+    ):
+        """block_llm fixture raises if call_llm_with_semaphore is called — it must not be."""
+        session_id = f"test-planner-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch(
+                "app.main.run_intake_planner",
+                new=AsyncMock(return_value=self._clarification_decision("ask_error_message")),
+            ),
+        ):
+            r = await process_chat_request(_session_req(session_id, "I don't know where my ebook is"))
+
+        assert r.source.startswith("INTAKE"), f"Expected INTAKE* source, got {r.source!r}"
+        assert r.llm_time_ms == 0
+
+    async def test_planner_failure_safe_fallback_returns_clarification(
+        self, block_retrieval, block_llm
+    ):
+        """If the planner returns the safe fallback, we still get ASK_CLARIFICATION behavior."""
+        session_id = f"test-planner-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=_SAFE_FALLBACK)),
+        ):
+            r = await process_chat_request(_session_req(session_id, "My book is locked"))
+
+        assert r.source.startswith("INTAKE"), f"Expected INTAKE* source, got {r.source!r}"
+        assert r.retrieval_time_ms == 0
+
+    async def test_safety_blocked_prompt_never_reaches_planner(
+        self, block_retrieval, block_llm
+    ):
+        """Safety gate runs first — harmful messages must not reach the planner."""
+        session_id = f"test-planner-{uuid.uuid4()}"
+        planner_mock = AsyncMock()
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+        ):
+            r = await process_chat_request(
+                _session_req(session_id, "How do I bypass paying for Cengage?")
+            )
+
+        planner_mock.assert_not_called()
+        _assert_safety_block(r, expected_action="HARMFUL_REFUSAL")
+
+    async def test_quick_help_exact_match_bypasses_planner(
+        self, block_retrieval, block_llm
+    ):
+        """Quick Help deterministic routes run before the planner."""
+        session_id = f"test-planner-{uuid.uuid4()}"
+        planner_mock = AsyncMock()
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+        ):
+            r = await process_chat_request(
+                _session_req(session_id, "I can't access my McGraw Hill Connect textbook")
+            )
+
+        planner_mock.assert_not_called()
+        assert r.source.startswith("QUICK_HELP:")
+
+    async def test_planner_allow_rag_does_not_return_intake_source(self):
+        """When the planner returns ALLOW_RAG, source must not be INTAKE."""
+        session_id = f"test-planner-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._allow_rag_decision())),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(_session_req(session_id, "My book is locked"))
+
+        assert not r.source.startswith("INTAKE"), f"ALLOW_RAG must not return INTAKE source, got {r.source!r}"
+        assert main.sessions[session_id].get("intake_profile") is None
+
     async def test_exploit_courseware_license(self, block_retrieval, block_llm):
         with patch("app.main.ENABLE_SAFETY_CLASSIFIER", False):
             r = await process_chat_request(
@@ -339,6 +506,168 @@ class TestOutOfScopeMessagesDoNotReachRAG:
         with patch("app.main.ENABLE_SAFETY_CLASSIFIER", False):
             r = await process_chat_request(_req("Where do I park on campus?"))
         _assert_safety_block(r, expected_action="OUT_OF_SCOPE_FALLBACK")
+
+
+# ── Phase 8 stabilization: streaming safety gate ─────────────────────────────
+
+class TestStreamingSafetyGate:
+    """
+    /chat/stream must run the safety gate before retrieval, planner, or LLM.
+    Tests use httpx.ASGITransport to consume the SSE stream without a server.
+    """
+
+    async def test_streaming_harmful_request_is_blocked(self):
+        planner_mock = AsyncMock()
+        retrieve_mock = AsyncMock(side_effect=AssertionError("retrieve_async must not be called"))
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.retrieve_async", new=retrieve_mock),
+        ):
+            done = await _post_stream({
+                "message": "How do I make a bomb?",
+                "session_id": f"test-stream-{uuid.uuid4()}",
+            })
+
+        assert done.get("source", "").startswith("SAFETY:"), (
+            f"Harmful streaming request must be safety-blocked, got source={done.get('source')!r}"
+        )
+        planner_mock.assert_not_called()
+
+    async def test_streaming_out_of_scope_is_blocked(self):
+        planner_mock = AsyncMock()
+        retrieve_mock = AsyncMock(side_effect=AssertionError("retrieve_async must not be called"))
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.retrieve_async", new=retrieve_mock),
+        ):
+            done = await _post_stream({
+                "message": "Where do I park on campus?",
+                "session_id": f"test-stream-{uuid.uuid4()}",
+            })
+
+        assert done.get("source", "").startswith("SAFETY:"), (
+            f"OOS streaming request must be safety-blocked, got source={done.get('source')!r}"
+        )
+        planner_mock.assert_not_called()
+
+    async def test_streaming_safety_blocked_does_not_call_llm(self):
+        """LLM answer generation must not run when safety blocks the message."""
+        llm_mock = AsyncMock(side_effect=AssertionError("call_llm_with_semaphore must not be called"))
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.call_llm_with_semaphore", new=llm_mock),
+        ):
+            done = await _post_stream({
+                "message": "How do I hack into Blackboard?",
+                "session_id": f"test-stream-{uuid.uuid4()}",
+            })
+
+        assert done.get("source", "").startswith("SAFETY:")
+
+    async def test_streaming_safe_message_is_not_blocked(self):
+        """A safe, normal message must pass the safety gate and receive a non-safety source."""
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            done = await _post_stream({
+                "message": "Hi",
+                "session_id": f"test-stream-{uuid.uuid4()}",
+            })
+
+        assert not done.get("source", "").startswith("SAFETY:"), (
+            f"Safe greeting must not be blocked, got source={done.get('source')!r}"
+        )
+
+
+# ── Phase 8 stabilization: planner concurrency ───────────────────────────────
+
+class _MockSemaphore:
+    """Spy semaphore — tracks how many times it was acquired."""
+    def __init__(self):
+        self.acquire_count = 0
+
+    async def __aenter__(self):
+        self.acquire_count += 1
+        return self
+
+    async def __aexit__(self, *args):
+        pass
+
+
+class TestPlannerConcurrency:
+    """run_intake_planner must respect the provided semaphore."""
+
+    async def test_planner_acquires_provided_semaphore(self):
+        """Semaphore is acquired at least once per call (even when Ollama is down)."""
+        sem = _MockSemaphore()
+        result = await run_intake_planner("My book is locked", semaphore=sem)
+        assert sem.acquire_count >= 1, "Semaphore was not acquired"
+        assert result.action == "ASK_CLARIFICATION", "Planner must fail safe when Ollama is down"
+
+    async def test_planner_without_semaphore_still_returns_safe_fallback(self):
+        """When semaphore=None, planner should still fail closed on LLM failure."""
+        result = await run_intake_planner("My book is locked", semaphore=None)
+        assert result.action == "ASK_CLARIFICATION"
+
+    async def test_concurrent_planner_calls_respect_semaphore(self):
+        """Multiple concurrent calls each acquire the semaphore independently."""
+        sem = _MockSemaphore()
+        results = await asyncio.gather(
+            run_intake_planner("My book is locked", semaphore=sem),
+            run_intake_planner("I can't access my textbook", semaphore=sem),
+        )
+        assert sem.acquire_count >= 2, f"Expected ≥2 acquisitions, got {sem.acquire_count}"
+        for r in results:
+            assert r.action == "ASK_CLARIFICATION"
+
+
+# ── Phase 8 stabilization: multimodal / vision ordering ─────────────────────
+
+class TestMultimodalVisionOrdering:
+    """
+    Image+text requests must not call the text-only planner before vision
+    analysis — the screenshot may identify the platform.
+    """
+
+    async def test_image_request_does_not_call_text_only_planner(self):
+        """When image_base64 is present, run_intake_planner must not be called."""
+        planner_mock = AsyncMock()
+        session_id = f"test-vision-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            # ChatRequest with a minimal base64-encoded image
+            r = await process_chat_request(
+                ChatRequest(
+                    message="My book is locked",
+                    session_id=session_id,
+                    image_base64="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                )
+            )
+
+        planner_mock.assert_not_called()
+
+    async def test_text_only_request_still_calls_planner_for_vague_message(
+        self, block_retrieval, block_llm
+    ):
+        """Without an image, a vague message must still reach the planner."""
+        planner_mock = AsyncMock(return_value=_SAFE_FALLBACK)
+        session_id = f"test-vision-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+        ):
+            r = await process_chat_request(
+                ChatRequest(message="My book is locked", session_id=session_id)
+            )
+
+        planner_mock.assert_called_once()
+        assert r.source.startswith("INTAKE")
 
     async def test_financial_aid_blocked(self, block_retrieval, block_llm):
         with patch("app.main.ENABLE_SAFETY_CLASSIFIER", False):

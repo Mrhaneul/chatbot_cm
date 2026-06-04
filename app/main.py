@@ -69,6 +69,7 @@ from app.intake.flow import (
     intake_is_complete,
     intake_fallback_message,
 )
+from app.intake.llm_planner import run_intake_planner, should_run_planner, get_question_for_decision
 
 from app.admin import admin_router
 from app.feedback import feedback_router
@@ -2522,6 +2523,32 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     recommended_pdfs=[],
                     debug_mode=debug_mode,
                 )
+
+        # ── LLM intake planner (catches vague cases deterministic missed) ──────
+        # Only runs when neither mid-flow intake nor deterministic first-turn
+        # intake handled this message, the message is topic-relevant, and there
+        # is no image (image+text requests use the vision flow, not text-only planning).
+        if not _intake_completed and not has_image and should_run_planner(message):
+            planner_decision = await run_intake_planner(message, semaphore=llm_semaphore)
+            if planner_decision.action == "ASK_CLARIFICATION":
+                question = get_question_for_decision(planner_decision)
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": question})
+                session["last_activity"] = datetime.now()
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=question,
+                    source="INTAKE:LLM_PLANNER",
+                    article_link=None,
+                    confidence=0.0,
+                    retrieval_time_ms=0,
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[],
+                    debug_mode=debug_mode,
+                )
+            if planner_decision.enriched_query:
+                retrieval_query = planner_decision.enriched_query
         # ─────────────────────────────────────────────────────────────────────
 
         # Initialize variables
@@ -4357,6 +4384,43 @@ async def chat_stream(payload: ChatRequest):
             # Preserve the response field for the frontend LLM badge.
             debug_mode = True
 
+            # ── Safety gate (same order as /chat: runs before everything) ────────
+            _session_in_clarification = (
+                session.get("awaiting_platform_type", False)
+                or session.get("awaiting_publisher_list_response", False)
+                or session.get("awaiting_class_access_clarification", False)
+                or session.get("awaiting_vitalsource_screen_confirm", False)
+            )
+            _skip_classifier = (
+                _session_in_clarification and _is_low_risk_clarification_reply(message)
+            )
+            safety_decision = await run_safety_gate(
+                message,
+                enable_filter=ENABLE_SAFETY_FILTER,
+                enable_classifier=ENABLE_SAFETY_CLASSIFIER and not _skip_classifier,
+                llm_client=llm,
+            )
+            if safety_decision.action != "ALLOW":
+                safety_reply = get_safety_response(safety_decision)
+                safety_src = safety_source_label(safety_decision)
+                print(
+                    f"[SAFETY] action={safety_decision.action} "
+                    f"category={safety_decision.category} "
+                    f"confidence={safety_decision.confidence:.2f} "
+                    f"reason={safety_decision.reason}"
+                )
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": safety_reply})
+                if len(session["history"]) > MAX_HISTORY_TURNS * 2:
+                    session["history"] = session["history"][-MAX_HISTORY_TURNS * 2:]
+                session["last_activity"] = datetime.now()
+                yield f"data: {json.dumps({'type': 'response', 'token': safety_reply, 'done': False})}\n\n"
+                yield (
+                    "data: "
+                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': safety_src, 'confidence': safety_decision.confidence, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                )
+                return
+
             platform = detect_platform_from_text(message)
             intent = detect_intent(message)
 
@@ -4447,6 +4511,25 @@ async def chat_stream(payload: ChatRequest):
                     yield f"data: {json.dumps({'type': 'response', 'token': question, 'done': False})}\n\n"
                     yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
                     return
+
+            else:
+                # ── LLM intake planner (catches vague cases deterministic missed) ──
+                # Skip for image+text requests: vision analysis runs separately and
+                # may identify the platform from the screenshot. Text-only planning
+                # before vision would risk asking "which platform?" unnecessarily.
+                # Vision-aware intake planning is a future enhancement.
+                if not payload.image_base64 and should_run_planner(message):
+                    planner_decision = await run_intake_planner(message, semaphore=llm_semaphore)
+                    if planner_decision.action == "ASK_CLARIFICATION":
+                        question = get_question_for_decision(planner_decision)
+                        session["history"].append({"role": "user", "content": message})
+                        session["history"].append({"role": "assistant", "content": question})
+                        session["last_activity"] = datetime.now()
+                        yield f"data: {json.dumps({'type': 'response', 'token': question, 'done': False})}\n\n"
+                        yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE:LLM_PLANNER', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                        return
+                    if planner_decision.enriched_query:
+                        retrieval_query = planner_decision.enriched_query
 
             # Ask for platform before retrieval — prevents wrong-platform hallucination.
             # Skip when already overridden to GENERAL_FAQ (e.g. browser cache issue).

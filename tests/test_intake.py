@@ -24,6 +24,9 @@ from app.intake.flow import (
     intake_is_complete,
     intake_fallback_message,
 )
+from app.intake.planner_models import IntakePlannerDecision
+from app.intake.question_templates import QUESTION_TEMPLATES, FALLBACK_QUESTION
+from app.intake.llm_planner import should_run_planner, get_question_for_decision
 
 
 # ── IntakeProfile ─────────────────────────────────────────────────────────────
@@ -484,3 +487,126 @@ class TestMultiTurnLifecycle:
         session = {"intake_profile": {"platform": None, "issue_type": None, "turns_spent": 1, "original_message": "x", "material_type": None, "course_code": None}}
         # A vague follow-up should NOT re-enter intake (mid-intake is handled separately)
         assert not should_enter_intake("I still don't have my book", session)
+
+
+# ── Phase 8: LLM intake planner ───────────────────────────────────────────────
+
+class TestIntakePlannerDecisionModel:
+    def test_allow_rag_action(self):
+        d = IntakePlannerDecision(
+            action="ALLOW_RAG", intent="specific", confidence=0.9,
+            known_slots={"platform": "CENGAGE"}, missing_slots=[],
+        )
+        assert d.action == "ALLOW_RAG"
+
+    def test_ask_clarification_action(self):
+        d = IntakePlannerDecision(
+            action="ASK_CLARIFICATION", intent="vague", confidence=0.8,
+            known_slots={}, missing_slots=["platform"],
+            next_question_key="ask_platform_for_book_access",
+        )
+        assert d.action == "ASK_CLARIFICATION"
+        assert d.next_question_key == "ask_platform_for_book_access"
+
+    def test_optional_fields_default_none(self):
+        d = IntakePlannerDecision(
+            action="ALLOW_RAG", intent="x", confidence=0.5,
+            known_slots={}, missing_slots=[],
+        )
+        assert d.next_question_key is None
+        assert d.enriched_query is None
+
+    def test_invalid_action_raises(self):
+        import pydantic
+        with pytest.raises((pydantic.ValidationError, ValueError)):
+            IntakePlannerDecision(
+                action="INVALID", intent="x", confidence=0.5,
+                known_slots={}, missing_slots=[],
+            )
+
+    def test_enriched_query_stored(self):
+        d = IntakePlannerDecision(
+            action="ALLOW_RAG", intent="specific", confidence=0.9,
+            known_slots={}, missing_slots=[],
+            enriched_query="Cengage MindTap access issue",
+        )
+        assert d.enriched_query == "Cengage MindTap access issue"
+
+
+class TestQuestionTemplates:
+    _EXPECTED_KEYS = {
+        "ask_platform_for_book_access",
+        "ask_issue_for_platform",
+        "ask_course_code",
+        "ask_error_message",
+        "ask_material_type",
+        "ask_blackboard_or_publisher_location",
+    }
+
+    def test_all_required_keys_present(self):
+        assert self._EXPECTED_KEYS.issubset(set(QUESTION_TEMPLATES.keys()))
+
+    def test_all_values_non_empty_strings(self):
+        for key, value in QUESTION_TEMPLATES.items():
+            assert isinstance(value, str) and len(value) > 0, f"Empty string for key {key!r}"
+
+    def test_fallback_question_defined(self):
+        assert isinstance(FALLBACK_QUESTION, str) and len(FALLBACK_QUESTION) > 0
+
+    def test_get_question_for_known_key(self):
+        decision = IntakePlannerDecision(
+            action="ASK_CLARIFICATION", intent="x", confidence=0.9,
+            known_slots={}, missing_slots=[],
+            next_question_key="ask_platform_for_book_access",
+        )
+        q = get_question_for_decision(decision)
+        assert q == QUESTION_TEMPLATES["ask_platform_for_book_access"]
+
+    def test_get_question_for_none_key_returns_fallback(self):
+        decision = IntakePlannerDecision(
+            action="ASK_CLARIFICATION", intent="x", confidence=0.9,
+            known_slots={}, missing_slots=[],
+            next_question_key=None,
+        )
+        assert get_question_for_decision(decision) == FALLBACK_QUESTION
+
+    def test_platform_question_mentions_examples(self):
+        q = QUESTION_TEMPLATES["ask_platform_for_book_access"]
+        assert "VitalSource" in q or "Cengage" in q
+
+
+class TestShouldRunPlanner:
+    def test_book_triggers_planner(self):
+        assert should_run_planner("My book is locked")
+
+    def test_textbook_triggers_planner(self):
+        assert should_run_planner("I can't find the textbook")
+
+    def test_ebook_triggers_planner(self):
+        assert should_run_planner("My ebook is not loading")
+
+    def test_access_triggers_planner(self):
+        assert should_run_planner("I lost access somehow")
+
+    def test_platform_name_triggers_planner(self):
+        assert should_run_planner("Something is wrong with cengage")
+
+    def test_material_triggers_planner(self):
+        assert should_run_planner("My course materials are gone")
+
+    def test_store_hours_skips_planner(self):
+        assert not should_run_planner("What are the store hours?")
+
+    def test_greeting_skips_planner(self):
+        assert not should_run_planner("Hi there")
+
+    def test_refund_only_skips_planner(self):
+        assert not should_run_planner("I want a refund")
+
+    def test_platform_and_issue_present_skips_planner(self):
+        # Both slots deterministically present — planner adds no value
+        assert not should_run_planner("I can't access my Cengage MindTap book")
+
+    def test_platform_only_still_runs_planner(self):
+        # Platform present but no issue type — clarification still needed
+        assert should_run_planner("Something is wrong with Cengage")
