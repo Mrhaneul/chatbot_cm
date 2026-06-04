@@ -354,6 +354,27 @@
 
   .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
+  .validate-btn {
+    width: 100%;
+    padding: 12px;
+    background: #fff;
+    color: var(--cbu-blue);
+    border: 1px solid var(--cbu-blue);
+    border-radius: var(--radius);
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 10px;
+  }
+
+  .validate-btn:hover:not(:disabled) {
+    background: var(--info-bg);
+  }
+
+  .validate-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
   /* Progress */
   .progress-card {
     display: none;
@@ -751,6 +772,7 @@
   <!-- Tab navigation -->
   <div class="tab-nav">
     <button class="tab-btn active" id="tab-add-btn" onclick="switchTab('add')">➕ Add Content</button>
+    <button class="tab-btn" id="tab-edit-btn" onclick="switchTab('edit')">Edit Content</button>
     <button class="tab-btn remove-tab" id="tab-remove-btn" onclick="switchTab('remove')">🗑 Remove Content</button>
   </div>
 
@@ -882,14 +904,86 @@
 
   </div><!-- /panel-add -->
 
+  <!-- EDIT CONTENT PANEL -->
+  <div id="panel-edit" style="display:none">
+
+    <h1 class="page-title">Edit Content</h1>
+    <p class="page-subtitle">
+      Select an existing FAQ or instruction file, make changes, and save. Lance will
+      archive the previous version and rebuild the search index after saving.
+    </p>
+
+    <div class="result-banner" id="editResultBanner">
+      <div class="result-icon" id="editResultIcon"></div>
+      <div class="result-body">
+        <div class="result-title" id="editResultTitle"></div>
+        <div class="result-detail" id="editResultDetail"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="step-num">1</span>Choose File</div>
+      <div class="field">
+        <label>Content type <span class="required">*</span></label>
+        <div class="type-selector">
+          <div class="type-option">
+            <input type="radio" name="editContentType" id="editTypeFaq" value="faq" checked
+              onchange="populateEditDropdown()">
+            <label for="editTypeFaq">
+              <div class="type-label-title">General FAQ</div>
+              <div class="type-label-desc">Files in data/faqs/</div>
+            </label>
+          </div>
+          <div class="type-option">
+            <input type="radio" name="editContentType" id="editTypeInstruction" value="instruction"
+              onchange="populateEditDropdown()">
+            <label for="editTypeInstruction">
+              <div class="type-label-title">Platform Instruction</div>
+              <div class="type-label-desc">Files in data/instructions/</div>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="field">
+        <label>File <span class="required">*</span></label>
+        <select id="editFileSelect" onchange="loadSelectedContent()">
+          <option value="">Select a file to edit...</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="step-num">2</span>Edit Text</div>
+      <div class="info-box">
+        Keep the YAML front matter at the top of the file. Required fields:
+        <code>source_id</code>, <code>source_type</code>, <code>category</code>,
+        <code>platform</code>, <code>issue_type</code>, and <code>priority</code>.
+      </div>
+      <textarea id="editContentText" spellcheck="false"
+        style="width:100%;min-height:420px;padding:14px;border:1px solid var(--border);border-radius:var(--radius);font-family:var(--mono);font-size:12px;line-height:1.5;resize:vertical;"
+        placeholder="Select a file to load its contents."></textarea>
+    </div>
+
+    <div class="card" style="padding:20px 28px">
+      <button class="validate-btn" id="validateEditBtn" onclick="handleValidateEdit()" disabled>
+        Validate Content
+      </button>
+      <button class="submit-btn" id="saveEditBtn" onclick="handleSaveEdit()" disabled>
+        <span>Save Content</span>
+        <span>→</span>
+      </button>
+    </div>
+
+  </div><!-- /panel-edit -->
+
   <!-- ═══════════════ REMOVE CONTENT PANEL ═══════════════ -->
   <div id="panel-remove" style="display:none">
 
     <h1 class="page-title" style="color:var(--error)">Remove Content from Lance</h1>
     <p class="page-subtitle">
-      Select a file to permanently remove from Lance. The search index will be rebuilt automatically
+      Select a file to archive from Lance. The search index will be rebuilt automatically
       and its Firestore PDF guide mappings will be cleaned up.
-      <strong>This action cannot be undone.</strong>
+      A timestamped copy will be kept in the content archive.
     </p>
 
     <!-- Result banner -->
@@ -943,12 +1037,11 @@
         </select>
       </div>
       <div class="danger-box" id="removeWarningBox">
-        ⚠️ <strong>You are about to permanently remove</strong>
+        ⚠️ <strong>You are about to archive</strong>
         <code id="removeFilenameDisplay"></code>
         <strong>from Lance.</strong><br>
-        This will delete the file, rebuild the search index, and remove
+        This will move the file into the content archive, rebuild the search index, and remove
         its PDF guide mappings from Firestore.
-        <strong>This cannot be undone.</strong>
       </div>
     </div>
 
@@ -1295,9 +1388,12 @@
   // ── Tab switching ───────────────────────────────────────────────────────────
   function switchTab(tab) {
     document.getElementById('panel-add').style.display    = tab === 'add'    ? 'block' : 'none';
+    document.getElementById('panel-edit').style.display   = tab === 'edit'   ? 'block' : 'none';
     document.getElementById('panel-remove').style.display = tab === 'remove' ? 'block' : 'none';
     document.getElementById('tab-add-btn').classList.toggle('active',    tab === 'add');
+    document.getElementById('tab-edit-btn').classList.toggle('active',   tab === 'edit');
     document.getElementById('tab-remove-btn').classList.toggle('active', tab === 'remove');
+    if (tab === 'edit') loadContentList().then(populateEditDropdown);
     if (tab === 'remove') loadContentList();
   }
 
@@ -1331,6 +1427,137 @@
     onRemoveFileChange();
   }
 
+  function populateEditDropdown() {
+    const type  = document.querySelector('input[name="editContentType"]:checked').value;
+    const files = type === 'faq' ? contentList.faqs : contentList.instructions;
+    const sel   = document.getElementById('editFileSelect');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Select a file to edit...</option>';
+    files.forEach(f => {
+      const opt = document.createElement('option');
+      opt.value = f;
+      opt.textContent = f;
+      sel.appendChild(opt);
+    });
+    document.getElementById('editContentText').value = '';
+    document.getElementById('validateEditBtn').disabled = true;
+    document.getElementById('saveEditBtn').disabled = true;
+  }
+
+  function showEditResult(type, title, detail) {
+    const banner = document.getElementById('editResultBanner');
+    banner.className = 'result-banner visible ' + type;
+    const icons = { success: '✓', error: '!', partial: '!' };
+    document.getElementById('editResultIcon').textContent = icons[type] || '!';
+    document.getElementById('editResultTitle').textContent = title;
+    document.getElementById('editResultDetail').textContent = detail;
+    banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  async function loadSelectedContent() {
+    const filename = document.getElementById('editFileSelect').value;
+    const type = document.querySelector('input[name="editContentType"]:checked').value;
+    const text = document.getElementById('editContentText');
+    const btn = document.getElementById('saveEditBtn');
+    const validateBtn = document.getElementById('validateEditBtn');
+    document.getElementById('editResultBanner').className = 'result-banner';
+    text.value = '';
+    validateBtn.disabled = true;
+    btn.disabled = true;
+    if (!filename) return;
+
+    try {
+      const params = new URLSearchParams({ filename, content_type: type });
+      const response = await fetch(`/admin/content?${params}`, { headers: getAdminHeaders() });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        showEditResult('error', 'Could not load file', result.message || 'The file could not be opened.');
+        return;
+      }
+      text.value = result.content || '';
+      validateBtn.disabled = false;
+      btn.disabled = false;
+      if (result.metadata && result.metadata.front_matter_error) {
+        showEditResult('partial', 'Front matter needs attention', result.metadata.front_matter_error);
+      }
+    } catch (err) {
+      showEditResult('error', 'Request failed', err.message);
+    }
+  }
+
+  async function readAdminJson(response) {
+    try {
+      return await response.json();
+    } catch (err) {
+      return { success: false, message: 'The server returned an unreadable response.' };
+    }
+  }
+
+  async function validateEditContent(type, content) {
+    const response = await fetch('/admin/validate-content', {
+      method: 'POST',
+      headers: { ...getAdminHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content_type: type, content })
+    });
+    const result = await readAdminJson(response);
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'The content did not pass validation.');
+    }
+    return result;
+  }
+
+  async function handleValidateEdit() {
+    const type = document.querySelector('input[name="editContentType"]:checked').value;
+    const content = document.getElementById('editContentText').value;
+    const btn = document.getElementById('validateEditBtn');
+    btn.disabled = true;
+    btn.textContent = 'Validating...';
+
+    try {
+      await validateEditContent(type, content);
+      showEditResult('success', 'Content is valid', 'YAML front matter and body are ready to save.');
+    } catch (err) {
+      showEditResult('error', 'Validation failed', err.message);
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Validate Content';
+  }
+
+  async function handleSaveEdit() {
+    const filename = document.getElementById('editFileSelect').value;
+    const type = document.querySelector('input[name="editContentType"]:checked').value;
+    const content = document.getElementById('editContentText').value;
+    const btn = document.getElementById('saveEditBtn');
+    const validateBtn = document.getElementById('validateEditBtn');
+    if (!filename) return;
+    btn.disabled = true;
+    validateBtn.disabled = true;
+    btn.innerHTML = '<span>Validating...</span>';
+
+    try {
+      await validateEditContent(type, content);
+      btn.innerHTML = '<span>Saving...</span>';
+      const response = await fetch('/admin/save-content', {
+        method: 'POST',
+        headers: { ...getAdminHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename, content_type: type, content })
+      });
+      const result = await readAdminJson(response);
+      if (!response.ok || !result.success) {
+        showEditResult('error', 'Save failed', result.message || 'The content was not saved.');
+      } else {
+        showEditResult('success', 'Content saved', result.message || 'Saved and indexed.');
+      }
+    } catch (err) {
+      showEditResult('error', 'Request failed', err.message);
+    }
+
+    validateBtn.disabled = false;
+    btn.disabled = false;
+    btn.innerHTML = '<span>Save Content</span><span>→</span>';
+  }
+
   function onRemoveFileChange() {
     const filename   = document.getElementById('removeFileSelect').value;
     const warningBox = document.getElementById('removeWarningBox');
@@ -1350,7 +1577,7 @@
     const list  = document.getElementById('removeStepList');
     list.innerHTML = '';
     [
-      { id: 'rm_file',      label: 'Removing file from Lance' },
+      { id: 'rm_file',      label: 'Archiving file from Lance' },
       { id: 'rm_ingest',    label: 'Rebuilding search index' },
       { id: 'rm_firestore', label: 'Cleaning up PDF mappings (Firestore)' },
     ].forEach(s => {
@@ -1387,7 +1614,7 @@
 
     const btn = document.getElementById('removeBtn');
     btn.disabled = true;
-    btn.innerHTML = '<span>Removing…</span>';
+    btn.innerHTML = '<span>Archiving…</span>';
 
     buildRemoveStepList();
     document.getElementById('removeProgressCard').className = 'progress-card visible';
@@ -1403,15 +1630,15 @@
       const result   = await response.json();
 
       if (!response.ok || !result.success) {
-        setStep('rm_file', 'error', result.message || 'Failed to remove file');
+        setStep('rm_file', 'error', result.message || 'Failed to archive file');
         showRemoveResult('error', 'Removal failed', result.message || 'An unexpected error occurred.');
       } else {
-        setStep('rm_file',      'done',    filename + ' deleted from disk');
+        setStep('rm_file',      'done',    filename + ' moved to archive');
         setStep('rm_ingest',    'done',    result.ingest_detail || 'Index rebuilt');
         setStep('rm_firestore', result.firestore_map_deleted ? 'done' : 'skipped',
           result.firestore_map_deleted ? 'Mapping removed' : 'No mapping found — skipped');
 
-        showRemoveResult('success', 'File removed successfully', result.message);
+        showRemoveResult('success', 'File archived successfully', result.message);
 
         // Refresh the dropdown so the removed file is no longer listed
         await loadContentList();

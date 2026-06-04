@@ -203,6 +203,7 @@ def test_admin_copy_list_and_remove_support_nested_relative_paths(tmp_path: Path
     instruction_root = tmp_path / "instructions"
     monkeypatch.setattr(admin, "FAQ_DIR", faq_root)
     monkeypatch.setattr(admin, "INSTRUCTIONS_DIR", instruction_root)
+    monkeypatch.setattr(admin, "ARCHIVE_DIR", tmp_path / "_archive")
     monkeypatch.setattr(admin, "_run_ingestion", lambda: "Index rebuilt successfully.")
     monkeypatch.setattr("app.firebase_config.get_firestore_client", lambda: None)
 
