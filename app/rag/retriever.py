@@ -17,6 +17,7 @@ Previous changes:
 import logging
 import os
 import re
+from pathlib import Path
 
 import faiss
 import numpy as np
@@ -24,6 +25,7 @@ import yaml
 
 from .config import cfg
 from .context_expansion import expand_retrieval_context
+from .ingest import discover_txt_files
 from .metadata import (
     INSTRUCTION_META_SCHEMA,
     FAQ_META_SCHEMA,
@@ -103,21 +105,22 @@ class FAQRetriever:
     def _load_source_metadata() -> dict[str, dict]:
         """Load optional front-matter metadata from source txt files."""
         source_metadata: dict[str, dict] = {}
-        for directory in (cfg.FAQ_DIR, cfg.INSTRUCTIONS_DIR):
+        for directory, generated_prefixes in (
+            (cfg.FAQ_DIR, ("faqs_chunks",)),
+            (cfg.INSTRUCTIONS_DIR, ("instructions_chunks",)),
+        ):
             if not os.path.isdir(directory):
                 continue
-            for file_name in os.listdir(directory):
-                if not file_name.lower().endswith(".txt"):
-                    continue
-                if file_name.startswith(("faqs_chunks", "instructions_chunks")):
-                    continue
-                path = os.path.join(directory, file_name)
+            root = Path(directory)
+            for path in discover_txt_files(directory, generated_prefixes):
+                source_file = path.relative_to(root).as_posix()
                 try:
                     metadata, _ = load_document_with_metadata(path)
                 except Exception as exc:
                     log.warning("Could not load source metadata for %s: %s", path, exc)
                     continue
-                source_metadata[file_name] = metadata
+                metadata["source_file"] = source_file
+                source_metadata[source_file] = metadata
         return source_metadata
 
     def _select_collection(self, query: str) -> str:

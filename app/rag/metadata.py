@@ -103,11 +103,11 @@ def parse_front_matter_text(text: str) -> tuple[dict, str]:
 
 
 def infer_source_type(path: str | Path) -> str:
-    """Infer source_type from the parent folder name."""
-    parent = Path(path).parent.name.lower()
-    if parent == "faqs":
+    """Infer source_type from the document's content-root ancestor."""
+    path_parts = {part.lower() for part in Path(path).parts}
+    if "faqs" in path_parts:
         return "faq"
-    if parent == "instructions":
+    if "instructions" in path_parts:
         return "instruction"
     return "document"
 

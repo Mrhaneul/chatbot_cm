@@ -4,6 +4,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from app.config.loader import METADATA_PLATFORM_ALIASES as PLATFORM_ALIASES
+
 
 SCORING_WEIGHTS = {
     "keyword_score_max": 0.15,
@@ -23,21 +25,6 @@ class QueryMetadata:
 
     def has_filters(self) -> bool:
         return bool(self.category or self.platform or self.issue_type)
-
-
-PLATFORM_ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("mcgraw_hill", ("mcgraw hill", "mcgraw", "connect")),
-    ("vitalsource", ("vitalsource",)),
-    ("bedford", ("bedford",)),
-    ("pearson", ("pearson", "mylab", "mastering")),
-    ("cengage", ("cengage", "mindtap")),
-    ("wiley", ("wileyplus", "wiley")),
-    ("zybooks", ("zybooks", "zybook")),
-    ("sage", ("sage", "vantage")),
-    ("macmillan", ("macmillan", "achieve")),
-    ("simucase", ("simucase",)),
-    ("cliftonstrengths", ("cliftonstrengths", "clifton", "strengthsquest")),
-)
 
 
 def _contains_phrase(text: str, phrase: str) -> bool:

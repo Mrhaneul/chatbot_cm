@@ -1,0 +1,12 @@
+# config/clarification_flows.yaml
+# ---------------------------------------------------------------------------
+# Template messages sent during clarification flows.
+# Edit here -- no code changes needed.
+# ---------------------------------------------------------------------------
+
+platform_clarification:
+  message: >-
+    I can help you with textbook access! To give you the most accurate instructions,
+    could you please specify which platform or publisher your textbook uses?
+    Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford,
+    Sage, SimuCase, etc.

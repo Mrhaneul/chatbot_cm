@@ -1,0 +1,155 @@
+version: 1
+
+# ── Harmful patterns ──────────────────────────────────────────────────────────
+# Requests that must never reach Campus Store retrieval or LLM generation.
+harmful:
+  refusal_template: harmful_refusal
+  patterns:
+    - id: weapons_explosives
+      regex: "(?i)\\b(make|build|create|assemble|buy|get).{0,50}\\b(bomb|explosive|grenade|molotov|dynamite|weapon|gun|firearm|knife|poison)\\b"
+    - id: harm_to_people
+      regex: "(?i)\\b(kill|hurt|injure|attack|stab|shoot|murder|assault).{0,40}\\b(someone|person|people|student|staff|teacher|professor)\\b"
+    - id: self_harm
+      regex: "(?i)\\b(kill myself|suicide|self.harm|cut myself|hurt myself|end my life)\\b"
+    - id: credential_theft
+      regex: "(?i)\\b(hack|steal|phish|bypass|crack|brute.?force|exploit|jailbreak).{0,50}\\b(account|password|blackboard|canvas|access.?code|login|credential|platform|license|courseware|subscription)\\b"
+    - id: payment_fraud
+      regex: "(?i)\\b(bypass|avoid|steal|get free|pirate|torrent|crack).{0,50}\\b(access.?codes?|courseware|textbooks?|paying|payment|subscription|license)\\b"
+    - id: no_pay_attempt
+      regex: "(?i)\\b(get|access|use|download).{0,60}\\bwithout paying\\b"
+    - id: credential_sharing
+      regex: "(?i)\\b(use|borrow|share).{0,40}\\b(someone else.?s|another person.?s|another student.?s|my friend.?s|a friend.?s).{0,30}\\b(login|account|password|access|credentials?)\\b"
+    - id: unauthorized_access
+      regex: "(?i)\\b(access|get into|break into|log into).{0,40}\\b(someone else.?s|another student.?s|my professor.?s).{0,20}\\b(account|blackboard|canvas|email)\\b"
+    - id: sexual_content
+      regex: "(?i)\\b(porn|pornography|nude|naked|sex|sexual|explicit.?content|onlyfans)\\b"
+    - id: harassment
+      regex: "(?i)\\b(harass|threaten|stalk|dox|doxx|swat).{0,40}\\b(student|professor|staff|person|someone)\\b"
+
+# ── Abuse / spam patterns ─────────────────────────────────────────────────────
+# Repeated profanity or off-topic spam — softer refusal, no harmful label.
+abuse:
+  refusal_template: abuse_refusal
+  patterns:
+    - id: profanity_only
+      regex: "(?i)^[\\s]*(f+u+c+k+|s+h+i+t+|a+s+s+h+o+l+e+|b+i+t+c+h+|d+a+m+n+|b+a+s+t+a+r+d+)[\\s!.]*$"
+    - id: gibberish_spam
+      regex: "(?i)^[^a-z]{10,}$"
+
+# ── Out-of-scope keywords ─────────────────────────────────────────────────────
+# Topics that are clearly outside Campus Store domain (non-harmful).
+out_of_scope:
+  fallback_template: campus_store_scope_fallback
+  keywords:
+    - parking permit
+    - parking pass
+    - parking services
+    - where can i park
+    - where do i park
+    - where to park
+    - park on campus
+    - student housing
+    - find housing
+    - how do i find housing
+    - dorm
+    - dormitory
+    - residence hall
+    - meal plan
+    - dining hall
+    - cafeteria
+    - financial aid
+    - fafsa
+    - scholarship
+    - grants
+    - tuition payment
+    - bursar
+    - student accounts
+    - registrar
+    - admissions
+    - transcript
+    - graduation
+    - commencement
+    - chapel
+    - chapel credit
+    - it help desk
+    - it department
+    - cbu email password
+    - email password reset
+    - password reset
+    - cbu wifi
+    - campus wifi
+    - network access
+    - blackboard password
+    - lms password
+    - library
+    - moodle
+    - health center
+    - counseling center
+    - student services
+    - cbu app
+
+# ── Campus Store allowlist keywords ──────────────────────────────────────────
+# Messages that clearly match the allowed domain → fast ALLOW without classifier.
+campus_store_allowlist:
+  keywords:
+    - immediate access
+    - textbook
+    - ebook
+    - e-book
+    - course material
+    - access code
+    - blackboard
+    - cengage
+    - mindtap
+    - cnow
+    - mcgraw
+    - connect
+    - aleks
+    - pearson
+    - mylab
+    - mastering
+    - vitalsource
+    - bookshelf
+    - wiley
+    - wileyplus
+    - stukent
+    - simucase
+    - zybooks
+    - zybook
+    - sage vantage
+    - bedford
+    - macmillan
+    - achieve
+    - inquizitive
+    - norton
+    - campus store
+    - opt out
+    - opt-out
+    - refund
+    - return textbook
+    - return my textbook
+    - rental
+    - store hours
+    - digital content
+    - publisher
+    - my book
+    - my textbook
+    - my ebook
+    - courseware
+    - cliftonstrengths
+
+# ── Greeting allowlist ────────────────────────────────────────────────────────
+# Greetings pass through immediately — they are handled downstream.
+greetings:
+  keywords:
+    - hi
+    - hello
+    - hey
+    - good morning
+    - good afternoon
+    - good evening
+    - greetings
+    - thanks
+    - thank you
+    - bye
+    - goodbye

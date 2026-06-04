@@ -214,6 +214,30 @@ def _match_platforms_for_file(file_name: str, text: str, platforms: list[dict]) 
     return []
 
 
+def discover_txt_files(root_dir: str | os.PathLike, generated_prefixes: tuple[str, ...]) -> list[Path]:
+    """
+    Return `.txt` files under root_dir recursively, sorted by relative path.
+
+    Existing flat files keep the same relative names and ordering as the old
+    os.listdir() implementation. Generated chunk files are skipped even if a
+    future admin places them in a nested folder by mistake.
+    """
+    root = Path(root_dir)
+    return sorted(
+        (
+            path
+            for path in root.rglob("*.txt")
+            if path.is_file() and not path.name.startswith(generated_prefixes)
+        ),
+        key=lambda path: path.relative_to(root).as_posix().lower(),
+    )
+
+
+def _relative_source_file(path: Path, root_dir: str | os.PathLike) -> str:
+    """Return the path stored in chunk metadata for a source document."""
+    return path.relative_to(Path(root_dir)).as_posix()
+
+
 # ── FAISS index builder ───────────────────────────────────────────────────────
 
 def _build_and_save_index(chunks: list, index_path: str, chunks_path: str, label: str):
@@ -254,31 +278,29 @@ def ingest_faqs():
     if not os.path.exists(cfg.FAQ_DIR):
         raise FileNotFoundError(f"FAQ directory not found: '{cfg.FAQ_DIR}'")
 
-    file_names = sorted(
-        f for f in os.listdir(cfg.FAQ_DIR)
-        if f.lower().endswith(".txt") and not f.startswith("faqs_chunks")
-    )
-    log.info("Found %d FAQ file(s) in %s", len(file_names), cfg.FAQ_DIR)
+    source_files = discover_txt_files(cfg.FAQ_DIR, ("faqs_chunks",))
+    log.info("Found %d FAQ file(s) in %s", len(source_files), cfg.FAQ_DIR)
 
     all_chunks = []
 
-    for file_name in file_names:
-        file_path = os.path.join(cfg.FAQ_DIR, file_name)
+    for file_path in source_files:
+        source_file = _relative_source_file(file_path, cfg.FAQ_DIR)
         try:
             document_metadata, text = load_document_with_metadata(file_path)
         except Exception:
             log.exception("Failed to read %s", file_path)
             continue
+        document_metadata["source_file"] = source_file
 
         if not text:
-            log.warning("Skipped empty file: %s", file_name)
+            log.warning("Skipped empty file: %s", source_file)
             continue
 
-        raw_chunks = _split_faq_file(text, file_name)
-        log.info("  %s  ->  %d FAQ chunk(s)", file_name, len(raw_chunks))
+        raw_chunks = _split_faq_file(text, source_file)
+        log.info("  %s  ->  %d FAQ chunk(s)", source_file, len(raw_chunks))
 
         for rc in raw_chunks:
-            context    = f"{file_name} / {rc.get('faq_id', '')}"
+            context    = f"{source_file} / {rc.get('faq_id', '')}"
             meta_dict  = {
                 **document_metadata,
                 "platform": document_metadata.get("platform"),
@@ -308,36 +330,34 @@ def ingest_instructions():
 
     platforms = _load_platforms()
 
-    file_names = sorted(
-        f for f in os.listdir(cfg.INSTRUCTIONS_DIR)
-        if f.lower().endswith(".txt") and not f.startswith("instructions_chunks")
-    )
-    log.info("Found %d instruction file(s) in %s", len(file_names), cfg.INSTRUCTIONS_DIR)
+    source_files = discover_txt_files(cfg.INSTRUCTIONS_DIR, ("instructions_chunks",))
+    log.info("Found %d instruction file(s) in %s", len(source_files), cfg.INSTRUCTIONS_DIR)
 
     all_chunks: list = []
     platform_chunks: dict = {p["key"]: [] for p in platforms}
 
-    for file_name in file_names:
-        file_path = os.path.join(cfg.INSTRUCTIONS_DIR, file_name)
+    for file_path in source_files:
+        source_file = _relative_source_file(file_path, cfg.INSTRUCTIONS_DIR)
         try:
             document_metadata, text = load_document_with_metadata(file_path)
         except Exception:
             log.exception("Failed to read %s", file_path)
             continue
+        document_metadata["source_file"] = source_file
 
         if not text:
-            log.warning("Skipped empty file: %s", file_name)
+            log.warning("Skipped empty file: %s", source_file)
             continue
 
-        matched_platforms = _match_platforms_for_file(file_name, text, platforms)
+        matched_platforms = _match_platforms_for_file(source_file, text, platforms)
 
-        raw_chunks = _split_instruction_file(text, file_name)
+        raw_chunks = _split_instruction_file(text, source_file)
         log.info("  %s  ->  %d section chunk(s)  [platforms: %s]",
-                 file_name, len(raw_chunks),
+                 source_file, len(raw_chunks),
                  ", ".join(matched_platforms) if matched_platforms else "general")
 
         for rc in raw_chunks:
-            context   = f"{file_name} / {rc.get('section_title', '')}"
+            context   = f"{source_file} / {rc.get('section_title', '')}"
             meta_dict = {
                 **document_metadata,
                 "platform": document_metadata.get(

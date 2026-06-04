@@ -29,20 +29,51 @@ Security note:
 
 import io
 import re
+import shutil
 import subprocess
 import sys
 import os
 from pathlib import Path
 from datetime import datetime
 from typing import List, Optional
+from urllib.parse import unquote
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Body
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from app.admin_auth import verify_admin_credentials
+from app.feedback import (
+    FeedbackReviewUpdate,
+    list_feedback_records,
+    update_feedback_review,
+)
+from app.rag.metadata import parse_front_matter_text
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 FAQ_DIR          = Path(os.environ.get("FAQ_DIR", "data/faqs"))
 INSTRUCTIONS_DIR = Path(os.environ.get("INSTRUCTIONS_DIR", "data/instructions"))
+ARCHIVE_DIR      = Path(os.environ.get("CONTENT_ARCHIVE_DIR", "data/_archive"))
+
+REQUIRED_FRONT_MATTER_FIELDS = (
+    "source_id",
+    "source_type",
+    "category",
+    "platform",
+    "issue_type",
+    "priority",
+)
+
+
+class ContentValidationRequest(BaseModel):
+    content_type: str
+    content: str
+
+
+class ContentSaveRequest(BaseModel):
+    content_type: str
+    filename: str
+    content: str
 
 # All routes on this router require valid admin credentials
 admin_router = APIRouter(
@@ -63,11 +94,181 @@ def _validate_txt_content(content: str) -> Optional[str]:
     return None
 
 
-def _copy_txt(content: bytes, filename: str, content_type: str) -> Path:
+def _validate_content_type(content_type: str) -> Optional[str]:
+    if content_type not in ("faq", "instruction"):
+        return "content_type must be 'faq' or 'instruction'."
+    return None
+
+
+def _validate_front_matter_for_admin(content: str, content_type: str) -> tuple[dict, str]:
+    """
+    Validate staff-edited content before saving.
+
+    Admin-managed files must include complete front matter so published content
+    has stable source identity and filtering metadata.
+    """
+    type_error = _validate_content_type(content_type)
+    if type_error:
+        raise ValueError(type_error)
+
+    if not content.strip():
+        raise ValueError("Content must not be empty.")
+    if not content.lstrip().startswith("---"):
+        raise ValueError(
+            "Missing YAML front matter. Start the file with --- and include "
+            "source_id, source_type, category, platform, issue_type, and priority."
+        )
+
+    try:
+        metadata, body = parse_front_matter_text(content)
+    except ValueError as exc:
+        raise ValueError(f"Malformed YAML front matter: {exc}") from exc
+
+    missing = [field for field in REQUIRED_FRONT_MATTER_FIELDS if field not in metadata]
+    if missing:
+        raise ValueError(f"Missing required front-matter field(s): {', '.join(missing)}.")
+
+    for field in REQUIRED_FRONT_MATTER_FIELDS:
+        value = metadata.get(field)
+        if field == "platform" and value is None:
+            continue
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"Front-matter field '{field}' must be a non-empty value.")
+
+    expected_source_type = "faq" if content_type == "faq" else "instruction"
+    if metadata.get("source_type") != expected_source_type:
+        raise ValueError(
+            f"source_type must be '{expected_source_type}' for {content_type} content."
+        )
+
+    if not body.strip():
+        raise ValueError("File body must not be empty after front matter.")
+
+    if content_type == "faq":
+        body_upper = body.upper()
+        if "QUESTION:" not in body_upper:
+            raise ValueError("FAQ body must include a QUESTION: section.")
+        if "ANSWER:" not in body_upper:
+            raise ValueError("FAQ body must include an ANSWER: section.")
+
+    return metadata, body.strip()
+
+
+def _content_root(content_type: str) -> Path:
+    return FAQ_DIR if content_type == "faq" else INSTRUCTIONS_DIR
+
+
+def _safe_relative_path(value: str | None, *, allow_empty: bool = False) -> Path:
+    """
+    Normalize a staff-provided relative path and reject absolute/traversal paths.
+    """
+    raw = (value or "").strip()
+    for _ in range(3):
+        decoded = unquote(raw)
+        if decoded == raw:
+            break
+        raw = decoded
+    raw = raw.replace("\\", "/")
+    if not raw:
+        if allow_empty:
+            return Path()
+        raise ValueError("Path must not be empty.")
+
+    candidate = Path(raw)
+    if candidate.is_absolute() or any(part in {"..", ""} for part in candidate.parts):
+        raise ValueError("Use a relative path inside the content directory.")
+    return candidate
+
+
+def _resolve_content_path(root: Path, relative_path: str) -> Path:
+    rel_path = _safe_relative_path(relative_path)
+    resolved_root = root.resolve()
+    resolved_target = (root / rel_path).resolve()
+    if resolved_root != resolved_target and resolved_root not in resolved_target.parents:
+        raise ValueError("Path escapes the content directory.")
+    return resolved_target
+
+
+def _content_relative_path(path: Path, root: Path) -> str:
+    return path.resolve().relative_to(root.resolve()).as_posix()
+
+
+def _list_txt_files(root: Path) -> list[str]:
+    if not root.exists():
+        return []
+    return sorted(
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*.txt")
+        if path.is_file()
+    )
+
+
+def _archive_path_for(source_path: Path, source_root: Path, action: str) -> Path:
+    relative = _content_relative_path(source_path, source_root)
+    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
+    unique_suffix = uuid4().hex[:8]
+    archive_path = ARCHIVE_DIR / action / source_root.name / relative
+    return archive_path.with_name(
+        f"{archive_path.stem}.{timestamp}.{unique_suffix}{archive_path.suffix}"
+    )
+
+
+def _archive_content_file(source_path: Path, source_root: Path, action: str, *, move: bool) -> Path:
+    archive_path = _archive_path_for(source_path, source_root, action)
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    if move:
+        shutil.move(os.fspath(source_path), os.fspath(archive_path))
+    else:
+        shutil.copy2(source_path, archive_path)
+    return archive_path
+
+
+def _read_content_file(content_type: str, filename: str) -> tuple[Path, str, dict]:
+    type_error = _validate_content_type(content_type)
+    if type_error:
+        raise ValueError(type_error)
+    root = _content_root(content_type)
+    target = _resolve_content_path(root, filename)
+    if not target.exists() or not target.is_file():
+        raise FileNotFoundError(f"'{filename}' not found in the {content_type} directory.")
+    content = target.read_text(encoding="utf-8")
+    try:
+        metadata, _body = parse_front_matter_text(content)
+    except ValueError as exc:
+        metadata = {"front_matter_error": str(exc)}
+    return target, content, metadata
+
+
+def _save_content_file(content_type: str, filename: str, content: str) -> tuple[Path, Path, dict]:
+    metadata, _body = _validate_front_matter_for_admin(content, content_type)
+    root = _content_root(content_type)
+    target = _resolve_content_path(root, filename)
+    if not target.exists() or not target.is_file():
+        raise FileNotFoundError(f"'{filename}' not found in the {content_type} directory.")
+    backup_path = _archive_content_file(target, root, "backups", move=False)
+    temp_path = target.with_name(f".{target.name}.tmp")
+    try:
+        temp_path.write_text(content, encoding="utf-8", newline="\n")
+        os.replace(temp_path, target)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+    return target, backup_path, metadata
+
+
+def _copy_txt(
+    content: bytes,
+    filename: str,
+    content_type: str,
+    target_folder: str | None = None,
+) -> Path:
     """Save uploaded .txt bytes to the correct data/ subfolder."""
-    dest_dir = FAQ_DIR if content_type == "faq" else INSTRUCTIONS_DIR
+    dest_root = _content_root(content_type)
+    safe_filename = _safe_relative_path(filename).name
+    safe_folder = _safe_relative_path(target_folder, allow_empty=True)
+    dest_dir = _resolve_content_path(dest_root, safe_folder.as_posix()) if safe_folder.parts else dest_root
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest_path = dest_dir / filename
+    dest_path = dest_dir / safe_filename
     dest_path.write_bytes(content)
     return dest_path
 
@@ -225,6 +426,7 @@ def _upload_all_pdfs(
 async def add_content(
     content_type: str             = Form(...),
     txt_file:     UploadFile      = File(...),
+    target_folder: str | None      = Form(default=None),
     pdf_files:    List[UploadFile] = File(default=[]),
     pdf_labels:   List[str]        = Form(default=[]),
 ):
@@ -309,13 +511,14 @@ async def add_content(
 
     # ── Copy .txt to data/ subfolder ───────────────────────────────────────────
     try:
-        txt_dest = _copy_txt(txt_bytes, txt_file.filename, content_type)
+        txt_dest = _copy_txt(txt_bytes, txt_file.filename, content_type, target_folder)
     except Exception as e:
         return JSONResponse(status_code=500, content={
             "success":     False,
             "failed_step": "upload_txt",
             "message":     f"Failed to save file: {str(e)}"
         })
+    txt_relative_path = _content_relative_path(txt_dest, _content_root(content_type))
 
     # ── Run FAISS ingestion ────────────────────────────────────────────────────
     try:
@@ -343,7 +546,7 @@ async def add_content(
     if pdfs_uploaded > 0:
         successful_doc_ids = [r["doc_id"] for r in pdf_results if r.get("doc_id")]
         try:
-            _write_txt_to_pdf_map(txt_file.filename, successful_doc_ids)
+            _write_txt_to_pdf_map(txt_relative_path, successful_doc_ids)
         except Exception as e:
             print(f"[WARN] txt_to_pdf_map write failed: {e}")
 
@@ -357,6 +560,7 @@ async def add_content(
     return JSONResponse(content={
         "success":        True,
         "txt_dest":       str(txt_dest),
+        "txt_relative_path": txt_relative_path,
         "ingest_detail":  ingest_detail,
         "pdf_results":    pdf_results,
         "pdfs_uploaded":  pdfs_uploaded,
@@ -369,9 +573,115 @@ async def add_content(
 @admin_router.get("/list-content")
 async def list_content():
     """Return sorted lists of all .txt files in data/faqs/ and data/instructions/."""
-    faqs         = sorted([f.name for f in FAQ_DIR.glob("*.txt")])         if FAQ_DIR.exists()         else []
-    instructions = sorted([f.name for f in INSTRUCTIONS_DIR.glob("*.txt")]) if INSTRUCTIONS_DIR.exists() else []
+    faqs         = _list_txt_files(FAQ_DIR)
+    instructions = _list_txt_files(INSTRUCTIONS_DIR)
     return JSONResponse(content={"faqs": faqs, "instructions": instructions})
+
+
+@admin_router.get("/content")
+async def get_content(
+    filename: str = None,
+    content_type: str = None,
+):
+    """Return a source .txt file for admin editing."""
+    if not filename or not content_type:
+        return JSONResponse(status_code=400, content={
+            "success": False,
+            "message": "Both 'filename' and 'content_type' query parameters are required."
+        })
+    try:
+        target, content, metadata = _read_content_file(content_type, filename)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"success": False, "message": str(exc)})
+    except FileNotFoundError as exc:
+        return JSONResponse(status_code=404, content={"success": False, "message": str(exc)})
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={
+            "success": False,
+            "message": f"Failed to read file: {exc}",
+        })
+
+    return JSONResponse(content={
+        "success": True,
+        "filename": filename,
+        "content_type": content_type,
+        "path": str(target),
+        "content": content,
+        "metadata": metadata,
+    })
+
+
+@admin_router.post("/validate-content")
+async def validate_content(payload: ContentValidationRequest = Body(...)):
+    """Validate edited text without saving it."""
+    try:
+        metadata, _body = _validate_front_matter_for_admin(
+            payload.content,
+            payload.content_type,
+        )
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={
+            "success": False,
+            "message": str(exc),
+        })
+    return JSONResponse(content={
+        "success": True,
+        "message": "Front matter and body look valid.",
+        "metadata": metadata,
+    })
+
+
+@admin_router.post("/save-content")
+async def save_content(payload: ContentSaveRequest = Body(...)):
+    """
+    Save an edited .txt file, archiving the previous version first, then rebuild
+    the FAISS index so the published answer is queryable.
+    """
+    try:
+        target, backup_path, metadata = _save_content_file(
+            payload.content_type,
+            payload.filename,
+            payload.content,
+        )
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={
+            "success": False,
+            "failed_step": "validate",
+            "message": str(exc),
+        })
+    except FileNotFoundError as exc:
+        return JSONResponse(status_code=404, content={
+            "success": False,
+            "failed_step": "save",
+            "message": str(exc),
+        })
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={
+            "success": False,
+            "failed_step": "save",
+            "message": f"Failed to save file: {exc}",
+        })
+
+    try:
+        ingest_detail = _run_ingestion()
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={
+            "success": False,
+            "failed_step": "ingest",
+            "message": f"File saved and backup created, but ingestion failed: {exc}",
+            "backup_path": str(backup_path),
+        })
+
+    return JSONResponse(content={
+        "success": True,
+        "filename": payload.filename,
+        "content_type": payload.content_type,
+        "path": str(target),
+        "backup_path": str(backup_path),
+        "metadata": metadata,
+        "ingest_detail": ingest_detail,
+        "message": "Content saved. Previous version was archived.",
+    })
 
 
 # ── Remove content ──────────────────────────────────────────────────────────────
@@ -401,17 +711,29 @@ async def remove_content(
             "message": "content_type must be 'faq' or 'instruction'."
         })
 
-    target_dir  = FAQ_DIR if content_type == "faq" else INSTRUCTIONS_DIR
-    target_file = target_dir / filename
+    target_dir  = _content_root(content_type)
+    try:
+        target_file = _resolve_content_path(target_dir, filename)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={
+            "success": False,
+            "message": str(exc)
+        })
 
-    if not target_file.exists():
+    if not target_file.exists() or not target_file.is_file():
         return JSONResponse(status_code=404, content={
             "success": False,
             "message": f"'{filename}' not found in the {content_type} directory."
         })
 
     # ── Delete file from disk ──────────────────────────────────────────────────
-    target_file.unlink()
+    try:
+        archive_path = _archive_content_file(target_file, target_dir, "removed", move=True)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={
+            "success": False,
+            "message": f"Failed to archive file before removal: {str(e)}"
+        })
 
     # ── Rebuild FAISS index ────────────────────────────────────────────────────
     try:
@@ -419,7 +741,7 @@ async def remove_content(
     except Exception as e:
         return JSONResponse(status_code=500, content={
             "success": False,
-            "message": f"File deleted but ingestion failed: {str(e)}"
+            "message": f"File archived but ingestion failed: {str(e)}"
         })
 
     # ── Remove txt_to_pdf_map entry from Firestore (non-fatal) ────────────────
@@ -439,13 +761,72 @@ async def remove_content(
         "success":               True,
         "filename":              filename,
         "content_type":          content_type,
+        "archive_path":          str(archive_path),
         "firestore_map_deleted": firestore_map_deleted,
         "ingest_detail":         ingest_detail,
-        "message":               f"'{filename}' removed successfully.",
+        "message":               f"'{filename}' archived successfully.",
     })
 
 
 # ── Hot-reload index ─────────────────────────────────────────────────────────
+
+# ── Feedback review ───────────────────────────────────────────────────────────
+
+@admin_router.get("/feedback")
+async def list_feedback(
+    low_rating: bool = False,
+    source_label: str | None = None,
+    date: str | None = None,
+    reviewed: bool | None = None,
+    resolved: bool | None = None,
+):
+    """List saved student feedback for admin review."""
+    try:
+        records = list_feedback_records(
+            low_rating=low_rating,
+            source_label=source_label,
+            date=date,
+            reviewed=reviewed,
+            resolved=resolved,
+        )
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={
+            "success": False,
+            "message": f"Failed to load feedback: {exc}",
+        })
+    return JSONResponse(content={
+        "success": True,
+        "feedback": records,
+        "count": len(records),
+    })
+
+
+@admin_router.patch("/feedback/{feedback_id}")
+async def update_feedback(feedback_id: str, payload: FeedbackReviewUpdate = Body(...)):
+    """Mark feedback reviewed/resolved for admin triage."""
+    try:
+        record = update_feedback_review(feedback_id, payload)
+    except FileNotFoundError as exc:
+        return JSONResponse(status_code=404, content={
+            "success": False,
+            "message": str(exc),
+        })
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={
+            "success": False,
+            "message": str(exc),
+        })
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={
+            "success": False,
+            "message": f"Failed to update feedback: {exc}",
+        })
+    return JSONResponse(content={
+        "success": True,
+        "feedback": record,
+        "message": "Feedback review status updated.",
+    })
+
 
 @admin_router.post("/reload-index")
 async def reload_index():

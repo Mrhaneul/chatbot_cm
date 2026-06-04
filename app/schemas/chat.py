@@ -12,6 +12,9 @@ class ChatResponse(BaseModel):
     source: str
     article_link: Optional[str] = None
     confidence: float
+    response_id: Optional[str] = None
+    session_id: Optional[str] = None
+    retrieved_source_file: Optional[str] = None
 
     # Performance metrics
     response_time_ms: Optional[float] = None

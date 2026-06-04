@@ -41,10 +41,37 @@ from app.rag.config import cfg
 from app.rag.model import get_model
 from app.rag.grounding_verifier import verify_answer_grounding, GROUNDING_SAFE_FALLBACK
 from app.quick_help_routes import build_quick_help_match
+from app.safety import run_safety_gate, get_safety_response, safety_source_label
+from app.safety.deterministic_rules import check_deterministic as _safety_check_deterministic
 
 from app.utils.logging_config import configure_logging
+from app.config.loader import (
+    PLATFORM_ALIASES,
+    PLATFORM_DISPLAY_NAMES,
+    PLATFORM_RETRIEVAL_KEY,
+    PUBLISHER_LIST_TEXT,
+    PUBLISHER_LIST_MAP,
+    GREETING_KEYWORDS,
+    GREETING_REPLY,
+    PLATFORM_CLARIFICATION_MESSAGE,
+    IA_KEYWORDS,
+    OPT_OUT_POLICY_SIGNALS,
+    OPT_OUT_TROUBLESHOOTING_EXCLUSIONS,
+    INFORMATIONAL_PATTERNS,
+    PLATFORMS_FOR_API,
+)
+
+from app.intake.models import IntakeProfile
+from app.intake.flow import (
+    should_enter_intake,
+    update_profile,
+    next_question as intake_next_question,
+    intake_is_complete,
+    intake_fallback_message,
+)
 
 from app.admin import admin_router
+from app.feedback import feedback_router
 from fastapi.responses import FileResponse
 from app.admin_auth import verify_admin_credentials
 from fastapi import Depends
@@ -108,19 +135,8 @@ MAX_CONCURRENT_LLM_REQUESTS = int(os.getenv("MAX_CONCURRENT_LLM_REQUESTS", "2"))
 GROUNDING_TOP_K = int(os.getenv("GROUNDING_TOP_K", "3"))
 CORS_ORIGINS = parse_csv_env("CORS_ORIGINS", "http://localhost:3000")
 ENABLE_DEBUG_ROUTES = parse_bool_env("ENABLE_DEBUG_ROUTES", default=False)
-
-GREETING_KEYWORDS = ["hi", "hello", "hey", "good morning", "good afternoon", "good evening", "greetings"]
-GREETING_REPLY = (
-    "Hi! I'm Lance, your Campus Store AI Assistant. "
-    "I can help with Immediate Access, textbook access, returns, and store policies. "
-    "What can I help you with today?"
-)
-PLATFORM_CLARIFICATION_MESSAGE = (
-    "I can help you with textbook access! To give you the most accurate instructions, "
-    "could you please specify which platform or publisher your textbook uses? "
-    "Examples: Cengage MindTap, McGraw Hill Connect, Pearson MyLab, VitalSource, Bedford, "
-    "Sage, SimuCase, etc."
-)
+ENABLE_SAFETY_FILTER = parse_bool_env("ENABLE_SAFETY_FILTER", default=True)
+ENABLE_SAFETY_CLASSIFIER = parse_bool_env("ENABLE_SAFETY_CLASSIFIER", default=True)
 
 # Create FastAPI app FIRST
 app = FastAPI(title="Campus Store Chatbot (Session-Safe + Performance Tracking)")
@@ -135,6 +151,7 @@ class NgrokMiddleware(BaseHTTPMiddleware):
 app.add_middleware(NgrokMiddleware)
 
 app.include_router(admin_router)
+app.include_router(feedback_router)
 
 @app.get("/admin")
 def admin_ui(username: str = Depends(verify_admin_credentials)):
@@ -190,83 +207,6 @@ async def readyz():
         return payload
     payload["status"] = "not_ready"
     raise HTTPException(status_code=503, detail=payload)
-
-PLATFORM_ALIASES: Dict[str, list[str]] = {
-    "CENGAGE": ["cengage", "mindtap", "cnow", "cnowv2"],
-    "MCGRAW_HILL": ["mcgraw", "mcgraw hill", "connect", "aleks"],
-    "PEARSON": ["pearson", "mylab", "mastering"],
-    "WILEY": ["wiley", "wileyplus"],
-    "MACMILLAN": ["macmillan", "achieve"],
-    "SAGE": ["sage", "vantage"],
-    "BEDFORD": ["bedford"],
-    "CLIFTON": ["clifton", "cliftonstrengths", "strengthsquest"],
-    "SIMUCASE": ["simucase", "simucace"],
-    "ZYBOOKS": ["zybooks", "zybook"],
-    "STUKENT": ["stukent"],
-    "VITALSOURCE": ["vitalsource"],
-    "INQUIZITIVE": [
-        "inquizitive",
-        "inquizitve",
-        "inquiztive",
-        "inquisitive",
-        "little seagull",
-        "norton",
-        "seagull handbook",
-    ],
-}
-
-# Maps detected platform keys to their FAISS index keys (for platforms that share an index).
-PLATFORM_RETRIEVAL_KEY: Dict[str, str] = {
-    "VITALSOURCE": "bedford",  # VitalSource and Bedford share the same Bookshelf platform/index
-}
-
-PLATFORM_DISPLAY_NAMES: Dict[str, str] = {
-    "CENGAGE": "Cengage MindTap",
-    "MCGRAW_HILL": "McGraw Hill Connect",
-    "PEARSON": "Pearson MyLab/Mastering",
-    "WILEY": "WileyPlus",
-    "MACMILLAN": "Macmillan Achieve",
-    "SAGE": "Sage Vantage",
-    "BEDFORD": "Bedford Bookshelf",
-    "CLIFTON": "CliftonStrengths",
-    "SIMUCASE": "SimuCase",
-    "ZYBOOKS": "zyBooks",
-    "STUKENT": "Stukent",
-    "VITALSOURCE": "VitalSource",
-    "INQUIZITIVE": "InQuizitive",
-}
-
-# ── Unrecognized-platform publisher list ──────────────────────────────────────
-PUBLISHER_LIST_TEXT = (
-    "1. Bedford Bookshelf\n"
-    "2. Pearson (MyLab, Modified, Mastering)\n"
-    "3. Cengage (MindTap, CNowV2)\n"
-    "4. Norton (InQuizitive)\n"
-    "5. McGraw Hill (Connect)\n"
-    "6. Macmillan / Mac Higher (Achieve)\n"
-    "7. Stukent\n"
-    "8. SimuCase\n"
-    "9. Sage\n"
-    "10. VitalSource\n"
-    "11. WileyPlus\n"
-    "12. ZyBooks (ZyLabs)"
-)
-
-# Maps numeric answers (1–12) to platform keys recognised by detect_platform_from_text
-PUBLISHER_LIST_MAP: Dict[str, str] = {
-    "1": "bedford",
-    "2": "pearson",
-    "3": "cengage",
-    "4": "inquizitive",
-    "5": "mcgraw",
-    "6": "macmillan",
-    "7": "stukent",
-    "8": "simucase",
-    "9": "sage",
-    "10": "vitalsource",
-    "11": "wiley",
-    "12": "zybooks",
-}
 
 # Merge dynamic registry entries (added by add_instruction.py)
 _registry = load_registry()
@@ -713,25 +653,12 @@ def detect_intent(message: str) -> str:
     normalized = message.lower()
 
     # Opt-out and physical textbook policy questions must go to FAQ, not IA troubleshooting.
-    # "access" in ia_keywords is too broad and would otherwise match "immediate access"
+    # "access" in IA_KEYWORDS is too broad and would otherwise match "immediate access"
     # in a policy question, misrouting it to IA_ACCESS_ISSUE.
-    opt_out_policy_signals = [
-        "opt out", "opt-out", "opting out", "opted out",
-        "physical textbook", "physical copy", "print textbook",
-        "buy a textbook", "purchase textbook", "purchase a textbook",
-        "buy textbook", "available in the", "student store",
-    ]
     # Guard: if troubleshooting context is present, the "opt out" text is likely
     # describing the Blackboard button ("Want to opt out?"), not asking about policy.
-    opt_out_troubleshooting_exclusions = [
-        "cannot access", "can't access", "cant access",
-        "no read now", "read now button", "read now",
-        "not showing", "only shows", "only gives", "only option",
-        "green check", "checkmark", "opted in",
-        "still cannot", "still can't", "still cant",
-    ]
-    if any(s in normalized for s in opt_out_policy_signals) and not any(
-        t in normalized for t in opt_out_troubleshooting_exclusions
+    if any(s in normalized for s in OPT_OUT_POLICY_SIGNALS) and not any(
+        t in normalized for t in OPT_OUT_TROUBLESHOOTING_EXCLUSIONS
     ):
         return "GENERAL_FAQ"
 
@@ -745,64 +672,8 @@ def detect_intent(message: str) -> str:
     if is_general_ia_question(message) or is_access_code_question(message):
         return "GENERAL_FAQ"
 
-    # ✨ Check for informational questions FIRST
-    informational_patterns = [
-        "what is",
-        "what's",
-        "what are",
-        "how does",
-        "how do",
-        "how can i",
-        "tell me about",
-        "explain",
-        "describe",
-        "can you tell me",
-        "i want to know",
-        "help me understand",
-        "definition of",
-        "define",
-    ]
-    
-    # Immediate Access AND Textbook troubleshooting keywords
-    ia_keywords = [
-        "opted in",
-        "can't access",
-        "cant access",
-        "cannot access",
-        "unable to access",
-        "trouble accessing",
-        "access issue",
-        "access problem",
-        "not working",
-        "doesn't work",
-        "doesnt work",
-        "won't open",
-        "wont open",
-        "need access",       
-        "need to access",     
-        "how do i access",    
-        "how to access",
-        "access",
-        "help with",
-        "help",
-        "having trouble",
-        "trouble with",
-        "having issues",       # ✨ NEW
-        "issues with",         # ✨ NEW
-        "email is wrong",
-        "wrong email",
-        "email error",
-        "incorrect email",
-        "email address is wrong",
-        "says my email",
-        "create account",
-        "set up account",
-        "create a vitalsource",
-        "need to create",
-    ]
-    
     # Check if any IA keyword is present AND mentions a platform OR textbook
-    has_ia_keyword = any(keyword in normalized for keyword in ia_keywords)
+    has_ia_keyword = any(keyword in normalized for keyword in IA_KEYWORDS)
     
     # Platform mentions include aliases from PLATFORM_ALIASES plus textbook synonyms.
     mentions_platform_or_textbook = (
@@ -830,7 +701,7 @@ def detect_intent(message: str) -> str:
         return "IA_ACCESS_ISSUE"
 
     # Treat informational questions as GENERAL_FAQ only when they are not IA/platform access issues.
-    if any(pattern in normalized for pattern in informational_patterns):
+    if any(pattern in normalized for pattern in INFORMATIONAL_PATTERNS):
         print("[INTENT DEBUG] Informational question detected")
         return "GENERAL_FAQ"
     
@@ -2394,6 +2265,59 @@ def is_ambiguous_platform_query(message: str) -> tuple[str | None, bool]:
     return None, False
 
 
+_LOW_RISK_CLARIFICATION_RE = re.compile(
+    r"""(?ix)
+    ^(
+      (i\s+)?don'?t\s+know
+      | not\s+sure
+      | yes | no | maybe | okay | ok
+      | cengage | mindtap | mcgraw(\s+hill)? | pearson | vitalsource
+      | wiley(plus)? | bedford | stukent | simucase | zybooks | sage
+      | norton | inquizitive | macmillan | achieve
+      | [a-z]{2,4}\s?\d{3,4}[a-z]?       # course codes: CS101, MPA545
+    )\s*[.!?]?\s*$
+    """,
+)
+
+# Explicit allowlist for "I don't know / not sure" clarification replies.
+# Only a bare statement or a safe trailing noun phrase (platform, publisher,
+# one, textbook …) is accepted. fullmatch prevents arbitrary trailing content
+# such as "I don't know how to jailbreak courseware" from matching.
+_DONT_KNOW_SAFE_RE = re.compile(
+    r"""(?ix)
+    ^(
+      i\s+(do\s+not|don'?t)\s+know
+      | (i'?m\s+)?not\s+sure
+    )
+    (
+      \s+(
+        which\s+(platform|publisher|one|textbook|book|e-?book|course)
+        | the\s+(platform|publisher|textbook|book|e-?book|name)
+      )
+    )?
+    \s*[.!?]?\s*$
+    """,
+)
+
+
+def _is_low_risk_clarification_reply(message: str) -> bool:
+    """
+    Return True only for short, clearly safe clarification answers.
+
+    Used to decide whether to skip the LLM safety classifier for follow-up
+    messages in an active clarification session. Longer messages or messages
+    that fail the pattern check must still go through the full classifier.
+    """
+    msg = message.strip()
+    if len(msg) > 80:
+        return False
+    # Also check: if the deterministic rules already flagged anything harmful, don't skip
+    det = _safety_check_deterministic(msg)
+    if det is not None and det.action not in ("ALLOW",):
+        return False
+    return bool(_LOW_RISK_CLARIFICATION_RE.fullmatch(msg)) or bool(_DONT_KNOW_SAFE_RE.fullmatch(msg))
+
+
 async def process_chat_request(payload: ChatRequest) -> ChatResponse:
     """
     Main chat endpoint with session management and performance tracking.
@@ -2420,7 +2344,65 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         has_image = bool(getattr(payload, "image_base64", None))
         retrieval_query = message
         faq_precheck_result = None
+        _enriched_query = None
+        _intake_completed = False
+        _completed_intake_platform = None
+        _completed_intake_issue_type = None
+        _completed_intake_material_type = None
         is_cache_issue = is_browser_cache_issue(message) or is_browser_cache_issue(retrieval_query)
+
+        # ── Safety gate ───────────────────────────────────────────────────────
+        # Runs before Quick Help, retrieval, and LLM generation.
+        # The text portion is always checked, even for image+text messages —
+        # image content itself is not inspected (known limitation: vision-only
+        # harmful content could bypass this gate).
+        #
+        # Skip the fuzzy LLM classifier only for short, clearly safe follow-up
+        # replies within an active clarification session (e.g. "I don't know",
+        # "Cengage", "CS101"). Longer replies or replies containing suspicious
+        # terms are always classified. The deterministic rules always run.
+        _session_in_clarification = (
+            session.get("awaiting_platform_type", False)
+            or session.get("awaiting_publisher_list_response", False)
+            or session.get("awaiting_class_access_clarification", False)
+            or session.get("awaiting_vitalsource_screen_confirm", False)
+        )
+        _skip_classifier = (
+            _session_in_clarification and _is_low_risk_clarification_reply(message)
+        )
+        safety_decision = await run_safety_gate(
+            message,
+            enable_filter=ENABLE_SAFETY_FILTER,
+            enable_classifier=ENABLE_SAFETY_CLASSIFIER and not _skip_classifier,
+            llm_client=llm,
+        )
+        if safety_decision.action != "ALLOW":
+            safety_reply = get_safety_response(safety_decision)
+            safety_src = safety_source_label(safety_decision)
+            print(
+                f"[SAFETY] action={safety_decision.action} "
+                f"category={safety_decision.category} "
+                f"confidence={safety_decision.confidence:.2f} "
+                f"reason={safety_decision.reason}"
+            )
+            session["history"].append({"role": "user", "content": message})
+            session["history"].append({"role": "assistant", "content": safety_reply})
+            if len(session["history"]) > MAX_HISTORY_TURNS * 2:
+                session["history"] = session["history"][-MAX_HISTORY_TURNS * 2:]
+            session["last_activity"] = datetime.now()
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=safety_reply,
+                source=safety_src,
+                article_link=None,
+                confidence=safety_decision.confidence,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[],
+                debug_mode=debug_mode,
+            )
+        # ─────────────────────────────────────────────────────────────────────
 
         quick_help_match = build_quick_help_match(message)
         if quick_help_match:
@@ -2450,6 +2432,98 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 debug_mode=debug_mode,
             )
 
+        # ── Intake: mid-flow turn (existing intake_profile in session) ───────────
+        _raw_profile = session.get("intake_profile")
+        if _raw_profile is not None:
+            profile = IntakeProfile.from_dict(_raw_profile)
+            profile = update_profile(profile, message)
+            if intake_is_complete(profile):
+                # Slots filled — enrich query and fall through to normal RAG.
+                print(
+                    f"[INTAKE] Complete: platform={profile.platform} "
+                    f"issue={profile.issue_type} after {profile.turns_spent} turn(s)"
+                )
+                session["intake_profile"] = None
+                # Seed session flags so existing RAG path picks up correctly.
+                session["stored_platform"] = profile.platform
+                session["stored_intent"] = "IA_ACCESS_ISSUE"
+                # Continue below with enriched retrieval query.
+                _enriched_query = profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
+                _intake_completed = True
+                _completed_intake_platform = profile.platform
+                _completed_intake_issue_type = profile.issue_type
+                _completed_intake_material_type = profile.material_type
+            elif profile.is_expired():
+                print(f"[INTAKE] Expired after {profile.turns_spent} turn(s) — using fallback")
+                session["intake_profile"] = None
+                fallback = intake_fallback_message()
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": fallback})
+                session["last_activity"] = datetime.now()
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=fallback,
+                    source="INTAKE",
+                    article_link=None,
+                    confidence=0.0,
+                    retrieval_time_ms=0,
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[],
+                    debug_mode=debug_mode,
+                )
+            else:
+                question = intake_next_question(profile)
+                session["intake_profile"] = profile.to_dict()
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": question})
+                session["last_activity"] = datetime.now()
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=question,
+                    source="INTAKE",
+                    article_link=None,
+                    confidence=0.0,
+                    retrieval_time_ms=0,
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[],
+                    debug_mode=debug_mode,
+                )
+        # ── Intake: first vague message — start intake if appropriate ─────────
+        if should_enter_intake(message, session):
+            new_profile = IntakeProfile(original_message=message)
+            new_profile = update_profile(new_profile, message)
+            if intake_is_complete(new_profile):
+                # Unlikely on first turn, but handle gracefully.
+                session["intake_profile"] = None
+                _enriched_query = new_profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
+                _intake_completed = True
+                _completed_intake_platform = new_profile.platform
+                _completed_intake_issue_type = new_profile.issue_type
+                _completed_intake_material_type = new_profile.material_type
+                session["stored_platform"] = new_profile.platform
+                session["stored_intent"] = "IA_ACCESS_ISSUE"
+            else:
+                question = intake_next_question(new_profile)
+                session["intake_profile"] = new_profile.to_dict()
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": question})
+                session["last_activity"] = datetime.now()
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=question,
+                    source="INTAKE",
+                    article_link=None,
+                    confidence=0.0,
+                    retrieval_time_ms=0,
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[],
+                    debug_mode=debug_mode,
+                )
+        # ─────────────────────────────────────────────────────────────────────
+
         # Initialize variables
         platform = None
         # Detect platform early for direct mentions
@@ -2459,6 +2533,21 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         is_vague_query = False
         explicit_textbook_selection = False
         skip_platform_ambiguity_clarification = False
+
+        # If intake just completed, force the IA instructions route and keep the
+        # enriched query intact for retrieval. This prevents completed intake
+        # follow-ups like "I can't access it" from being classified as FAQ.
+        if _intake_completed:
+            if (
+                _completed_intake_issue_type in {"access", "missing", "account"}
+                or _completed_intake_platform is not None
+                or _completed_intake_material_type is not None
+            ):
+                intent = "IA_ACCESS_ISSUE"
+            retrieval_query = _enriched_query
+            platform = _completed_intake_platform
+            session["stored_platform"] = platform
+            session["stored_intent"] = "IA_ACCESS_ISSUE"
 
         if is_ambiguous_refund_policy_query(message):
             clarification = ambiguous_refund_clarification_reply()
@@ -2802,7 +2891,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 debug_mode=debug_mode
             )
         
-        platform = platform_temp
+        platform = _completed_intake_platform if _intake_completed else platform_temp
 
         print(f"[PLATFORM DEBUG EARLY] platform_temp = {platform_temp}")
         print(f"[PLATFORM DEBUG EARLY] platform = {platform}")
@@ -3309,6 +3398,12 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             
             if platform is None:
                 platform = detect_platform_from_text(message)
+            if _intake_completed:
+                intent = "IA_ACCESS_ISSUE"
+                platform = _completed_intake_platform
+                retrieval_query = _enriched_query
+                session["stored_platform"] = platform
+                session["stored_intent"] = "IA_ACCESS_ISSUE"
             
             print(f"[PLATFORM DEBUG] Detected platform: {platform}")
 
@@ -3361,7 +3456,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     intent = "IA_ACCESS_ISSUE"
                     print("[INTENT DEBUG] Platform clarification detected - preserving IA_ACCESS_ISSUE intent")
             
-            if not is_platform_clarification:
+            if _intake_completed:
+                intent = "IA_ACCESS_ISSUE"
+                print("[INTENT DEBUG] Intake completed - preserving IA_ACCESS_ISSUE intent")
+            elif not is_platform_clarification:
                 intent = detect_intent(message)  # ✨ THIS IS THE CRITICAL LINE!
                 print(f"[INTENT DEBUG] Called detect_intent(), result: {intent}")
             
@@ -3439,6 +3537,13 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             print(f"[INTENT DEBUG] Browser cache issue override → GENERAL_FAQ (cache detected in query or image)")
 
         # NOW the intent is set!
+        if _intake_completed:
+            intent = "IA_ACCESS_ISSUE"
+            platform = _completed_intake_platform
+            retrieval_query = _enriched_query
+            session["stored_platform"] = platform
+            session["stored_intent"] = "IA_ACCESS_ISSUE"
+
         # 1. Intent detection happens somewhere up here
         print(f"[INTENT DEBUG] Final intent: {intent}")
 
@@ -3506,6 +3611,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # already in IA flow, return platform instructions directly.
         if (
             intent == "IA_ACCESS_ISSUE"
+            and not _intake_completed
             and platform is not None
             and len(message.split()) <= 5
             and session.get("stored_intent") == "IA_ACCESS_ISSUE"
@@ -3842,7 +3948,6 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         try:
             # --- Vision retrieval augmentation ---
             image_context = {}
-            retrieval_query = message
 
             if payload.image_base64:
                 from app.llm.llama_client import analyze_image_for_retrieval, build_augmented_query
@@ -3876,7 +3981,9 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             elif intent == "IA_ACCESS_ISSUE":
                 # Preserve query set in awaiting_platform_type TEXTBOOK_EBOOK handler —
                 # do not let conversation context pollute it (causes MacMillan false-match).
-                if not explicit_textbook_selection:
+                if _intake_completed:
+                    enhanced_query = retrieval_query
+                elif not explicit_textbook_selection:
                     enhanced_query = enhance_query_with_conversation_context(message, session["history"])
 
                 # Deterministic override: "Read Now button missing" is a general
@@ -4225,7 +4332,12 @@ async def chat(payload: ChatRequest):
     """
     Backward-compatible synchronous endpoint.
     """
-    return await process_chat_request(payload)
+    session_id = payload.session_id or str(uuid.uuid4())
+    payload.session_id = session_id
+    response = await process_chat_request(payload)
+    response.response_id = response.response_id or str(uuid.uuid4())
+    response.session_id = response.session_id or session_id
+    return response
 
 
 @app.post("/chat/stream")
@@ -4236,6 +4348,7 @@ async def chat_stream(payload: ChatRequest):
     token-by-token responses for the streaming UI path.
     """
     session_id = payload.session_id or str(uuid.uuid4())
+    response_id = str(uuid.uuid4())
     session = get_or_create_session(session_id)
     message = payload.message.strip()
 
@@ -4255,7 +4368,7 @@ async def chat_stream(payload: ChatRequest):
                 yield f"data: {json.dumps({'type': 'response', 'token': GREETING_REPLY, 'done': False})}\n\n"
                 yield (
                     "data: "
-                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'session_id': session_id, 'source': 'DETERMINISTIC_GREETING', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'DETERMINISTIC_GREETING', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
                 )
                 return
 
@@ -4294,7 +4407,7 @@ async def chat_stream(payload: ChatRequest):
                 yield f"data: {json.dumps({'type': 'response', 'token': PLATFORM_CLARIFICATION_MESSAGE, 'done': False})}\n\n"
                 yield (
                     "data: "
-                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'session_id': session_id, 'source': 'CLARIFICATION_NEEDED', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'CLARIFICATION_NEEDED', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
                 )
                 return
 
@@ -4355,7 +4468,7 @@ async def chat_stream(payload: ChatRequest):
                 yield f"data: {json.dumps({'token': escalation, 'done': False})}\n\n"
                 yield (
                     "data: "
-                    f"{json.dumps({'token': '', 'done': True, 'session_id': session_id, 'source': 'ESCALATION', 'confidence': confidence, 'recommended_pdfs': [], 'debug_mode': debug_mode})}\n\n"
+                    f"{json.dumps({'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'ESCALATION', 'confidence': confidence, 'recommended_pdfs': [], 'debug_mode': debug_mode})}\n\n"
                 )
                 return
 
@@ -4451,7 +4564,7 @@ async def chat_stream(payload: ChatRequest):
                     recommended_pdfs = []
                 yield (
                     "data: "
-                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'session_id': session_id, 'source': retrieval.get('source_id', 'LLM_VISION') if retrieval else 'LLM_VISION', 'confidence': confidence, 'recommended_pdfs': recommended_pdfs, 'debug_mode': debug_mode, 'thought': vision_thought})}\n\n"
+                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': retrieval.get('source_id', 'LLM_VISION') if retrieval else 'LLM_VISION', 'confidence': confidence, 'recommended_pdfs': recommended_pdfs, 'debug_mode': debug_mode, 'thought': vision_thought})}\n\n"
                 )
                 return
 
@@ -4521,14 +4634,14 @@ async def chat_stream(payload: ChatRequest):
             )
             yield (
                 "data: "
-                f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'session_id': session_id, 'source': source, 'confidence': confidence, 'recommended_pdfs': recommended_pdfs, 'debug_mode': debug_mode, 'thought': full_thought})}\n\n"
+                f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': source, 'confidence': confidence, 'recommended_pdfs': recommended_pdfs, 'debug_mode': debug_mode, 'thought': full_thought})}\n\n"
             )
 
         except Exception as e:
             print(f"[STREAM ERROR] {e}")
             yield (
                 "data: "
-                f"{json.dumps({'type': 'done', 'token': '[Error generating response]', 'done': True, 'session_id': session_id, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                f"{json.dumps({'type': 'done', 'token': '[Error generating response]', 'done': True, 'response_id': response_id, 'session_id': session_id, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
             )
 
     return StreamingResponse(
@@ -4734,20 +4847,7 @@ if not ENABLE_DEBUG_ROUTES:
 @app.get("/platforms")
 async def get_platforms():
     """
-    Returns a list of supported platforms from platforms.yaml.
+    Returns supported platforms from config/platforms.yaml via the config loader.
+    Each entry has 'key' (rag_key), 'display_name', and 'keywords' (aliases).
     """
-    try:
-        with open(cfg.PLATFORMS_CONFIG, "r", encoding="utf-8") as fh:
-            platforms_data = yaml.safe_load(fh)
-            return platforms_data.get("platforms", [])
-    except FileNotFoundError:
-        raise HTTPException(
-            status_code=500,
-            detail=f"platforms.yaml not found at {cfg.PLATFORMS_CONFIG}. "
-                   "Ensure the config file exists and is accessible."
-        )
-    except yaml.YAMLError as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error parsing platforms.yaml: {e}"
-        )
+    return PLATFORMS_FOR_API

@@ -1,0 +1,182 @@
+# config/platforms.yaml
+# ---------------------------------------------------------------------------
+# Source of truth for platform detection in the routing layer.
+# Ingest/retrieval keywords live in app/rag/platforms.yaml (do not modify).
+#
+# Schema per entry:
+#   key                    : uppercase internal key used by app/main.py
+#   rag_key                : lowercase key matching app/rag/platforms.yaml
+#   metadata_key           : (optional) key used by metadata_filtering.py;
+#                            defaults to key.lower() when absent
+#   display_name           : human-readable name shown in logs and API responses
+#   publisher_list_position: (optional) position in the numbered publisher list
+#   publisher_list_label   : (optional) label shown in the numbered publisher list
+#   retrieval_key          : (optional) FAISS index key override (for platforms
+#                            that share another platform's index)
+#   aliases                : lowercase strings for user-message detection (main.py)
+#   metadata_aliases       : (optional) lowercase strings for metadata_filtering.py;
+#                            omit to exclude this platform from metadata classification
+#
+# Ordered so that metadata_aliases platforms appear first, matching the original
+# detection priority in app/rag/metadata_filtering.py.
+# ---------------------------------------------------------------------------
+
+platforms:
+  - key: MCGRAW_HILL
+    rag_key: mcgraw
+    metadata_key: mcgraw_hill
+    display_name: "McGraw Hill Connect"
+    publisher_list_position: 5
+    publisher_list_label: "McGraw Hill (Connect)"
+    aliases:
+      - mcgraw
+      - mcgraw hill
+      - connect
+      - aleks
+    metadata_aliases:
+      - mcgraw hill
+      - mcgraw
+      - connect
+
+  - key: VITALSOURCE
+    rag_key: vitalsource
+    display_name: "VitalSource"
+    publisher_list_position: 10
+    publisher_list_label: "VitalSource"
+    retrieval_key: bedford
+    aliases:
+      - vitalsource
+    metadata_aliases:
+      - vitalsource
+
+  - key: BEDFORD
+    rag_key: bedford
+    display_name: "Bedford Bookshelf"
+    publisher_list_position: 1
+    publisher_list_label: "Bedford Bookshelf"
+    aliases:
+      - bedford
+    metadata_aliases:
+      - bedford
+
+  - key: PEARSON
+    rag_key: pearson
+    display_name: "Pearson MyLab/Mastering"
+    publisher_list_position: 2
+    publisher_list_label: "Pearson (MyLab, Modified, Mastering)"
+    aliases:
+      - pearson
+      - mylab
+      - mastering
+    metadata_aliases:
+      - pearson
+      - mylab
+      - mastering
+
+  - key: CENGAGE
+    rag_key: cengage
+    display_name: "Cengage MindTap"
+    publisher_list_position: 3
+    publisher_list_label: "Cengage (MindTap, CNowV2)"
+    aliases:
+      - cengage
+      - mindtap
+      - cnow
+      - cnowv2
+    metadata_aliases:
+      - cengage
+      - mindtap
+
+  - key: WILEY
+    rag_key: wiley
+    display_name: "WileyPlus"
+    publisher_list_position: 11
+    publisher_list_label: "WileyPlus"
+    aliases:
+      - wiley
+      - wileyplus
+    metadata_aliases:
+      - wileyplus
+      - wiley
+
+  - key: ZYBOOKS
+    rag_key: zybooks
+    display_name: "zyBooks"
+    publisher_list_position: 12
+    publisher_list_label: "ZyBooks (ZyLabs)"
+    aliases:
+      - zybooks
+      - zybook
+    metadata_aliases:
+      - zybooks
+      - zybook
+
+  - key: SAGE
+    rag_key: sage
+    display_name: "Sage Vantage"
+    publisher_list_position: 9
+    publisher_list_label: "Sage"
+    aliases:
+      - sage
+      - vantage
+    metadata_aliases:
+      - sage
+      - vantage
+
+  - key: MACMILLAN
+    rag_key: macmillan
+    display_name: "Macmillan Achieve"
+    publisher_list_position: 6
+    publisher_list_label: "Macmillan / Mac Higher (Achieve)"
+    aliases:
+      - macmillan
+      - achieve
+    metadata_aliases:
+      - macmillan
+      - achieve
+
+  - key: SIMUCASE
+    rag_key: simucase
+    display_name: "SimuCase"
+    publisher_list_position: 8
+    publisher_list_label: "SimuCase"
+    aliases:
+      - simucase
+      - simucace
+    metadata_aliases:
+      - simucase
+
+  - key: CLIFTON
+    rag_key: clifton
+    metadata_key: cliftonstrengths
+    display_name: "CliftonStrengths"
+    aliases:
+      - clifton
+      - cliftonstrengths
+      - strengthsquest
+    metadata_aliases:
+      - cliftonstrengths
+      - clifton
+      - strengthsquest
+
+  - key: STUKENT
+    rag_key: stukent
+    display_name: "Stukent"
+    publisher_list_position: 7
+    publisher_list_label: "Stukent"
+    aliases:
+      - stukent
+
+  - key: INQUIZITIVE
+    rag_key: inquizitive
+    display_name: "InQuizitive"
+    publisher_list_position: 4
+    publisher_list_label: "Norton (InQuizitive)"
+    aliases:
+      - inquizitive
+      - inquizitve
+      - inquiztive
+      - inquisitive
+      - little seagull
+      - norton
+      - seagull handbook
