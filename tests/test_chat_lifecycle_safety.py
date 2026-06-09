@@ -1005,3 +1005,216 @@ class TestPlannerRedundantClarificationRegression:
         assert profile["platform"] == "CENGAGE", (
             f"Stored platform must not be overwritten by planner. Got: {profile['platform']!r}"
         )
+
+
+# ── Final RAG generation resolved context tests ───────────────────────────────
+
+class TestFinalRAGGenerationResolvedContext:
+    """
+    Verify that after intake completes, the final LLM generation:
+    - Receives a system_hint that states the platform is confirmed
+    - Does NOT instruct the LLM to ask for platform again
+    - Uses the enriched query (not raw final message) as the LLM input
+    - Source is not INTAKE
+    """
+
+    def _make_retrieval(self, source_id: str, platform_prefix: str) -> dict:
+        return {
+            "context": f"1. Log in to Blackboard.\n2. Open the Immediate Access tab.\n3. Select {platform_prefix}.",
+            "source_id": source_id,
+            "score": 0.93,
+            "article_link": None,
+        }
+
+    async def _three_turn_session(
+        self,
+        session_id: str,
+        first_msg: str,
+        second_msg: str,
+        third_msg: str,
+        retrieval_result: dict,
+    ) -> tuple[dict, list[dict], list[dict]]:
+        """
+        Run a 3-turn intake completion via process_chat_request.
+        Returns (r3, retrieve_calls, llm_calls).
+        """
+        retrieve_calls: list[dict] = []
+        llm_calls: list[dict] = []
+
+        async def fake_retrieve(query, collection="auto", platform=None, top_k=1):
+            retrieve_calls.append({"query": query, "collection": collection, "platform": platform})
+            return retrieval_result
+
+        async def fake_llm(message, context, history, system_hint, image_base64=None):
+            llm_calls.append({"message": message, "system_hint": system_hint})
+            return f"Here are the steps for accessing {retrieval_result['context'][:40]}...", 0.0
+
+        planner_clarification = IntakePlannerDecision(
+            action="ASK_CLARIFICATION",
+            intent="vague_book_access",
+            confidence=0.85,
+            known_slots={},
+            missing_slots=["platform"],
+            next_question_key="ask_platform_for_book_access",
+        )
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=planner_clarification)),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=fake_retrieve)),
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(side_effect=fake_llm)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+            # Force LLM path: suppress the deterministic instruction builder so the
+            # test can observe system_hint. In production the deterministic path
+            # avoids the LLM; here we want to verify the hint when LLM IS used.
+            patch("app.main.build_instruction_fallback_from_context", return_value=""),
+        ):
+            await process_chat_request(_session_req(session_id, first_msg))
+            await process_chat_request(_session_req(session_id, second_msg))
+            r3 = await process_chat_request(_session_req(session_id, third_msg))
+
+        return r3, retrieve_calls, llm_calls
+
+    async def test_cengage_three_turn_system_hint_states_platform_confirmed(self):
+        """After 3-turn Cengage intake, system_hint must name Cengage as confirmed."""
+        session_id = f"test-rag-cengage-{uuid.uuid4()}"
+        r3, _, llm_calls = await self._three_turn_session(
+            session_id,
+            "My book is locked",
+            "Cengage MindTap",
+            "I can't access the textbook",
+            self._make_retrieval("INSTR_CENGAGE_001", "Cengage MindTap"),
+        )
+
+        assert not r3.source.startswith("INTAKE"), (
+            f"Final turn must reach RAG, not INTAKE. Got source={r3.source!r}"
+        )
+        assert llm_calls, "LLM must be called on the final turn"
+        hint = llm_calls[-1]["system_hint"]
+        assert "cengage" in hint.lower(), f"system_hint must mention Cengage: {hint!r}"
+        assert "confirmed" in hint.lower() or "do not ask" in hint.lower(), (
+            f"system_hint must state platform is confirmed: {hint!r}"
+        )
+        assert "ask for the platform" not in hint.lower() and "ask for the publisher" not in hint.lower(), (
+            f"system_hint must NOT instruct LLM to ask for platform: {hint!r}"
+        )
+
+    async def test_cengage_three_turn_llm_receives_enriched_query(self):
+        """LLM message on final turn must include original message and platform context."""
+        session_id = f"test-rag-enriched-{uuid.uuid4()}"
+        _, _, llm_calls = await self._three_turn_session(
+            session_id,
+            "My book is locked",
+            "Cengage MindTap",
+            "I can't access the textbook",
+            self._make_retrieval("INSTR_CENGAGE_002", "Cengage MindTap"),
+        )
+
+        assert llm_calls, "LLM must be called on the final turn"
+        llm_message = llm_calls[-1]["message"]
+        # Enriched query should include original message AND platform context
+        assert "My book is locked" in llm_message, (
+            f"LLM message must include original message: {llm_message!r}"
+        )
+        assert "Cengage" in llm_message or "cengage" in llm_message.lower(), (
+            f"LLM message must include platform: {llm_message!r}"
+        )
+
+    async def test_pearson_three_turn_system_hint_states_platform_confirmed(self):
+        """After 3-turn Pearson intake, system_hint must name Pearson as confirmed."""
+        session_id = f"test-rag-pearson-{uuid.uuid4()}"
+        r3, _, llm_calls = await self._three_turn_session(
+            session_id,
+            "My book is locked",
+            "Pearson MyLab",
+            "I can't access it",
+            self._make_retrieval("INSTR_PEARSON_001", "Pearson MyLab"),
+        )
+
+        assert not r3.source.startswith("INTAKE"), (
+            f"Final turn must reach RAG. Got source={r3.source!r}"
+        )
+        assert llm_calls, "LLM must be called on the final turn"
+        hint = llm_calls[-1]["system_hint"]
+        assert "pearson" in hint.lower(), f"system_hint must mention Pearson: {hint!r}"
+        assert "confirmed" in hint.lower() or "do not ask" in hint.lower(), (
+            f"system_hint must state platform is confirmed: {hint!r}"
+        )
+
+    async def test_mcgraw_three_turn_system_hint_states_platform_confirmed(self):
+        """After 3-turn McGraw Hill intake, system_hint must name McGraw Hill as confirmed."""
+        session_id = f"test-rag-mcgraw-{uuid.uuid4()}"
+        r3, _, llm_calls = await self._three_turn_session(
+            session_id,
+            "My book is locked",
+            "McGraw Hill Connect",
+            "I can't open it",
+            self._make_retrieval("INSTR_MCGRAW_001", "McGraw Hill Connect"),
+        )
+
+        assert not r3.source.startswith("INTAKE"), (
+            f"Final turn must reach RAG. Got source={r3.source!r}"
+        )
+        assert llm_calls, "LLM must be called on the final turn"
+        hint = llm_calls[-1]["system_hint"]
+        assert "mcgraw" in hint.lower() or "connect" in hint.lower(), (
+            f"system_hint must mention McGraw Hill: {hint!r}"
+        )
+        assert "confirmed" in hint.lower() or "do not ask" in hint.lower(), (
+            f"system_hint must state platform is confirmed: {hint!r}"
+        )
+
+    async def test_vitalsource_three_turn_system_hint_states_platform_confirmed(self):
+        """After 3-turn VitalSource intake, system_hint must name VitalSource as confirmed."""
+        session_id = f"test-rag-vs-{uuid.uuid4()}"
+        r3, _, llm_calls = await self._three_turn_session(
+            session_id,
+            "My book is locked",
+            "VitalSource",
+            "I can't access it",
+            self._make_retrieval("INSTR_VITALSOURCE_001", "VitalSource"),
+        )
+
+        assert not r3.source.startswith("INTAKE"), (
+            f"Final turn must reach RAG. Got source={r3.source!r}"
+        )
+        assert llm_calls, "LLM must be called on the final turn"
+        hint = llm_calls[-1]["system_hint"]
+        assert "vitalsource" in hint.lower(), f"system_hint must mention VitalSource: {hint!r}"
+        assert "confirmed" in hint.lower() or "do not ask" in hint.lower(), (
+            f"system_hint must state platform is confirmed: {hint!r}"
+        )
+
+    async def test_direct_platform_message_also_gets_confirmed_hint(self):
+        """
+        Even without intake flow, when platform is detected directly from the message,
+        the system_hint must not instruct LLM to ask for it again.
+        """
+        session_id = f"test-rag-direct-{uuid.uuid4()}"
+        llm_calls: list[dict] = []
+
+        async def fake_llm(message, context, history, system_hint, image_base64=None):
+            llm_calls.append({"message": message, "system_hint": system_hint})
+            return "Here are the Cengage steps...", 0.0
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch(
+                "app.main.retrieve_async",
+                new=AsyncMock(return_value=self._make_retrieval("INSTR_CENGAGE_003", "Cengage MindTap")),
+            ),
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(side_effect=fake_llm)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+            patch("app.main.build_instruction_fallback_from_context", return_value=""),
+        ):
+            r = await process_chat_request(
+                _session_req(session_id, "I can't access my Cengage MindTap textbook")
+            )
+
+        assert not r.source.startswith("INTAKE"), f"Should reach RAG, got {r.source!r}"
+        assert llm_calls, "LLM must be called"
+        hint = llm_calls[-1]["system_hint"]
+        assert "cengage" in hint.lower(), f"system_hint should mention Cengage: {hint!r}"
+        assert "ask for the platform" not in hint.lower(), (
+            f"system_hint must not ask for platform when it's already known: {hint!r}"
+        )

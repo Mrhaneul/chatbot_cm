@@ -4241,15 +4241,40 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             )
 
         elif intent == "IA_ACCESS_ISSUE":
-            system_hint = (
-                "The user is asking about Immediate Access digital course materials. "
-                "Do NOT suggest purchasing or renting physical textbooks unless the user explicitly asks. "
-                "If required information is missing, ask for the platform/publisher first "
-                "(for example: Cengage, McGraw Hill, Pearson, Norton/InQuizitive). "
-                "Do NOT ask for course code unless platform is already known and a course-specific step truly requires it. "
-                "Do NOT assume availability of print textbooks. "
-                "Only provide instructions for the specific platform mentioned in the official instructions."
-            )
+            if platform is not None:
+                # Platform is confirmed — build a resolved context block so the LLM
+                # never asks the student to specify the platform again.
+                _platform_display = PLATFORM_DISPLAY_NAMES.get(platform, platform)
+                _resolved_lines = [
+                    f"Platform: {_platform_display} (confirmed — do not ask again)",
+                ]
+                if _intake_completed:
+                    if _completed_intake_issue_type:
+                        _resolved_lines.append(f"Issue type: {_completed_intake_issue_type}")
+                    if _completed_intake_material_type:
+                        _resolved_lines.append(f"Material: {_completed_intake_material_type}")
+                    if _enriched_query:
+                        _resolved_lines.append(f"Full context: {_enriched_query}")
+                _resolved_block = "\n".join(_resolved_lines)
+                system_hint = (
+                    f"RESOLVED SESSION CONTEXT:\n{_resolved_block}\n\n"
+                    f"The student is using {_platform_display}. "
+                    "DO NOT ask the student which platform or publisher they use — it is confirmed above. "
+                    "Use the retrieved instructions to provide specific access steps for this platform. "
+                    "Do NOT suggest physical textbooks. "
+                    "Do NOT ask for course code unless a specific documented step requires it. "
+                    "Only provide steps that appear in the retrieved context."
+                )
+            else:
+                system_hint = (
+                    "The user is asking about Immediate Access digital course materials. "
+                    "Do NOT suggest purchasing or renting physical textbooks unless the user explicitly asks. "
+                    "If required information is missing, ask for the platform/publisher first "
+                    "(for example: Cengage, McGraw Hill, Pearson, Norton/InQuizitive). "
+                    "Do NOT ask for course code unless platform is already known and a course-specific step truly requires it. "
+                    "Do NOT assume availability of print textbooks. "
+                    "Only provide instructions for the specific platform mentioned in the official instructions."
+                )
             if not has_image:
                 system_hint += (
                     " If your answer does not fully resolve the issue, end with a single sentence "
@@ -4259,9 +4284,14 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
         # ✨ START LLM TIMER
         llm_start = time.time()
-        
+
+        # When intake just completed, use the enriched query (which includes platform,
+        # issue type, and original message) as the LLM input so the model has full
+        # context rather than only the brief final slot-filling message.
+        _llm_message = _enriched_query if (_intake_completed and _enriched_query) else message
+
         reply, llm_queue_wait_ms = await call_llm_with_semaphore(
-            message=message,
+            message=_llm_message,
             context=context,
             history=session["history"][-MAX_HISTORY_TURNS:],
             system_hint=system_hint,
@@ -4480,6 +4510,11 @@ async def chat_stream(payload: ChatRequest):
                 print("[STREAM INTENT] Browser cache override → GENERAL_FAQ (cache detected in query or image)")
 
             # ── Intake: mid-flow turn (user replied to an intake question) ────────
+            _stream_intake_completed = False
+            _stream_enriched_query: str | None = None
+            _stream_completed_platform: str | None = None
+            _stream_completed_issue_type: str | None = None
+            _stream_completed_material_type: str | None = None
             _raw_profile = session.get("intake_profile")
             if _raw_profile is not None:
                 profile = IntakeProfile.from_dict(_raw_profile)
@@ -4491,6 +4526,11 @@ async def chat_stream(payload: ChatRequest):
                     platform = profile.platform
                     intent = "IA_ACCESS_ISSUE"
                     retrieval_query = profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
+                    _stream_intake_completed = True
+                    _stream_enriched_query = retrieval_query
+                    _stream_completed_platform = profile.platform
+                    _stream_completed_issue_type = profile.issue_type
+                    _stream_completed_material_type = profile.material_type
                     # fall through to retrieval
                 elif profile.is_expired():
                     session["intake_profile"] = None
@@ -4654,12 +4694,34 @@ async def chat_stream(payload: ChatRequest):
                     "and direct them to check the Campus Store website or call 951-343-4259."
                 )
             elif intent == "IA_ACCESS_ISSUE":
-                system_hint = (
-                    "The user is asking about Immediate Access digital course materials. "
-                    "Do NOT suggest purchasing or renting physical textbooks unless the user explicitly asks. "
-                    "If required information is missing, ask for the platform or publisher first. "
-                    "Only provide instructions for the specific platform mentioned in the documentation."
-                )
+                if platform is not None:
+                    _s_platform_display = PLATFORM_DISPLAY_NAMES.get(platform, platform)
+                    _s_resolved_lines = [
+                        f"Platform: {_s_platform_display} (confirmed — do not ask again)",
+                    ]
+                    if _stream_intake_completed:
+                        if _stream_completed_issue_type:
+                            _s_resolved_lines.append(f"Issue type: {_stream_completed_issue_type}")
+                        if _stream_completed_material_type:
+                            _s_resolved_lines.append(f"Material: {_stream_completed_material_type}")
+                        if _stream_enriched_query:
+                            _s_resolved_lines.append(f"Full context: {_stream_enriched_query}")
+                    _s_resolved_block = "\n".join(_s_resolved_lines)
+                    system_hint = (
+                        f"RESOLVED SESSION CONTEXT:\n{_s_resolved_block}\n\n"
+                        f"The student is using {_s_platform_display}. "
+                        "DO NOT ask the student which platform or publisher they use — it is confirmed above. "
+                        "Use the retrieved instructions to provide specific access steps for this platform. "
+                        "Do NOT suggest physical textbooks. "
+                        "Only provide steps that appear in the retrieved context."
+                    )
+                else:
+                    system_hint = (
+                        "The user is asking about Immediate Access digital course materials. "
+                        "Do NOT suggest purchasing or renting physical textbooks unless the user explicitly asks. "
+                        "If required information is missing, ask for the platform or publisher first. "
+                        "Only provide instructions for the specific platform mentioned in the documentation."
+                    )
             elif intent == "GENERAL_FAQ":
                 system_hint = (
                     "The user is asking a general Campus Store or Immediate Access question. "
@@ -4754,8 +4816,16 @@ async def chat_stream(payload: ChatRequest):
                     return "", sanitized
                 return sanitized[:-hold_chars], sanitized[-hold_chars:]
 
+            # Use the enriched query when intake just completed so the LLM sees full
+            # context (platform, issue, original message) rather than the brief
+            # final slot-filling reply ("I can't access the textbook").
+            _stream_llm_message = (
+                _stream_enriched_query
+                if (_stream_intake_completed and _stream_enriched_query)
+                else message
+            )
             async with llm_semaphore:
-                async for chunk in stream_llm_response(message, system, image_base64=payload.image_base64):
+                async for chunk in stream_llm_response(_stream_llm_message, system, image_base64=payload.image_base64):
                     chunk_type = chunk.get("type", "response")
                     token = chunk.get("token", "")
                     if not token:
