@@ -6,6 +6,10 @@ Covers: models, slot_extractor, questions, flow, and multi-turn lifecycle.
 """
 from __future__ import annotations
 
+import asyncio
+import json
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from app.intake.models import IntakeProfile
@@ -29,7 +33,14 @@ from app.intake.flow import (
 )
 from app.intake.planner_models import IntakePlannerDecision
 from app.intake.question_templates import QUESTION_TEMPLATES, FALLBACK_QUESTION, QUESTION_KEY_TO_SLOT
-from app.intake.llm_planner import should_run_planner, get_question_for_decision
+from app.intake.llm_planner import (
+    should_run_planner,
+    get_question_for_decision,
+    run_intake_planner,
+    INTAKE_PLANNER_MODEL,
+    INTAKE_PLANNER_FALLBACK_MODEL,
+    _PLANNER_MAX_TOKENS,
+)
 
 
 # ── IntakeProfile ─────────────────────────────────────────────────────────────
@@ -739,3 +750,113 @@ class TestQuestionTemplatesUnknownPlatform:
 
     def test_new_key_maps_to_course_or_material(self):
         assert QUESTION_KEY_TO_SLOT["ask_course_or_material_when_platform_unknown"] == "course_or_material"
+
+
+# ── Phase 8: planner model config ─────────────────────────────────────────────
+
+class TestPlannerModelConfig:
+    """run_intake_planner must use INTAKE_PLANNER_* vars and correct payload options."""
+
+    @staticmethod
+    def _make_success_response(action: str = "ALLOW_RAG") -> MagicMock:
+        content = json.dumps({
+            "action": action,
+            "intent": "test",
+            "confidence": 0.9,
+            "known_slots": {},
+            "missing_slots": [],
+            "next_question_key": None,
+            "enriched_query": None,
+        })
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = b"ok"
+        resp.json.return_value = {"message": {"content": content}}
+        return resp
+
+    @staticmethod
+    def _mock_client(post_fn):
+        """Return a context-manager-compatible mock client with the given post function."""
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        client.post = post_fn
+        return client
+
+    def test_planner_uses_intake_planner_model(self):
+        """Payload 'model' must be INTAKE_PLANNER_MODEL, not PRIMARY_LLM_MODEL."""
+        captured: list[dict] = []
+
+        async def mock_post(url, json=None, **kw):
+            captured.append(json or {})
+            return self._make_success_response()
+
+        with patch("app.intake.llm_planner.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value = self._mock_client(mock_post)
+            asyncio.run(run_intake_planner("my book is locked"))
+
+        assert captured, "post() was never called"
+        assert captured[0].get("model") == INTAKE_PLANNER_MODEL
+
+    def test_planner_payload_includes_format_json(self):
+        """Payload must include 'format': 'json' to request JSON-mode output."""
+        captured: list[dict] = []
+
+        async def mock_post(url, json=None, **kw):
+            captured.append(json or {})
+            return self._make_success_response()
+
+        with patch("app.intake.llm_planner.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value = self._mock_client(mock_post)
+            asyncio.run(run_intake_planner("my book is locked"))
+
+        assert captured[0].get("format") == "json"
+
+    def test_planner_payload_num_predict_matches_max_tokens(self):
+        """options.num_predict must equal _PLANNER_MAX_TOKENS."""
+        captured: list[dict] = []
+
+        async def mock_post(url, json=None, **kw):
+            captured.append(json or {})
+            return self._make_success_response()
+
+        with patch("app.intake.llm_planner.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value = self._mock_client(mock_post)
+            asyncio.run(run_intake_planner("my book is locked"))
+
+        assert captured[0].get("options", {}).get("num_predict") == _PLANNER_MAX_TOKENS
+
+    def test_planner_fallback_model_used_on_primary_http_error(self):
+        """When primary model returns HTTP 500, the fallback model is tried next."""
+        call_count = 0
+        captured_models: list[str] = []
+
+        async def mock_post(url, json=None, **kw):
+            nonlocal call_count
+            call_count += 1
+            captured_models.append((json or {}).get("model", ""))
+            if call_count == 1:
+                resp = MagicMock()
+                resp.status_code = 500
+                resp.content = b"server error"
+                return resp
+            return self._make_success_response()
+
+        with patch("app.intake.llm_planner.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value = self._mock_client(mock_post)
+            asyncio.run(run_intake_planner("my book is locked"))
+
+        assert INTAKE_PLANNER_FALLBACK_MODEL in captured_models
+
+    def test_planner_timeout_fails_safe_to_ask_clarification(self):
+        """TimeoutException on all models must return ASK_CLARIFICATION, not raise."""
+        import httpx as _httpx
+
+        async def mock_post(url, json=None, **kw):
+            raise _httpx.TimeoutException("timed out", request=None)
+
+        with patch("app.intake.llm_planner.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value = self._mock_client(mock_post)
+            result = asyncio.run(run_intake_planner("my book is locked"))
+
+        assert result.action == "ASK_CLARIFICATION"

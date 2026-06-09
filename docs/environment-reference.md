@@ -48,9 +48,14 @@ This document lists the environment variables Lance reads at runtime. Keep real 
 | Variable | Purpose | Default |
 |---|---|---|
 | `ENABLE_INTAKE_LLM_PLANNER` | Enables the LLM-assisted intake planner for ambiguous messages. | `true` |
-| `INTAKE_PLANNER_TIMEOUT` | Per-attempt timeout in seconds for the planner's Ollama call. | `8` |
+| `INTAKE_PLANNER_MODEL` | Primary Ollama model for the intake planner. Separate from `PRIMARY_LLM_MODEL` so a faster/lighter model can be used. | `gemma4:e2b` |
+| `INTAKE_PLANNER_FALLBACK_MODEL` | Fallback model if the primary planner model is unavailable. | `gemma3:latest` |
+| `INTAKE_PLANNER_TIMEOUT` | Per-attempt timeout in seconds for each planner Ollama call. | `20` |
+| `INTAKE_PLANNER_MAX_TOKENS` | Maximum tokens the planner model may generate. Keep low — the output is a small JSON object. | `160` |
 
-**Model selection:** the planner uses `PRIMARY_LLM_MODEL` and `FALLBACK_LLM_MODEL` — no separate model variable.
+**Model selection:** the planner uses its own `INTAKE_PLANNER_MODEL` / `INTAKE_PLANNER_FALLBACK_MODEL` pair, independent of `PRIMARY_LLM_MODEL`. Use a lighter model here to keep intake latency low; the planner only needs to produce ~160 tokens of structured JSON.
+
+**Output controls:** the planner sends `"format": "json"` and `"stream": false` to Ollama, which forces JSON-mode output and eliminates streaming overhead. `num_predict` is capped at `INTAKE_PLANNER_MAX_TOKENS`.
 
 **Concurrency:** planner Ollama calls are bounded by `MAX_CONCURRENT_LLM_REQUESTS` (the same `llm_semaphore` used for normal answer generation). Total Ollama pressure stays within the configured limit.
 

@@ -32,7 +32,10 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip(
 OLLAMA_CHAT_URL = f"{OLLAMA_BASE_URL}/api/chat"
 PRIMARY_LLM_MODEL = os.getenv("PRIMARY_LLM_MODEL", "gemma4:e4b")
 FALLBACK_LLM_MODEL = os.getenv("FALLBACK_LLM_MODEL", "gemma4:e2b")
-_PLANNER_TIMEOUT = float(os.getenv("INTAKE_PLANNER_TIMEOUT", "8.0"))
+INTAKE_PLANNER_MODEL = os.getenv("INTAKE_PLANNER_MODEL", "gemma4:e2b")
+INTAKE_PLANNER_FALLBACK_MODEL = os.getenv("INTAKE_PLANNER_FALLBACK_MODEL", "gemma3:latest")
+_PLANNER_TIMEOUT = float(os.getenv("INTAKE_PLANNER_TIMEOUT", "20.0"))
+_PLANNER_MAX_TOKENS = int(os.getenv("INTAKE_PLANNER_MAX_TOKENS", "160"))
 
 _VALID_QUESTION_KEYS = frozenset(QUESTION_TEMPLATES.keys())
 
@@ -58,39 +61,21 @@ async def _optional_semaphore(sem: asyncio.Semaphore | None):
         yield
 
 _SYSTEM_PROMPT = (
-    "You are an intake classifier for a university campus store chatbot.\n\n"
-    "Your ONLY job is to decide whether enough context exists to retrieve helpful "
-    "support information, or whether one clarifying question is needed first.\n\n"
-    "DO NOT answer the student's question.\n"
-    "DO NOT provide troubleshooting steps.\n"
-    "Return ONLY valid JSON — no explanation, no other text.\n\n"
-    "VALID next_question_key values (choose exactly one, or null):\n"
-    "- ask_platform_for_book_access               (missing: which publisher/platform)\n"
-    "- ask_issue_for_platform                     (missing: what kind of problem)\n"
-    "- ask_course_code                            (missing: course code)\n"
-    "- ask_error_message                          (missing: what error they see)\n"
-    "- ask_material_type                          (missing: textbook vs workbook vs lab)\n"
-    "- ask_blackboard_or_publisher_location       (missing: where they access from)\n"
-    "- ask_course_or_material_when_platform_unknown  (student does not know platform — ask for course/material instead)\n\n"
+    "You are an intake classifier for a university campus store chatbot.\n"
+    "ONLY output valid JSON — no explanation, no prose, no markdown fences.\n\n"
+    "VALID next_question_key values (one of these exact strings, or null):\n"
+    "ask_platform_for_book_access | ask_issue_for_platform | ask_course_code | "
+    "ask_error_message | ask_material_type | ask_blackboard_or_publisher_location | "
+    "ask_course_or_material_when_platform_unknown\n\n"
     "RULES:\n"
-    "1. If the message names a specific platform (Cengage, VitalSource, McGraw Hill, "
-    "Pearson, Wiley, etc.) AND describes a specific issue: action = \"ALLOW_RAG\".\n"
-    "2. If the message is vague about course materials and is missing platform or "
-    "issue type: action = \"ASK_CLARIFICATION\", set next_question_key.\n"
-    "3. If the message is unrelated to course material access (store hours, refunds, "
-    "general questions): action = \"ALLOW_RAG\".\n"
-    "4. When uncertain, choose \"ASK_CLARIFICATION\" — safer to ask one question "
-    "than to retrieve wrong content.\n\n"
-    "Return JSON in exactly this format:\n"
-    "{\n"
-    '  "action": "ALLOW_RAG" or "ASK_CLARIFICATION",\n'
-    '  "intent": "<brief description>",\n'
-    '  "confidence": <0.0 to 1.0>,\n'
-    '  "known_slots": {},\n'
-    '  "missing_slots": [],\n'
-    '  "next_question_key": null or "<key>",\n'
-    '  "enriched_query": null or "<query string>"\n'
-    "}"
+    "1. Platform named AND issue described → action=ALLOW_RAG, next_question_key=null.\n"
+    "2. Platform or issue missing → action=ASK_CLARIFICATION, set next_question_key.\n"
+    "3. Unrelated to course materials → action=ALLOW_RAG, next_question_key=null.\n"
+    "4. When uncertain → action=ASK_CLARIFICATION.\n\n"
+    "Output JSON only, no other text:\n"
+    '{"action":"ALLOW_RAG or ASK_CLARIFICATION","intent":"<3 words max>",'
+    '"confidence":0.0,"known_slots":{},"missing_slots":[],'
+    '"next_question_key":null,"enriched_query":null}'
 )
 
 _SAFE_FALLBACK = IntakePlannerDecision(
@@ -180,9 +165,9 @@ async def run_intake_planner(
     last_requested_slot and attempted_slots surface prior intake state so the
     planner can choose an alternative question when the student cannot answer.
     """
-    models = [PRIMARY_LLM_MODEL]
-    if FALLBACK_LLM_MODEL and FALLBACK_LLM_MODEL != PRIMARY_LLM_MODEL:
-        models.append(FALLBACK_LLM_MODEL)
+    models = [INTAKE_PLANNER_MODEL]
+    if INTAKE_PLANNER_FALLBACK_MODEL and INTAKE_PLANNER_FALLBACK_MODEL != INTAKE_PLANNER_MODEL:
+        models.append(INTAKE_PLANNER_FALLBACK_MODEL)
 
     user_content = f"Student message: {message}"
     if known_slots:
@@ -200,9 +185,10 @@ async def run_intake_planner(
             {"role": "user", "content": user_content},
         ],
         "stream": False,
+        "format": "json",
         "options": {
             "temperature": 0.0,
-            "num_predict": 512,
+            "num_predict": _PLANNER_MAX_TOKENS,
         },
     }
 
