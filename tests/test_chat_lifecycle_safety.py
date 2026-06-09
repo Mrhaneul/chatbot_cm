@@ -1373,3 +1373,152 @@ class TestIntakeUnknownAnswerLifecycle:
         assert not r3.source.startswith("INTAKE"), (
             f"After providing platform+issue, should reach RAG. Got {r3.source!r}"
         )
+
+
+# ── Active-intake safety classifier bypass ───────────────────────────────────
+
+@pytest.mark.asyncio
+class TestActiveIntakeSafetyPassthrough:
+    """
+    Short unknown-answer replies ("I don't know", "not sure") during an active
+    intake session must bypass the LLM safety classifier and reach the intake
+    mid-flow handler.
+
+    Root cause: _session_in_clarification did not include active intake_profile,
+    so the classifier ran and returned ASK_CLARIFICATION when Ollama was down,
+    intercepting the message before intake could handle it.
+    """
+
+    _PLANNER_CLARIFICATION = IntakePlannerDecision(
+        action="ASK_CLARIFICATION",
+        intent="vague_book_access",
+        confidence=0.85,
+        known_slots={},
+        missing_slots=["platform"],
+        next_question_key="ask_platform_for_book_access",
+    )
+
+    async def _start_intake(self, session_id: str) -> None:
+        """Run turn 1 to create an active intake session."""
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._PLANNER_CLARIFICATION)),
+        ):
+            r = await process_chat_request(_session_req(session_id, "My book is locked"))
+        assert r.source.startswith("INTAKE"), f"Setup failed: got {r.source!r}"
+        assert main.sessions[session_id].get("intake_profile") is not None
+
+    async def test_i_dont_know_active_intake_bypasses_unavailable_classifier(self):
+        """
+        When classifier is unavailable (would return ASK_CLARIFICATION), active intake
+        + 'I don't know' must reach the intake handler and return the alternative question.
+        """
+        from app.intake.question_templates import QUESTION_TEMPLATES
+
+        session_id = f"test-bypass-dk-{uuid.uuid4()}"
+        await self._start_intake(session_id)
+
+        with patch(
+            "app.safety.safety_gate.classify_with_llm",
+            new=AsyncMock(return_value=_SERVER_ERROR_FALLBACK),
+        ):
+            r2 = await process_chat_request(_session_req(session_id, "I don't know"))
+
+        expected = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"]
+        assert r2.source == "INTAKE", (
+            f"Active intake + 'I don't know' must reach intake. Got source={r2.source!r}"
+        )
+        assert r2.reply == expected
+
+    async def test_not_sure_active_intake_bypasses_unavailable_classifier(self):
+        """Active intake + 'not sure' reaches intake handler, not safety fallback."""
+        from app.intake.question_templates import QUESTION_TEMPLATES
+
+        session_id = f"test-bypass-ns-{uuid.uuid4()}"
+        await self._start_intake(session_id)
+
+        with patch(
+            "app.safety.safety_gate.classify_with_llm",
+            new=AsyncMock(return_value=_SERVER_ERROR_FALLBACK),
+        ):
+            r2 = await process_chat_request(_session_req(session_id, "not sure"))
+
+        expected = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"]
+        assert r2.source == "INTAKE", f"Got source={r2.source!r}"
+        assert r2.reply == expected
+
+    async def test_no_idea_active_intake_bypasses_unavailable_classifier(self):
+        """Active intake + 'no idea' reaches intake handler."""
+        from app.intake.question_templates import QUESTION_TEMPLATES
+
+        session_id = f"test-bypass-ni-{uuid.uuid4()}"
+        await self._start_intake(session_id)
+
+        with patch(
+            "app.safety.safety_gate.classify_with_llm",
+            new=AsyncMock(return_value=_SERVER_ERROR_FALLBACK),
+        ):
+            r2 = await process_chat_request(_session_req(session_id, "no idea"))
+
+        expected = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"]
+        assert r2.source == "INTAKE", f"Got source={r2.source!r}"
+        assert r2.reply == expected
+
+    async def test_suspicious_content_does_not_bypass_even_with_active_intake(self):
+        """
+        'I don't know how to bypass the paywall' fails the fullmatch check even
+        during active intake — it is too long and complex for _is_low_risk_clarification_reply,
+        so the classifier still runs (note: 'bypass the paywall' has no campus-store
+        allowlist match, so the classifier outcome is decisive).
+        """
+        session_id = f"test-bypass-sus-{uuid.uuid4()}"
+        await self._start_intake(session_id)
+
+        with patch(
+            "app.safety.safety_gate.classify_with_llm",
+            new=AsyncMock(return_value=_SERVER_ERROR_FALLBACK),
+        ):
+            r2 = await process_chat_request(
+                _session_req(session_id, "I don't know how to bypass the paywall")
+            )
+
+        assert r2.source.startswith("SAFETY"), (
+            f"Complex suspicious content must not bypass safety even with active intake. "
+            f"Got source={r2.source!r}"
+        )
+
+    async def test_no_active_intake_i_dont_know_triggers_safety(self):
+        """
+        Without an active intake_profile, 'I don't know' is not in a clarification
+        session — the classifier runs normally and returns ASK_CLARIFICATION.
+        """
+        session_id = f"test-no-intake-bypass-{uuid.uuid4()}"
+        # No intake started — fresh session, no intake_profile
+
+        with patch(
+            "app.safety.safety_gate.classify_with_llm",
+            new=AsyncMock(return_value=_SERVER_ERROR_FALLBACK),
+        ):
+            r = await process_chat_request(_session_req(session_id, "I don't know"))
+
+        assert r.source.startswith("SAFETY"), (
+            f"Without active intake, classifier must run. Got source={r.source!r}"
+        )
+
+    async def test_streaming_i_dont_know_active_intake_bypasses_classifier(self):
+        """Streaming endpoint has the same bypass behavior as /chat."""
+        from app.intake.question_templates import QUESTION_TEMPLATES
+
+        session_id = f"test-stream-bypass-{uuid.uuid4()}"
+        await self._start_intake(session_id)
+
+        with patch(
+            "app.safety.safety_gate.classify_with_llm",
+            new=AsyncMock(return_value=_SERVER_ERROR_FALLBACK),
+        ):
+            done = await _post_stream({"message": "I don't know", "session_id": session_id})
+
+        assert done.get("source") == "INTAKE", (
+            f"Streaming: active intake + 'I don't know' must reach intake. "
+            f"Got source={done.get('source')!r}"
+        )

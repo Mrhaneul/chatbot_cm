@@ -2274,7 +2274,12 @@ _LOW_RISK_CLARIFICATION_RE = re.compile(
     r"""(?ix)
     ^(
       (i\s+)?don'?t\s+know
+      | (i\s+do\s+not\s+know)
       | not\s+sure
+      | no\s+idea
+      | (i\s+have\s+)?no\s+(idea|clue)
+      | no\s+clue
+      | unsure
       | yes | no | maybe | okay | ok
       | cengage | mindtap | mcgraw(\s+hill)? | pearson | vitalsource
       | wiley(plus)? | bedford | stukent | simucase | zybooks | sage
@@ -2371,6 +2376,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             or session.get("awaiting_publisher_list_response", False)
             or session.get("awaiting_class_access_clarification", False)
             or session.get("awaiting_vitalsource_screen_confirm", False)
+            or session.get("intake_profile") is not None
         )
         _skip_classifier = (
             _session_in_clarification and _is_low_risk_clarification_reply(message)
@@ -4516,6 +4522,7 @@ async def chat_stream(payload: ChatRequest):
                 or session.get("awaiting_publisher_list_response", False)
                 or session.get("awaiting_class_access_clarification", False)
                 or session.get("awaiting_vitalsource_screen_confirm", False)
+                or session.get("intake_profile") is not None
             )
             _skip_classifier = (
                 _session_in_clarification and _is_low_risk_clarification_reply(message)

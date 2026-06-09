@@ -213,7 +213,10 @@ async def run_intake_planner(
             timeout = httpx.Timeout(_PLANNER_TIMEOUT, read=_PLANNER_TIMEOUT)
             async with _optional_semaphore(semaphore):
                 async with httpx.AsyncClient(timeout=timeout) as client:
-                    print(f"[PLANNER] model={model_name} message={message[:80]!r}")
+                    print(
+                        f"[PLANNER] model={model_name} url={OLLAMA_CHAT_URL} "
+                        f"message={message[:80]!r}"
+                    )
                     response = await client.post(
                         OLLAMA_CHAT_URL, json={**payload, "model": model_name}
                     )
