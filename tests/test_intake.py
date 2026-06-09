@@ -734,13 +734,15 @@ class TestQuestionTemplatesUnknownPlatform:
     def test_new_template_present(self):
         assert "ask_course_or_material_when_platform_unknown" in QUESTION_TEMPLATES
 
-    def test_new_template_contains_course_code(self):
+    def test_template_contains_email_address(self):
         q = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"]
-        assert "course code" in q.lower() or "course name" in q.lower()
+        assert "ImmediateAccess@calbaptist.edu" in q
 
-    def test_new_template_contains_book_name(self):
-        q = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"]
-        assert "book" in q.lower() or "material" in q.lower()
+    def test_template_does_not_ask_for_course_code_or_instructor(self):
+        q = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"].lower()
+        assert "course code" not in q
+        assert "instructor" not in q
+        assert "student id" not in q
 
     def test_question_key_to_slot_has_new_key(self):
         assert "ask_course_or_material_when_platform_unknown" in QUESTION_KEY_TO_SLOT

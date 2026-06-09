@@ -70,9 +70,8 @@ from app.intake.flow import (
     intake_fallback_message,
     is_unknown_answer,
     INTAKE_ESCALATION_MESSAGE,
-    MAX_UNKNOWN_ATTEMPTS,
 )
-from app.intake.question_templates import QUESTION_TEMPLATES, QUESTION_KEY_TO_SLOT
+from app.intake.question_templates import QUESTION_KEY_TO_SLOT
 from app.intake.llm_planner import run_intake_planner, should_run_planner, get_question_for_decision
 
 from app.admin import admin_router
@@ -2465,66 +2464,27 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 _completed_intake_issue_type = profile.issue_type
                 _completed_intake_material_type = profile.material_type
             elif is_unknown_answer(message) and profile.last_requested_slot:
-                # Student cannot supply the requested slot — ask an alternative.
-                slot = profile.last_requested_slot
-                if slot not in profile.attempted_slots:
-                    profile.attempted_slots.append(slot)
-                if len(profile.attempted_slots) >= MAX_UNKNOWN_ATTEMPTS:
-                    print(
-                        f"[INTAKE] Escalating after {len(profile.attempted_slots)} unknown "
-                        f"attempts: {profile.attempted_slots}"
-                    )
-                    session["intake_profile"] = None
-                    escalation = INTAKE_ESCALATION_MESSAGE
-                    session["history"].append({"role": "user", "content": message})
-                    session["history"].append({"role": "assistant", "content": escalation})
-                    session["last_activity"] = datetime.now()
-                    total_time_ms = (time.time() - request_start) * 1000
-                    return ChatResponse(
-                        reply=escalation,
-                        source="INTAKE:ESCALATION",
-                        article_link=None,
-                        confidence=0.0,
-                        retrieval_time_ms=0,
-                        llm_time_ms=0,
-                        total_time_ms=round(total_time_ms, 2),
-                        recommended_pdfs=[],
-                        debug_mode=debug_mode,
-                    )
-                else:
-                    if "platform" in profile.attempted_slots:
-                        alt_question = QUESTION_TEMPLATES[
-                            "ask_course_or_material_when_platform_unknown"
-                        ]
-                        profile.last_requested_slot = QUESTION_KEY_TO_SLOT[
-                            "ask_course_or_material_when_platform_unknown"
-                        ]
-                    else:
-                        alt_question = intake_next_question(profile) or INTAKE_ESCALATION_MESSAGE
-                        if profile.platform is None:
-                            profile.last_requested_slot = "platform"
-                        elif profile.issue_type is None:
-                            profile.last_requested_slot = "issue_type"
-                    print(
-                        f"[INTAKE] Unknown answer for slot={slot!r} → "
-                        f"asking alternative, last_slot={profile.last_requested_slot!r}"
-                    )
-                    session["intake_profile"] = profile.to_dict()
-                    session["history"].append({"role": "user", "content": message})
-                    session["history"].append({"role": "assistant", "content": alt_question})
-                    session["last_activity"] = datetime.now()
-                    total_time_ms = (time.time() - request_start) * 1000
-                    return ChatResponse(
-                        reply=alt_question,
-                        source="INTAKE",
-                        article_link=None,
-                        confidence=0.0,
-                        retrieval_time_ms=0,
-                        llm_time_ms=0,
-                        total_time_ms=round(total_time_ms, 2),
-                        recommended_pdfs=[],
-                        debug_mode=debug_mode,
-                    )
+                print(
+                    f"[INTAKE] Unknown answer for slot={profile.last_requested_slot!r} "
+                    f"→ escalating to ImmediateAccess email"
+                )
+                session["intake_profile"] = None
+                escalation = INTAKE_ESCALATION_MESSAGE
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": escalation})
+                session["last_activity"] = datetime.now()
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=escalation,
+                    source="INTAKE:ESCALATION",
+                    article_link=None,
+                    confidence=0.0,
+                    retrieval_time_ms=0,
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[],
+                    debug_mode=debug_mode,
+                )
             elif profile.is_expired():
                 print(f"[INTAKE] Expired after {profile.turns_spent} turn(s) — using fallback")
                 session["intake_profile"] = None
@@ -4616,51 +4576,19 @@ async def chat_stream(payload: ChatRequest):
                     _stream_completed_material_type = profile.material_type
                     # fall through to retrieval
                 elif is_unknown_answer(message) and profile.last_requested_slot:
-                    slot = profile.last_requested_slot
-                    if slot not in profile.attempted_slots:
-                        profile.attempted_slots.append(slot)
-                    if len(profile.attempted_slots) >= MAX_UNKNOWN_ATTEMPTS:
-                        print(
-                            f"[STREAM INTAKE] Escalating after {len(profile.attempted_slots)} "
-                            f"unknown attempts: {profile.attempted_slots}"
-                        )
-                        session["intake_profile"] = None
-                        escalation = INTAKE_ESCALATION_MESSAGE
-                        session["history"].append({"role": "user", "content": message})
-                        session["history"].append({"role": "assistant", "content": escalation})
-                        session["last_activity"] = datetime.now()
-                        async for token in _stream_words(escalation):
-                            yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
-                        yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE:ESCALATION', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
-                        return
-                    else:
-                        if "platform" in profile.attempted_slots:
-                            alt_question = QUESTION_TEMPLATES[
-                                "ask_course_or_material_when_platform_unknown"
-                            ]
-                            profile.last_requested_slot = QUESTION_KEY_TO_SLOT[
-                                "ask_course_or_material_when_platform_unknown"
-                            ]
-                        else:
-                            alt_question = (
-                                intake_next_question(profile) or INTAKE_ESCALATION_MESSAGE
-                            )
-                            if profile.platform is None:
-                                profile.last_requested_slot = "platform"
-                            elif profile.issue_type is None:
-                                profile.last_requested_slot = "issue_type"
-                        print(
-                            f"[STREAM INTAKE] Unknown answer for slot={slot!r} → "
-                            f"asking alternative, last_slot={profile.last_requested_slot!r}"
-                        )
-                        session["intake_profile"] = profile.to_dict()
-                        session["history"].append({"role": "user", "content": message})
-                        session["history"].append({"role": "assistant", "content": alt_question})
-                        session["last_activity"] = datetime.now()
-                        async for token in _stream_words(alt_question):
-                            yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
-                        yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
-                        return
+                    print(
+                        f"[STREAM INTAKE] Unknown answer for slot={profile.last_requested_slot!r} "
+                        f"→ escalating to ImmediateAccess email"
+                    )
+                    session["intake_profile"] = None
+                    escalation = INTAKE_ESCALATION_MESSAGE
+                    session["history"].append({"role": "user", "content": message})
+                    session["history"].append({"role": "assistant", "content": escalation})
+                    session["last_activity"] = datetime.now()
+                    async for token in _stream_words(escalation):
+                        yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE:ESCALATION', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                    return
                 elif profile.is_expired():
                     session["intake_profile"] = None
                     fallback = intake_fallback_message()

@@ -37,8 +37,10 @@ QUESTION_TEMPLATES: dict[str, str] = {
         "or directly through the publisher's website?"
     ),
     "ask_course_or_material_when_platform_unknown": (
-        "No problem. If you do not know the platform, can you tell me your course code, "
-        "course name, instructor, or the name of the book or material that is locked?"
+        "No problem. Please contact ImmediateAccess@calbaptist.edu for help with your "
+        "textbook access issue. They can help identify the correct platform and material "
+        "for your course. If possible, include a screenshot of what you are seeing when "
+        "you email them."
     ),
 }
 

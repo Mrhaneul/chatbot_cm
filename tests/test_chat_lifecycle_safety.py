@@ -1225,9 +1225,8 @@ class TestFinalRAGGenerationResolvedContext:
 @pytest.mark.asyncio
 class TestIntakeUnknownAnswerLifecycle:
     """
-    Verify that "I don't know" replies during intake:
-    - ask an alternative question (not a generic reset)
-    - escalate after MAX_UNKNOWN_ATTEMPTS distinct slot failures
+    Verify that any "I don't know" reply during active intake immediately
+    escalates to ImmediateAccess@calbaptist.edu — no intermediate questions.
     """
 
     _PLANNER_CLARIFICATION = IntakePlannerDecision(
@@ -1239,12 +1238,12 @@ class TestIntakeUnknownAnswerLifecycle:
         next_question_key="ask_platform_for_book_access",
     )
 
-    async def test_i_dont_know_asks_alternative_not_generic(self):
+    async def test_i_dont_know_escalates_immediately(self):
         """
         'My book is locked' → asks platform.
-        'I don't know' → must ask alternative course/material question, not generic reset.
+        'I don't know' → must return INTAKE:ESCALATION with email address.
         """
-        from app.intake.question_templates import QUESTION_TEMPLATES
+        from app.intake.flow import INTAKE_ESCALATION_MESSAGE
         session_id = f"test-unk-{uuid.uuid4()}"
         with (
             patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
@@ -1254,17 +1253,14 @@ class TestIntakeUnknownAnswerLifecycle:
             r2 = await process_chat_request(_session_req(session_id, "I don't know"))
 
         assert r1.source.startswith("INTAKE"), f"Turn 1 must be INTAKE, got {r1.source!r}"
-        assert r2.source == "INTAKE", f"Turn 2 must be INTAKE, got {r2.source!r}"
-
-        expected_alt = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"]
-        assert r2.reply == expected_alt, (
-            f"Turn 2 reply should be the alternative question.\n"
-            f"Got: {r2.reply!r}\nExpected: {expected_alt!r}"
+        assert r2.source == "INTAKE:ESCALATION", (
+            f"Turn 2 must be INTAKE:ESCALATION, got {r2.source!r}"
         )
+        assert r2.reply == INTAKE_ESCALATION_MESSAGE
 
-    async def test_not_sure_asks_alternative(self):
-        """'not sure' as a reply to the platform question triggers the alternative."""
-        from app.intake.question_templates import QUESTION_TEMPLATES
+    async def test_not_sure_escalates_immediately(self):
+        """'not sure' during active intake triggers immediate escalation."""
+        from app.intake.flow import INTAKE_ESCALATION_MESSAGE
         session_id = f"test-unk-ns-{uuid.uuid4()}"
         with (
             patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
@@ -1273,12 +1269,12 @@ class TestIntakeUnknownAnswerLifecycle:
             await process_chat_request(_session_req(session_id, "My book is locked"))
             r2 = await process_chat_request(_session_req(session_id, "not sure"))
 
-        expected_alt = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"]
-        assert r2.reply == expected_alt, f"'not sure' should trigger alternative. Got: {r2.reply!r}"
+        assert r2.source == "INTAKE:ESCALATION", f"Got source={r2.source!r}"
+        assert r2.reply == INTAKE_ESCALATION_MESSAGE
 
-    async def test_no_idea_asks_alternative(self):
-        """'no idea' triggers the alternative platform question."""
-        from app.intake.question_templates import QUESTION_TEMPLATES
+    async def test_no_idea_escalates_immediately(self):
+        """'no idea' during active intake triggers immediate escalation."""
+        from app.intake.flow import INTAKE_ESCALATION_MESSAGE
         session_id = f"test-unk-ni-{uuid.uuid4()}"
         with (
             patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
@@ -1287,14 +1283,11 @@ class TestIntakeUnknownAnswerLifecycle:
             await process_chat_request(_session_req(session_id, "My book is locked"))
             r2 = await process_chat_request(_session_req(session_id, "no idea"))
 
-        expected_alt = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"]
-        assert r2.reply == expected_alt, f"'no idea' should trigger alternative. Got: {r2.reply!r}"
+        assert r2.source == "INTAKE:ESCALATION", f"Got source={r2.source!r}"
+        assert r2.reply == INTAKE_ESCALATION_MESSAGE
 
-    async def test_two_unknown_answers_triggers_escalation(self):
-        """
-        After MAX_UNKNOWN_ATTEMPTS distinct slot unknowns, reply must be the
-        escalation message with source INTAKE:ESCALATION.
-        """
+    async def test_single_unknown_answer_triggers_escalation(self):
+        """First unknown answer must produce INTAKE:ESCALATION source and escalation reply."""
         from app.intake.flow import INTAKE_ESCALATION_MESSAGE
         session_id = f"test-unk-esc-{uuid.uuid4()}"
         with (
@@ -1302,29 +1295,40 @@ class TestIntakeUnknownAnswerLifecycle:
             patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._PLANNER_CLARIFICATION)),
         ):
             await process_chat_request(_session_req(session_id, "My book is locked"))
-            await process_chat_request(_session_req(session_id, "I don't know"))
-            r3 = await process_chat_request(_session_req(session_id, "I don't know"))
+            r2 = await process_chat_request(_session_req(session_id, "I don't know"))
 
-        assert r3.source == "INTAKE:ESCALATION", (
-            f"After 2 unknowns, source must be INTAKE:ESCALATION. Got {r3.source!r}"
-        )
-        assert r3.reply == INTAKE_ESCALATION_MESSAGE
+        assert r2.source == "INTAKE:ESCALATION", f"Got {r2.source!r}"
+        assert r2.reply == INTAKE_ESCALATION_MESSAGE
 
     async def test_escalation_message_contains_email(self):
         """Escalation reply must include the Campus Store email address."""
-        from app.intake.flow import INTAKE_ESCALATION_MESSAGE
         session_id = f"test-unk-email-{uuid.uuid4()}"
         with (
             patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
             patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._PLANNER_CLARIFICATION)),
         ):
             await process_chat_request(_session_req(session_id, "My book is locked"))
-            await process_chat_request(_session_req(session_id, "I don't know"))
-            r3 = await process_chat_request(_session_req(session_id, "I don't know"))
+            r2 = await process_chat_request(_session_req(session_id, "I don't know"))
 
-        assert "ImmediateAccess@calbaptist.edu" in r3.reply, (
-            f"Escalation must include the support email. Got: {r3.reply!r}"
+        assert "ImmediateAccess@calbaptist.edu" in r2.reply, (
+            f"Escalation must include the support email. Got: {r2.reply!r}"
         )
+
+    async def test_escalation_does_not_ask_for_course_code_or_personal_info(self):
+        """Escalation must not ask for course code, instructor, student ID, or section."""
+        session_id = f"test-unk-nopii-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._PLANNER_CLARIFICATION)),
+        ):
+            await process_chat_request(_session_req(session_id, "My book is locked"))
+            r2 = await process_chat_request(_session_req(session_id, "I don't know"))
+
+        reply_lower = r2.reply.lower()
+        assert "course code" not in reply_lower, f"Must not ask for course code: {r2.reply!r}"
+        assert "instructor" not in reply_lower, f"Must not ask for instructor: {r2.reply!r}"
+        assert "student id" not in reply_lower, f"Must not ask for student ID: {r2.reply!r}"
+        assert "section" not in reply_lower, f"Must not ask for section: {r2.reply!r}"
 
     async def test_intake_profile_cleared_after_escalation(self):
         """Session intake_profile must be None after escalation."""
@@ -1335,16 +1339,29 @@ class TestIntakeUnknownAnswerLifecycle:
         ):
             await process_chat_request(_session_req(session_id, "My book is locked"))
             await process_chat_request(_session_req(session_id, "I don't know"))
-            await process_chat_request(_session_req(session_id, "I don't know"))
 
         assert main.sessions[session_id]["intake_profile"] is None, (
             "intake_profile must be cleared after escalation"
         )
 
-    async def test_providing_info_after_unknown_completes_intake(self):
+    async def test_dont_know_where_to_find_it_escalates(self):
+        """Extended phrase 'I don't know where to find it' triggers immediate escalation."""
+        from app.intake.flow import INTAKE_ESCALATION_MESSAGE
+        session_id = f"test-unk-ext-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._PLANNER_CLARIFICATION)),
+        ):
+            await process_chat_request(_session_req(session_id, "My book is locked"))
+            r2 = await process_chat_request(_session_req(session_id, "I don't know where to find it"))
+
+        assert r2.source == "INTAKE:ESCALATION", f"Got source={r2.source!r}"
+        assert r2.reply == INTAKE_ESCALATION_MESSAGE
+
+    async def test_specific_platform_after_escalation_reaches_rag(self):
         """
-        'My book is locked' → 'I don't know' → 'Cengage ENGL1301'
-        The third turn provides a platform + issue-type signal and should complete intake.
+        After escalation, the next specific message (platform + issue) routes to RAG —
+        the cleared intake profile does not block normal processing.
         """
         session_id = f"test-unk-recover-{uuid.uuid4()}"
         retrieve_calls: list = []
@@ -1410,10 +1427,10 @@ class TestActiveIntakeSafetyPassthrough:
 
     async def test_i_dont_know_active_intake_bypasses_unavailable_classifier(self):
         """
-        When classifier is unavailable (would return ASK_CLARIFICATION), active intake
-        + 'I don't know' must reach the intake handler and return the alternative question.
+        When classifier is unavailable, active intake + 'I don't know' must bypass
+        the classifier and reach the intake handler, which immediately escalates.
         """
-        from app.intake.question_templates import QUESTION_TEMPLATES
+        from app.intake.flow import INTAKE_ESCALATION_MESSAGE
 
         session_id = f"test-bypass-dk-{uuid.uuid4()}"
         await self._start_intake(session_id)
@@ -1424,15 +1441,15 @@ class TestActiveIntakeSafetyPassthrough:
         ):
             r2 = await process_chat_request(_session_req(session_id, "I don't know"))
 
-        expected = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"]
-        assert r2.source == "INTAKE", (
-            f"Active intake + 'I don't know' must reach intake. Got source={r2.source!r}"
+        assert r2.source == "INTAKE:ESCALATION", (
+            f"Active intake + 'I don't know' must reach intake and escalate. "
+            f"Got source={r2.source!r}"
         )
-        assert r2.reply == expected
+        assert r2.reply == INTAKE_ESCALATION_MESSAGE
 
     async def test_not_sure_active_intake_bypasses_unavailable_classifier(self):
-        """Active intake + 'not sure' reaches intake handler, not safety fallback."""
-        from app.intake.question_templates import QUESTION_TEMPLATES
+        """Active intake + 'not sure' reaches intake handler and escalates."""
+        from app.intake.flow import INTAKE_ESCALATION_MESSAGE
 
         session_id = f"test-bypass-ns-{uuid.uuid4()}"
         await self._start_intake(session_id)
@@ -1443,13 +1460,12 @@ class TestActiveIntakeSafetyPassthrough:
         ):
             r2 = await process_chat_request(_session_req(session_id, "not sure"))
 
-        expected = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"]
-        assert r2.source == "INTAKE", f"Got source={r2.source!r}"
-        assert r2.reply == expected
+        assert r2.source == "INTAKE:ESCALATION", f"Got source={r2.source!r}"
+        assert r2.reply == INTAKE_ESCALATION_MESSAGE
 
     async def test_no_idea_active_intake_bypasses_unavailable_classifier(self):
-        """Active intake + 'no idea' reaches intake handler."""
-        from app.intake.question_templates import QUESTION_TEMPLATES
+        """Active intake + 'no idea' reaches intake handler and escalates."""
+        from app.intake.flow import INTAKE_ESCALATION_MESSAGE
 
         session_id = f"test-bypass-ni-{uuid.uuid4()}"
         await self._start_intake(session_id)
@@ -1460,9 +1476,8 @@ class TestActiveIntakeSafetyPassthrough:
         ):
             r2 = await process_chat_request(_session_req(session_id, "no idea"))
 
-        expected = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"]
-        assert r2.source == "INTAKE", f"Got source={r2.source!r}"
-        assert r2.reply == expected
+        assert r2.source == "INTAKE:ESCALATION", f"Got source={r2.source!r}"
+        assert r2.reply == INTAKE_ESCALATION_MESSAGE
 
     async def test_suspicious_content_does_not_bypass_even_with_active_intake(self):
         """
@@ -1506,9 +1521,7 @@ class TestActiveIntakeSafetyPassthrough:
         )
 
     async def test_streaming_i_dont_know_active_intake_bypasses_classifier(self):
-        """Streaming endpoint has the same bypass behavior as /chat."""
-        from app.intake.question_templates import QUESTION_TEMPLATES
-
+        """Streaming endpoint: active intake + 'I don't know' bypasses classifier and escalates."""
         session_id = f"test-stream-bypass-{uuid.uuid4()}"
         await self._start_intake(session_id)
 
@@ -1518,7 +1531,7 @@ class TestActiveIntakeSafetyPassthrough:
         ):
             done = await _post_stream({"message": "I don't know", "session_id": session_id})
 
-        assert done.get("source") == "INTAKE", (
-            f"Streaming: active intake + 'I don't know' must reach intake. "
+        assert done.get("source") == "INTAKE:ESCALATION", (
+            f"Streaming: active intake + 'I don't know' must escalate. "
             f"Got source={done.get('source')!r}"
         )

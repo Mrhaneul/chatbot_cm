@@ -19,15 +19,13 @@ from app.intake.slot_extractor import (
 
 _MAX_INTAKE_TURNS = 3
 
-# Maximum number of distinct slots the student can say they don't know before
-# the bot stops asking clarifying questions and escalates to a generic answer.
-MAX_UNKNOWN_ATTEMPTS = 2
+MAX_UNKNOWN_ATTEMPTS = 1  # kept for import compatibility; escalation now fires on the first unknown
 
 INTAKE_ESCALATION_MESSAGE = (
-    "No worries! Here is some general guidance: log in to Blackboard, go to your course, "
-    "and look for the Immediate Access tab or link to access your digital materials. "
-    "If you continue to have trouble, please contact the Campus Store directly at "
-    "ImmediateAccess@calbaptist.edu with your course information and they can assist you."
+    "No problem. Please contact ImmediateAccess@calbaptist.edu for help with your "
+    "textbook access issue. They can help identify the correct platform and material "
+    "for your course. If possible, include a screenshot of what you are seeing when "
+    "you email them."
 )
 
 _UNKNOWN_ANSWER_PHRASES = (
@@ -40,6 +38,13 @@ _UNKNOWN_ANSWER_PHRASES = (
     "unsure",
     "no clue",
     "have no clue",
+    "can't find",
+    "cant find",
+    "cannot find",
+    "can not find",
+    "don't see",
+    "dont see",
+    "do not see",
 )
 
 _PLATFORM_LOW_INFO_PATTERNS = (
