@@ -2492,7 +2492,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     debug_mode=debug_mode,
                 )
         # ── Intake: first vague message — start intake if appropriate ─────────
-        if should_enter_intake(message, session):
+        # Guard: skip if mid-flow intake already completed this turn.
+        # Without this guard, a vague completion message (e.g. "I can't access
+        # the textbook") re-triggers first-turn intake after slots are filled.
+        if not _intake_completed and should_enter_intake(message, session):
             new_profile = IntakeProfile(original_message=message)
             new_profile = update_profile(new_profile, message)
             if intake_is_complete(new_profile):
@@ -2528,10 +2531,19 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # Only runs when neither mid-flow intake nor deterministic first-turn
         # intake handled this message, the message is topic-relevant, and there
         # is no image (image+text requests use the vision flow, not text-only planning).
-        if not _intake_completed and not has_image and should_run_planner(message):
-            planner_decision = await run_intake_planner(message, semaphore=llm_semaphore)
+        _session_known_slots: dict[str, str] = {}
+        if session.get("stored_platform"):
+            _session_known_slots["platform"] = session["stored_platform"]
+        if not _intake_completed and not has_image and should_run_planner(message, known_slots=_session_known_slots):
+            planner_decision = await run_intake_planner(message, semaphore=llm_semaphore, known_slots=_session_known_slots)
             if planner_decision.action == "ASK_CLARIFICATION":
                 question = get_question_for_decision(planner_decision)
+                _planner_profile = update_profile(IntakeProfile(original_message=message), message)
+                # Pre-fill profile from session state so the next turn's mid-flow
+                # handler doesn't re-ask for slots already collected.
+                if not _planner_profile.platform and _session_known_slots.get("platform"):
+                    _planner_profile.platform = _session_known_slots["platform"]
+                session["intake_profile"] = _planner_profile.to_dict()
                 session["history"].append({"role": "user", "content": message})
                 session["history"].append({"role": "assistant", "content": question})
                 session["last_activity"] = datetime.now()
@@ -4229,15 +4241,40 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             )
 
         elif intent == "IA_ACCESS_ISSUE":
-            system_hint = (
-                "The user is asking about Immediate Access digital course materials. "
-                "Do NOT suggest purchasing or renting physical textbooks unless the user explicitly asks. "
-                "If required information is missing, ask for the platform/publisher first "
-                "(for example: Cengage, McGraw Hill, Pearson, Norton/InQuizitive). "
-                "Do NOT ask for course code unless platform is already known and a course-specific step truly requires it. "
-                "Do NOT assume availability of print textbooks. "
-                "Only provide instructions for the specific platform mentioned in the official instructions."
-            )
+            if platform is not None:
+                # Platform is confirmed — build a resolved context block so the LLM
+                # never asks the student to specify the platform again.
+                _platform_display = PLATFORM_DISPLAY_NAMES.get(platform, platform)
+                _resolved_lines = [
+                    f"Platform: {_platform_display} (confirmed — do not ask again)",
+                ]
+                if _intake_completed:
+                    if _completed_intake_issue_type:
+                        _resolved_lines.append(f"Issue type: {_completed_intake_issue_type}")
+                    if _completed_intake_material_type:
+                        _resolved_lines.append(f"Material: {_completed_intake_material_type}")
+                    if _enriched_query:
+                        _resolved_lines.append(f"Full context: {_enriched_query}")
+                _resolved_block = "\n".join(_resolved_lines)
+                system_hint = (
+                    f"RESOLVED SESSION CONTEXT:\n{_resolved_block}\n\n"
+                    f"The student is using {_platform_display}. "
+                    "DO NOT ask the student which platform or publisher they use — it is confirmed above. "
+                    "Use the retrieved instructions to provide specific access steps for this platform. "
+                    "Do NOT suggest physical textbooks. "
+                    "Do NOT ask for course code unless a specific documented step requires it. "
+                    "Only provide steps that appear in the retrieved context."
+                )
+            else:
+                system_hint = (
+                    "The user is asking about Immediate Access digital course materials. "
+                    "Do NOT suggest purchasing or renting physical textbooks unless the user explicitly asks. "
+                    "If required information is missing, ask for the platform/publisher first "
+                    "(for example: Cengage, McGraw Hill, Pearson, Norton/InQuizitive). "
+                    "Do NOT ask for course code unless platform is already known and a course-specific step truly requires it. "
+                    "Do NOT assume availability of print textbooks. "
+                    "Only provide instructions for the specific platform mentioned in the official instructions."
+                )
             if not has_image:
                 system_hint += (
                     " If your answer does not fully resolve the issue, end with a single sentence "
@@ -4247,9 +4284,14 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
         # ✨ START LLM TIMER
         llm_start = time.time()
-        
+
+        # When intake just completed, use the enriched query (which includes platform,
+        # issue type, and original message) as the LLM input so the model has full
+        # context rather than only the brief final slot-filling message.
+        _llm_message = _enriched_query if (_intake_completed and _enriched_query) else message
+
         reply, llm_queue_wait_ms = await call_llm_with_semaphore(
-            message=message,
+            message=_llm_message,
             context=context,
             history=session["history"][-MAX_HISTORY_TURNS:],
             system_hint=system_hint,
@@ -4367,6 +4409,14 @@ async def chat(payload: ChatRequest):
     return response
 
 
+async def _stream_words(text: str, delay: float = 0.03):
+    """Yield text word-by-word with a small delay for a natural typing effect."""
+    words = text.split(" ")
+    for i, word in enumerate(words):
+        yield word + ("" if i == len(words) - 1 else " ")
+        await asyncio.sleep(delay)
+
+
 @app.post("/chat/stream")
 async def chat_stream(payload: ChatRequest):
     """
@@ -4429,7 +4479,8 @@ async def chat_stream(payload: ChatRequest):
                 session["history"].append({"role": "user", "content": message})
                 session["history"].append({"role": "assistant", "content": GREETING_REPLY})
                 session["last_activity"] = datetime.now()
-                yield f"data: {json.dumps({'type': 'response', 'token': GREETING_REPLY, 'done': False})}\n\n"
+                async for token in _stream_words(GREETING_REPLY):
+                    yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
                 yield (
                     "data: "
                     f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'DETERMINISTIC_GREETING', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
@@ -4459,6 +4510,11 @@ async def chat_stream(payload: ChatRequest):
                 print("[STREAM INTENT] Browser cache override → GENERAL_FAQ (cache detected in query or image)")
 
             # ── Intake: mid-flow turn (user replied to an intake question) ────────
+            _stream_intake_completed = False
+            _stream_enriched_query: str | None = None
+            _stream_completed_platform: str | None = None
+            _stream_completed_issue_type: str | None = None
+            _stream_completed_material_type: str | None = None
             _raw_profile = session.get("intake_profile")
             if _raw_profile is not None:
                 profile = IntakeProfile.from_dict(_raw_profile)
@@ -4470,6 +4526,11 @@ async def chat_stream(payload: ChatRequest):
                     platform = profile.platform
                     intent = "IA_ACCESS_ISSUE"
                     retrieval_query = profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
+                    _stream_intake_completed = True
+                    _stream_enriched_query = retrieval_query
+                    _stream_completed_platform = profile.platform
+                    _stream_completed_issue_type = profile.issue_type
+                    _stream_completed_material_type = profile.material_type
                     # fall through to retrieval
                 elif profile.is_expired():
                     session["intake_profile"] = None
@@ -4477,7 +4538,8 @@ async def chat_stream(payload: ChatRequest):
                     session["history"].append({"role": "user", "content": message})
                     session["history"].append({"role": "assistant", "content": fallback})
                     session["last_activity"] = datetime.now()
-                    yield f"data: {json.dumps({'type': 'response', 'token': fallback, 'done': False})}\n\n"
+                    async for token in _stream_words(fallback):
+                        yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
                     yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
                     return
                 else:
@@ -4486,7 +4548,8 @@ async def chat_stream(payload: ChatRequest):
                     session["history"].append({"role": "user", "content": message})
                     session["history"].append({"role": "assistant", "content": question})
                     session["last_activity"] = datetime.now()
-                    yield f"data: {json.dumps({'type': 'response', 'token': question, 'done': False})}\n\n"
+                    async for token in _stream_words(question):
+                        yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
                     yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
                     return
 
@@ -4508,7 +4571,8 @@ async def chat_stream(payload: ChatRequest):
                     session["history"].append({"role": "user", "content": message})
                     session["history"].append({"role": "assistant", "content": question})
                     session["last_activity"] = datetime.now()
-                    yield f"data: {json.dumps({'type': 'response', 'token': question, 'done': False})}\n\n"
+                    async for token in _stream_words(question):
+                        yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
                     yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
                     return
 
@@ -4518,14 +4582,24 @@ async def chat_stream(payload: ChatRequest):
                 # may identify the platform from the screenshot. Text-only planning
                 # before vision would risk asking "which platform?" unnecessarily.
                 # Vision-aware intake planning is a future enhancement.
-                if not payload.image_base64 and should_run_planner(message):
-                    planner_decision = await run_intake_planner(message, semaphore=llm_semaphore)
+                _stream_known_slots: dict[str, str] = {}
+                if session.get("stored_platform"):
+                    _stream_known_slots["platform"] = session["stored_platform"]
+                if not payload.image_base64 and should_run_planner(message, known_slots=_stream_known_slots):
+                    planner_decision = await run_intake_planner(message, semaphore=llm_semaphore, known_slots=_stream_known_slots)
                     if planner_decision.action == "ASK_CLARIFICATION":
                         question = get_question_for_decision(planner_decision)
+                        _planner_profile = update_profile(IntakeProfile(original_message=message), message)
+                        # Pre-fill profile from session state so the next mid-flow
+                        # turn doesn't re-ask for slots already collected.
+                        if not _planner_profile.platform and _stream_known_slots.get("platform"):
+                            _planner_profile.platform = _stream_known_slots["platform"]
+                        session["intake_profile"] = _planner_profile.to_dict()
                         session["history"].append({"role": "user", "content": message})
                         session["history"].append({"role": "assistant", "content": question})
                         session["last_activity"] = datetime.now()
-                        yield f"data: {json.dumps({'type': 'response', 'token': question, 'done': False})}\n\n"
+                        async for token in _stream_words(question):
+                            yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
                         yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE:LLM_PLANNER', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
                         return
                     if planner_decision.enriched_query:
@@ -4541,7 +4615,8 @@ async def chat_stream(payload: ChatRequest):
                 session["stored_original_query"] = message
                 session["stored_intent"] = "IA_ACCESS_ISSUE"
                 session["stored_platform"] = None
-                yield f"data: {json.dumps({'type': 'response', 'token': PLATFORM_CLARIFICATION_MESSAGE, 'done': False})}\n\n"
+                async for token in _stream_words(PLATFORM_CLARIFICATION_MESSAGE):
+                    yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
                 yield (
                     "data: "
                     f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'CLARIFICATION_NEEDED', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
@@ -4619,12 +4694,34 @@ async def chat_stream(payload: ChatRequest):
                     "and direct them to check the Campus Store website or call 951-343-4259."
                 )
             elif intent == "IA_ACCESS_ISSUE":
-                system_hint = (
-                    "The user is asking about Immediate Access digital course materials. "
-                    "Do NOT suggest purchasing or renting physical textbooks unless the user explicitly asks. "
-                    "If required information is missing, ask for the platform or publisher first. "
-                    "Only provide instructions for the specific platform mentioned in the documentation."
-                )
+                if platform is not None:
+                    _s_platform_display = PLATFORM_DISPLAY_NAMES.get(platform, platform)
+                    _s_resolved_lines = [
+                        f"Platform: {_s_platform_display} (confirmed — do not ask again)",
+                    ]
+                    if _stream_intake_completed:
+                        if _stream_completed_issue_type:
+                            _s_resolved_lines.append(f"Issue type: {_stream_completed_issue_type}")
+                        if _stream_completed_material_type:
+                            _s_resolved_lines.append(f"Material: {_stream_completed_material_type}")
+                        if _stream_enriched_query:
+                            _s_resolved_lines.append(f"Full context: {_stream_enriched_query}")
+                    _s_resolved_block = "\n".join(_s_resolved_lines)
+                    system_hint = (
+                        f"RESOLVED SESSION CONTEXT:\n{_s_resolved_block}\n\n"
+                        f"The student is using {_s_platform_display}. "
+                        "DO NOT ask the student which platform or publisher they use — it is confirmed above. "
+                        "Use the retrieved instructions to provide specific access steps for this platform. "
+                        "Do NOT suggest physical textbooks. "
+                        "Only provide steps that appear in the retrieved context."
+                    )
+                else:
+                    system_hint = (
+                        "The user is asking about Immediate Access digital course materials. "
+                        "Do NOT suggest purchasing or renting physical textbooks unless the user explicitly asks. "
+                        "If required information is missing, ask for the platform or publisher first. "
+                        "Only provide instructions for the specific platform mentioned in the documentation."
+                    )
             elif intent == "GENERAL_FAQ":
                 system_hint = (
                     "The user is asking a general Campus Store or Immediate Access question. "
@@ -4719,8 +4816,16 @@ async def chat_stream(payload: ChatRequest):
                     return "", sanitized
                 return sanitized[:-hold_chars], sanitized[-hold_chars:]
 
+            # Use the enriched query when intake just completed so the LLM sees full
+            # context (platform, issue, original message) rather than the brief
+            # final slot-filling reply ("I can't access the textbook").
+            _stream_llm_message = (
+                _stream_enriched_query
+                if (_stream_intake_completed and _stream_enriched_query)
+                else message
+            )
             async with llm_semaphore:
-                async for chunk in stream_llm_response(message, system, image_base64=payload.image_base64):
+                async for chunk in stream_llm_response(_stream_llm_message, system, image_base64=payload.image_base64):
                     chunk_type = chunk.get("type", "response")
                     token = chunk.get("token", "")
                     if not token:

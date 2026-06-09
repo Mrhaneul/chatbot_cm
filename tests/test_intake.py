@@ -610,3 +610,23 @@ class TestShouldRunPlanner:
     def test_platform_only_still_runs_planner(self):
         # Platform present but no issue type — clarification still needed
         assert should_run_planner("Something is wrong with Cengage")
+
+    def test_known_slots_both_present_skips_planner(self):
+        # Both slots known from session — planner adds no value
+        assert not should_run_planner(
+            "I can't access the textbook",
+            known_slots={"platform": "CENGAGE", "issue_type": "access"},
+        )
+
+    def test_known_slots_platform_only_still_runs_planner(self):
+        # Only platform known — issue_type still missing
+        assert should_run_planner(
+            "I can't access the textbook",
+            known_slots={"platform": "CENGAGE"},
+        )
+
+    def test_known_slots_empty_dict_still_runs_planner(self):
+        assert should_run_planner("My book is locked", known_slots={})
+
+    def test_known_slots_none_still_runs_planner(self):
+        assert should_run_planner("My book is locked", known_slots=None)

@@ -103,20 +103,24 @@ _SAFE_FALLBACK = IntakePlannerDecision(
 )
 
 
-def should_run_planner(message: str) -> bool:
+def should_run_planner(
+    message: str,
+    known_slots: dict[str, str] | None = None,
+) -> bool:
     """
     Return True only when the LLM planner can add value.
 
     Returns False when:
     - The message contains no course-material/access keywords (unrelated query).
-    - Both platform and issue type are already deterministically extracted — the
-      message is specific enough for RAG without any clarification.
+    - Both platform and issue type are already known (from session or message text).
     """
     msg_lower = message.lower()
     if not any(kw in msg_lower for kw in _TOPIC_KEYWORDS):
         return False
-    # Skip the planner if both slots are already present — same bypass guard as
-    # should_enter_intake(), preventing unnecessary latency for specific messages.
+    # Skip if both slots are already known from the session.
+    if known_slots and known_slots.get("platform") and known_slots.get("issue_type"):
+        return False
+    # Skip if both slots are extractable from the message text alone.
     if extract_platform(message) is not None and extract_issue_type(message) is not None:
         return False
     return True
@@ -156,6 +160,7 @@ def _validate_decision(raw: dict) -> IntakePlannerDecision | None:
 async def run_intake_planner(
     message: str,
     semaphore: asyncio.Semaphore | None = None,
+    known_slots: dict[str, str] | None = None,
 ) -> IntakePlannerDecision:
     """
     Call the Ollama LLM and return a structured intake decision.
@@ -165,15 +170,24 @@ async def run_intake_planner(
 
     The optional semaphore parameter should be the same llm_semaphore used for
     normal answer generation, keeping total Ollama concurrency bounded.
+
+    known_slots, if provided, surfaces already-collected session state to the LLM
+    so it does not ask for slots the student already supplied.
     """
     models = [PRIMARY_LLM_MODEL]
     if FALLBACK_LLM_MODEL and FALLBACK_LLM_MODEL != PRIMARY_LLM_MODEL:
         models.append(FALLBACK_LLM_MODEL)
 
+    user_content = f"Student message: {message}"
+    if known_slots:
+        filled = {k: v for k, v in known_slots.items() if v}
+        if filled:
+            user_content += f"\nAlready known from session: {filled}"
+
     payload: dict = {
         "messages": [
             {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": f"Student message: {message}"},
+            {"role": "user", "content": user_content},
         ],
         "stream": False,
         "options": {
