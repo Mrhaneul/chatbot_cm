@@ -19,6 +19,29 @@ from app.intake.slot_extractor import (
 
 _MAX_INTAKE_TURNS = 3
 
+# Maximum number of distinct slots the student can say they don't know before
+# the bot stops asking clarifying questions and escalates to a generic answer.
+MAX_UNKNOWN_ATTEMPTS = 2
+
+INTAKE_ESCALATION_MESSAGE = (
+    "No worries! Here is some general guidance: log in to Blackboard, go to your course, "
+    "and look for the Immediate Access tab or link to access your digital materials. "
+    "If you continue to have trouble, please contact the Campus Store directly at "
+    "ImmediateAccess@calbaptist.edu with your course information and they can assist you."
+)
+
+_UNKNOWN_ANSWER_PHRASES = (
+    "don't know",
+    "dont know",
+    "do not know",
+    "not sure",
+    "no idea",
+    "have no idea",
+    "unsure",
+    "no clue",
+    "have no clue",
+)
+
 _PLATFORM_LOW_INFO_PATTERNS = (
     "issue",
     "problem",
@@ -32,6 +55,12 @@ _PLATFORM_LOW_INFO_PATTERNS = (
     "not show anything",
     "not showing anything",
 )
+
+
+def is_unknown_answer(message: str) -> bool:
+    """True when the user signals they cannot supply the requested slot value."""
+    msg_lower = message.lower()
+    return any(phrase in msg_lower for phrase in _UNKNOWN_ANSWER_PHRASES)
 
 
 def is_vague_message(message: str) -> bool:

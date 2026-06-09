@@ -65,12 +65,13 @@ _SYSTEM_PROMPT = (
     "DO NOT provide troubleshooting steps.\n"
     "Return ONLY valid JSON — no explanation, no other text.\n\n"
     "VALID next_question_key values (choose exactly one, or null):\n"
-    "- ask_platform_for_book_access        (missing: which publisher/platform)\n"
-    "- ask_issue_for_platform              (missing: what kind of problem)\n"
-    "- ask_course_code                     (missing: course code)\n"
-    "- ask_error_message                   (missing: what error they see)\n"
-    "- ask_material_type                   (missing: textbook vs workbook vs lab)\n"
-    "- ask_blackboard_or_publisher_location  (missing: where they access from)\n\n"
+    "- ask_platform_for_book_access               (missing: which publisher/platform)\n"
+    "- ask_issue_for_platform                     (missing: what kind of problem)\n"
+    "- ask_course_code                            (missing: course code)\n"
+    "- ask_error_message                          (missing: what error they see)\n"
+    "- ask_material_type                          (missing: textbook vs workbook vs lab)\n"
+    "- ask_blackboard_or_publisher_location       (missing: where they access from)\n"
+    "- ask_course_or_material_when_platform_unknown  (student does not know platform — ask for course/material instead)\n\n"
     "RULES:\n"
     "1. If the message names a specific platform (Cengage, VitalSource, McGraw Hill, "
     "Pearson, Wiley, etc.) AND describes a specific issue: action = \"ALLOW_RAG\".\n"
@@ -161,6 +162,8 @@ async def run_intake_planner(
     message: str,
     semaphore: asyncio.Semaphore | None = None,
     known_slots: dict[str, str] | None = None,
+    last_requested_slot: str | None = None,
+    attempted_slots: list[str] | None = None,
 ) -> IntakePlannerDecision:
     """
     Call the Ollama LLM and return a structured intake decision.
@@ -173,6 +176,9 @@ async def run_intake_planner(
 
     known_slots, if provided, surfaces already-collected session state to the LLM
     so it does not ask for slots the student already supplied.
+
+    last_requested_slot and attempted_slots surface prior intake state so the
+    planner can choose an alternative question when the student cannot answer.
     """
     models = [PRIMARY_LLM_MODEL]
     if FALLBACK_LLM_MODEL and FALLBACK_LLM_MODEL != PRIMARY_LLM_MODEL:
@@ -183,6 +189,10 @@ async def run_intake_planner(
         filled = {k: v for k, v in known_slots.items() if v}
         if filled:
             user_content += f"\nAlready known from session: {filled}"
+    if last_requested_slot:
+        user_content += f"\nLast question asked about slot: {last_requested_slot}"
+    if attempted_slots:
+        user_content += f"\nSlots student said they don't know: {attempted_slots}"
 
     payload: dict = {
         "messages": [

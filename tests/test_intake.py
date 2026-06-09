@@ -23,9 +23,12 @@ from app.intake.flow import (
     next_question as intake_next_question,
     intake_is_complete,
     intake_fallback_message,
+    is_unknown_answer,
+    INTAKE_ESCALATION_MESSAGE,
+    MAX_UNKNOWN_ATTEMPTS,
 )
 from app.intake.planner_models import IntakePlannerDecision
-from app.intake.question_templates import QUESTION_TEMPLATES, FALLBACK_QUESTION
+from app.intake.question_templates import QUESTION_TEMPLATES, FALLBACK_QUESTION, QUESTION_KEY_TO_SLOT
 from app.intake.llm_planner import should_run_planner, get_question_for_decision
 
 
@@ -630,3 +633,109 @@ class TestShouldRunPlanner:
 
     def test_known_slots_none_still_runs_planner(self):
         assert should_run_planner("My book is locked", known_slots=None)
+
+
+# ── is_unknown_answer ─────────────────────────────────────────────────────────
+
+class TestIsUnknownAnswer:
+    def test_i_dont_know(self):
+        assert is_unknown_answer("I don't know")
+
+    def test_i_dont_know_contraction(self):
+        assert is_unknown_answer("I dont know")
+
+    def test_i_do_not_know(self):
+        assert is_unknown_answer("I do not know")
+
+    def test_not_sure(self):
+        assert is_unknown_answer("not sure")
+
+    def test_im_not_sure(self):
+        assert is_unknown_answer("I'm not sure")
+
+    def test_no_idea(self):
+        assert is_unknown_answer("no idea")
+
+    def test_i_have_no_idea(self):
+        assert is_unknown_answer("I have no idea")
+
+    def test_unsure(self):
+        assert is_unknown_answer("unsure")
+
+    def test_not_sure_which(self):
+        assert is_unknown_answer("not sure which platform")
+
+    def test_no_clue(self):
+        assert is_unknown_answer("no clue")
+
+    def test_platform_name_is_not_unknown(self):
+        assert not is_unknown_answer("Cengage MindTap")
+
+    def test_normal_message_is_not_unknown(self):
+        assert not is_unknown_answer("My book is locked")
+
+    def test_partial_match_still_detected(self):
+        assert is_unknown_answer("I really don't know which publisher")
+
+
+# ── IntakeProfile new fields ──────────────────────────────────────────────────
+
+class TestIntakeProfileUnknownSlots:
+    def test_last_requested_slot_default_none(self):
+        p = IntakeProfile()
+        assert p.last_requested_slot is None
+
+    def test_attempted_slots_default_empty(self):
+        p = IntakeProfile()
+        assert p.attempted_slots == []
+
+    def test_last_requested_slot_roundtrip(self):
+        p = IntakeProfile(original_message="help", last_requested_slot="platform")
+        p2 = IntakeProfile.from_dict(p.to_dict())
+        assert p2.last_requested_slot == "platform"
+
+    def test_attempted_slots_roundtrip(self):
+        p = IntakeProfile(original_message="help")
+        p.attempted_slots = ["platform", "course_or_material"]
+        p2 = IntakeProfile.from_dict(p.to_dict())
+        assert p2.attempted_slots == ["platform", "course_or_material"]
+
+    def test_from_dict_missing_new_fields_uses_defaults(self):
+        d = {
+            "platform": None, "issue_type": None, "material_type": None,
+            "course_code": None, "turns_spent": 1, "original_message": "x",
+        }
+        p = IntakeProfile.from_dict(d)
+        assert p.last_requested_slot is None
+        assert p.attempted_slots == []
+
+    def test_to_dict_includes_new_fields(self):
+        p = IntakeProfile(original_message="x", last_requested_slot="issue_type")
+        p.attempted_slots = ["platform"]
+        d = p.to_dict()
+        assert d["last_requested_slot"] == "issue_type"
+        assert d["attempted_slots"] == ["platform"]
+
+
+# ── question_templates new additions ─────────────────────────────────────────
+
+class TestQuestionTemplatesUnknownPlatform:
+    def test_new_template_present(self):
+        assert "ask_course_or_material_when_platform_unknown" in QUESTION_TEMPLATES
+
+    def test_new_template_contains_course_code(self):
+        q = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"]
+        assert "course code" in q.lower() or "course name" in q.lower()
+
+    def test_new_template_contains_book_name(self):
+        q = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"]
+        assert "book" in q.lower() or "material" in q.lower()
+
+    def test_question_key_to_slot_has_new_key(self):
+        assert "ask_course_or_material_when_platform_unknown" in QUESTION_KEY_TO_SLOT
+
+    def test_platform_key_maps_to_platform_slot(self):
+        assert QUESTION_KEY_TO_SLOT["ask_platform_for_book_access"] == "platform"
+
+    def test_new_key_maps_to_course_or_material(self):
+        assert QUESTION_KEY_TO_SLOT["ask_course_or_material_when_platform_unknown"] == "course_or_material"

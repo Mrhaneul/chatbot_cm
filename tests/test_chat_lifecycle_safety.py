@@ -1218,3 +1218,158 @@ class TestFinalRAGGenerationResolvedContext:
         assert "ask for the platform" not in hint.lower(), (
             f"system_hint must not ask for platform when it's already known: {hint!r}"
         )
+
+
+# ── Unknown-answer ("I don't know") handling ─────────────────────────────────
+
+@pytest.mark.asyncio
+class TestIntakeUnknownAnswerLifecycle:
+    """
+    Verify that "I don't know" replies during intake:
+    - ask an alternative question (not a generic reset)
+    - escalate after MAX_UNKNOWN_ATTEMPTS distinct slot failures
+    """
+
+    _PLANNER_CLARIFICATION = IntakePlannerDecision(
+        action="ASK_CLARIFICATION",
+        intent="vague_book_access",
+        confidence=0.85,
+        known_slots={},
+        missing_slots=["platform"],
+        next_question_key="ask_platform_for_book_access",
+    )
+
+    async def test_i_dont_know_asks_alternative_not_generic(self):
+        """
+        'My book is locked' → asks platform.
+        'I don't know' → must ask alternative course/material question, not generic reset.
+        """
+        from app.intake.question_templates import QUESTION_TEMPLATES
+        session_id = f"test-unk-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._PLANNER_CLARIFICATION)),
+        ):
+            r1 = await process_chat_request(_session_req(session_id, "My book is locked"))
+            r2 = await process_chat_request(_session_req(session_id, "I don't know"))
+
+        assert r1.source.startswith("INTAKE"), f"Turn 1 must be INTAKE, got {r1.source!r}"
+        assert r2.source == "INTAKE", f"Turn 2 must be INTAKE, got {r2.source!r}"
+
+        expected_alt = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"]
+        assert r2.reply == expected_alt, (
+            f"Turn 2 reply should be the alternative question.\n"
+            f"Got: {r2.reply!r}\nExpected: {expected_alt!r}"
+        )
+
+    async def test_not_sure_asks_alternative(self):
+        """'not sure' as a reply to the platform question triggers the alternative."""
+        from app.intake.question_templates import QUESTION_TEMPLATES
+        session_id = f"test-unk-ns-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._PLANNER_CLARIFICATION)),
+        ):
+            await process_chat_request(_session_req(session_id, "My book is locked"))
+            r2 = await process_chat_request(_session_req(session_id, "not sure"))
+
+        expected_alt = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"]
+        assert r2.reply == expected_alt, f"'not sure' should trigger alternative. Got: {r2.reply!r}"
+
+    async def test_no_idea_asks_alternative(self):
+        """'no idea' triggers the alternative platform question."""
+        from app.intake.question_templates import QUESTION_TEMPLATES
+        session_id = f"test-unk-ni-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._PLANNER_CLARIFICATION)),
+        ):
+            await process_chat_request(_session_req(session_id, "My book is locked"))
+            r2 = await process_chat_request(_session_req(session_id, "no idea"))
+
+        expected_alt = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"]
+        assert r2.reply == expected_alt, f"'no idea' should trigger alternative. Got: {r2.reply!r}"
+
+    async def test_two_unknown_answers_triggers_escalation(self):
+        """
+        After MAX_UNKNOWN_ATTEMPTS distinct slot unknowns, reply must be the
+        escalation message with source INTAKE:ESCALATION.
+        """
+        from app.intake.flow import INTAKE_ESCALATION_MESSAGE
+        session_id = f"test-unk-esc-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._PLANNER_CLARIFICATION)),
+        ):
+            await process_chat_request(_session_req(session_id, "My book is locked"))
+            await process_chat_request(_session_req(session_id, "I don't know"))
+            r3 = await process_chat_request(_session_req(session_id, "I don't know"))
+
+        assert r3.source == "INTAKE:ESCALATION", (
+            f"After 2 unknowns, source must be INTAKE:ESCALATION. Got {r3.source!r}"
+        )
+        assert r3.reply == INTAKE_ESCALATION_MESSAGE
+
+    async def test_escalation_message_contains_email(self):
+        """Escalation reply must include the Campus Store email address."""
+        from app.intake.flow import INTAKE_ESCALATION_MESSAGE
+        session_id = f"test-unk-email-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._PLANNER_CLARIFICATION)),
+        ):
+            await process_chat_request(_session_req(session_id, "My book is locked"))
+            await process_chat_request(_session_req(session_id, "I don't know"))
+            r3 = await process_chat_request(_session_req(session_id, "I don't know"))
+
+        assert "ImmediateAccess@calbaptist.edu" in r3.reply, (
+            f"Escalation must include the support email. Got: {r3.reply!r}"
+        )
+
+    async def test_intake_profile_cleared_after_escalation(self):
+        """Session intake_profile must be None after escalation."""
+        session_id = f"test-unk-clear-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._PLANNER_CLARIFICATION)),
+        ):
+            await process_chat_request(_session_req(session_id, "My book is locked"))
+            await process_chat_request(_session_req(session_id, "I don't know"))
+            await process_chat_request(_session_req(session_id, "I don't know"))
+
+        assert main.sessions[session_id]["intake_profile"] is None, (
+            "intake_profile must be cleared after escalation"
+        )
+
+    async def test_providing_info_after_unknown_completes_intake(self):
+        """
+        'My book is locked' → 'I don't know' → 'Cengage ENGL1301'
+        The third turn provides a platform + issue-type signal and should complete intake.
+        """
+        session_id = f"test-unk-recover-{uuid.uuid4()}"
+        retrieve_calls: list = []
+
+        async def fake_retrieve(query, collection="auto", platform=None, top_k=1):
+            retrieve_calls.append({"query": query, "platform": platform})
+            return {
+                "context": "Cengage steps",
+                "source_id": "INSTR_CENGAGE_010",
+                "score": 0.90,
+                "article_link": None,
+            }
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._PLANNER_CLARIFICATION)),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=fake_retrieve)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            await process_chat_request(_session_req(session_id, "My book is locked"))
+            await process_chat_request(_session_req(session_id, "I don't know"))
+            r3 = await process_chat_request(
+                _session_req(session_id, "I can't access my Cengage MindTap textbook")
+            )
+
+        assert not r3.source.startswith("INTAKE"), (
+            f"After providing platform+issue, should reach RAG. Got {r3.source!r}"
+        )
