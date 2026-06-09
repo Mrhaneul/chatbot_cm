@@ -2532,6 +2532,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             planner_decision = await run_intake_planner(message, semaphore=llm_semaphore)
             if planner_decision.action == "ASK_CLARIFICATION":
                 question = get_question_for_decision(planner_decision)
+                _planner_profile = update_profile(IntakeProfile(original_message=message), message)
+                session["intake_profile"] = _planner_profile.to_dict()
                 session["history"].append({"role": "user", "content": message})
                 session["history"].append({"role": "assistant", "content": question})
                 session["last_activity"] = datetime.now()
@@ -4534,6 +4536,8 @@ async def chat_stream(payload: ChatRequest):
                     planner_decision = await run_intake_planner(message, semaphore=llm_semaphore)
                     if planner_decision.action == "ASK_CLARIFICATION":
                         question = get_question_for_decision(planner_decision)
+                        _planner_profile = update_profile(IntakeProfile(original_message=message), message)
+                        session["intake_profile"] = _planner_profile.to_dict()
                         session["history"].append({"role": "user", "content": message})
                         session["history"].append({"role": "assistant", "content": question})
                         session["last_activity"] = datetime.now()
