@@ -2492,7 +2492,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     debug_mode=debug_mode,
                 )
         # ── Intake: first vague message — start intake if appropriate ─────────
-        if should_enter_intake(message, session):
+        # Guard: skip if mid-flow intake already completed this turn.
+        # Without this guard, a vague completion message (e.g. "I can't access
+        # the textbook") re-triggers first-turn intake after slots are filled.
+        if not _intake_completed and should_enter_intake(message, session):
             new_profile = IntakeProfile(original_message=message)
             new_profile = update_profile(new_profile, message)
             if intake_is_complete(new_profile):
@@ -2528,11 +2531,18 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # Only runs when neither mid-flow intake nor deterministic first-turn
         # intake handled this message, the message is topic-relevant, and there
         # is no image (image+text requests use the vision flow, not text-only planning).
-        if not _intake_completed and not has_image and should_run_planner(message):
-            planner_decision = await run_intake_planner(message, semaphore=llm_semaphore)
+        _session_known_slots: dict[str, str] = {}
+        if session.get("stored_platform"):
+            _session_known_slots["platform"] = session["stored_platform"]
+        if not _intake_completed and not has_image and should_run_planner(message, known_slots=_session_known_slots):
+            planner_decision = await run_intake_planner(message, semaphore=llm_semaphore, known_slots=_session_known_slots)
             if planner_decision.action == "ASK_CLARIFICATION":
                 question = get_question_for_decision(planner_decision)
                 _planner_profile = update_profile(IntakeProfile(original_message=message), message)
+                # Pre-fill profile from session state so the next turn's mid-flow
+                # handler doesn't re-ask for slots already collected.
+                if not _planner_profile.platform and _session_known_slots.get("platform"):
+                    _planner_profile.platform = _session_known_slots["platform"]
                 session["intake_profile"] = _planner_profile.to_dict()
                 session["history"].append({"role": "user", "content": message})
                 session["history"].append({"role": "assistant", "content": question})
@@ -4532,11 +4542,18 @@ async def chat_stream(payload: ChatRequest):
                 # may identify the platform from the screenshot. Text-only planning
                 # before vision would risk asking "which platform?" unnecessarily.
                 # Vision-aware intake planning is a future enhancement.
-                if not payload.image_base64 and should_run_planner(message):
-                    planner_decision = await run_intake_planner(message, semaphore=llm_semaphore)
+                _stream_known_slots: dict[str, str] = {}
+                if session.get("stored_platform"):
+                    _stream_known_slots["platform"] = session["stored_platform"]
+                if not payload.image_base64 and should_run_planner(message, known_slots=_stream_known_slots):
+                    planner_decision = await run_intake_planner(message, semaphore=llm_semaphore, known_slots=_stream_known_slots)
                     if planner_decision.action == "ASK_CLARIFICATION":
                         question = get_question_for_decision(planner_decision)
                         _planner_profile = update_profile(IntakeProfile(original_message=message), message)
+                        # Pre-fill profile from session state so the next mid-flow
+                        # turn doesn't re-ask for slots already collected.
+                        if not _planner_profile.platform and _stream_known_slots.get("platform"):
+                            _planner_profile.platform = _stream_known_slots["platform"]
                         session["intake_profile"] = _planner_profile.to_dict()
                         session["history"].append({"role": "user", "content": message})
                         session["history"].append({"role": "assistant", "content": question})

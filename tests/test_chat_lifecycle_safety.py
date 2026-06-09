@@ -837,3 +837,171 @@ class TestNormalCampusStoreTrafficIsNotBlocked:
         with patch("app.main.ENABLE_SAFETY_CLASSIFIER", False):
             r = await process_chat_request(_req("How do I opt out of Immediate Access?"))
         assert not r.source.startswith("SAFETY:")
+
+
+# ── Phase 8 planner redundancy regression tests ───────────────────────────────
+
+class TestPlannerRedundantClarificationRegression:
+    """
+    Verify that the LLM planner does not ask redundant questions when slots
+    are already collected across multi-turn intake sessions.
+
+    Root cause (fixed): process_chat_request() had a separate `if should_enter_intake()`
+    (not `elif`) that could re-fire after mid-flow intake completed, treating the
+    final slot-filling message as a fresh first-turn vague query.
+    """
+
+    async def test_three_turn_cengage_reaches_rag_not_intake(self):
+        """
+        'My book is locked' → 'Cengage' → 'I can't access the textbook'
+        The third turn must reach RAG (retrieve_async called), not return INTAKE.
+        """
+        session_id = f"test-3turn-{uuid.uuid4()}"
+        retrieve_calls: list[dict] = []
+
+        async def fake_retrieve(query, collection="auto", platform=None, top_k=1):
+            retrieve_calls.append({"query": query, "collection": collection, "platform": platform})
+            return {
+                "context": "1. Log in to Blackboard.\n2. Open the Immediate Access tab.\n3. Select Cengage.",
+                "source_id": "INSTR_CENGAGE_001",
+                "score": 0.92,
+                "article_link": None,
+            }
+
+        planner_clarification = IntakePlannerDecision(
+            action="ASK_CLARIFICATION",
+            intent="vague_book_access",
+            confidence=0.85,
+            known_slots={},
+            missing_slots=["platform"],
+            next_question_key="ask_platform_for_book_access",
+        )
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=planner_clarification)),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=fake_retrieve)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r1 = await process_chat_request(_session_req(session_id, "My book is locked"))
+            r2 = await process_chat_request(_session_req(session_id, "Cengage"))
+            r3 = await process_chat_request(_session_req(session_id, "I can't access the textbook"))
+
+        assert r1.source.startswith("INTAKE"), f"Turn 1 should be INTAKE, got {r1.source!r}"
+        assert r2.source == "INTAKE", f"Turn 2 should be INTAKE (needs issue), got {r2.source!r}"
+        assert not r3.source.startswith("INTAKE"), (
+            f"Turn 3 should reach RAG, not re-enter intake. Got source={r3.source!r}"
+        )
+        assert retrieve_calls, "retrieve_async must be called on Turn 3"
+        assert retrieve_calls[-1]["collection"] == "instructions"
+        assert retrieve_calls[-1]["platform"] == "cengage"
+        assert "CENGAGE" in (main.sessions[session_id].get("stored_platform") or "")
+
+    async def test_three_turn_cengage_enriched_query_includes_context(self):
+        """Enriched RAG query on Turn 3 must include original message, platform, and issue."""
+        session_id = f"test-3turn-query-{uuid.uuid4()}"
+        retrieve_calls: list[dict] = []
+
+        async def fake_retrieve(query, collection="auto", platform=None, top_k=1):
+            retrieve_calls.append({"query": query, "collection": collection, "platform": platform})
+            return {
+                "context": "Cengage MindTap access steps.",
+                "source_id": "INSTR_CENGAGE_002",
+                "score": 0.90,
+                "article_link": None,
+            }
+
+        planner_clarification = IntakePlannerDecision(
+            action="ASK_CLARIFICATION",
+            intent="vague_book_access",
+            confidence=0.85,
+            known_slots={},
+            missing_slots=["platform"],
+            next_question_key="ask_platform_for_book_access",
+        )
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=planner_clarification)),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=fake_retrieve)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            await process_chat_request(_session_req(session_id, "My book is locked"))
+            await process_chat_request(_session_req(session_id, "Cengage"))
+            await process_chat_request(_session_req(session_id, "I can't access the textbook"))
+
+        assert retrieve_calls, "retrieve_async must be called"
+        final_query = retrieve_calls[-1]["query"]
+        assert "My book is locked" in final_query, f"Query must include original message: {final_query!r}"
+        assert "Cengage" in final_query or "cengage" in final_query.lower(), (
+            f"Query must include platform: {final_query!r}"
+        )
+        assert "access" in final_query.lower(), f"Query must include issue context: {final_query!r}"
+
+    async def test_planner_receives_known_slots_from_session(self, block_retrieval, block_llm):
+        """When stored_platform is in session, run_intake_planner must receive it as known_slots."""
+        session_id = f"test-known-slots-{uuid.uuid4()}"
+        main.sessions[session_id] = main.init_session()
+        main.sessions[session_id]["stored_platform"] = "CENGAGE"
+
+        captured_kwargs: list[dict] = []
+
+        async def capturing_planner(message, semaphore=None, known_slots=None):
+            captured_kwargs.append({"message": message, "known_slots": known_slots})
+            return IntakePlannerDecision(
+                action="ASK_CLARIFICATION",
+                intent="vague",
+                confidence=0.5,
+                known_slots={},
+                missing_slots=["issue_type"],
+                next_question_key="ask_issue_for_platform",
+            )
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=capturing_planner),
+        ):
+            await process_chat_request(_session_req(session_id, "I can't access the textbook"))
+
+        assert captured_kwargs, "run_intake_planner must be called"
+        passed_slots = captured_kwargs[-1]["known_slots"]
+        assert passed_slots is not None, "known_slots must be passed to planner"
+        assert passed_slots.get("platform") == "CENGAGE", (
+            f"known_slots must include stored platform, got: {passed_slots!r}"
+        )
+
+    async def test_planner_clarification_preserves_existing_platform_in_profile(
+        self, block_retrieval, block_llm
+    ):
+        """
+        When the planner returns ASK_CLARIFICATION and stored_platform is already
+        in the session, the stored intake_profile must carry that platform forward
+        so the next turn doesn't re-ask for it.
+        """
+        session_id = f"test-no-overwrite-{uuid.uuid4()}"
+        main.sessions[session_id] = main.init_session()
+        main.sessions[session_id]["stored_platform"] = "CENGAGE"
+
+        planner_ask_issue = IntakePlannerDecision(
+            action="ASK_CLARIFICATION",
+            intent="vague_cengage_access",
+            confidence=0.8,
+            known_slots={"platform": "Cengage"},
+            missing_slots=["issue_type"],
+            next_question_key="ask_issue_for_platform",
+        )
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=planner_ask_issue)),
+        ):
+            r = await process_chat_request(
+                _session_req(session_id, "I can't access the textbook")
+            )
+
+        assert r.source.startswith("INTAKE"), f"Expected INTAKE, got {r.source!r}"
+        profile = main.sessions[session_id].get("intake_profile")
+        assert profile is not None, "intake_profile must be stored in session"
+        assert profile["platform"] == "CENGAGE", (
+            f"Stored platform must not be overwritten by planner. Got: {profile['platform']!r}"
+        )
