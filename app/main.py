@@ -4367,6 +4367,14 @@ async def chat(payload: ChatRequest):
     return response
 
 
+async def _stream_words(text: str, delay: float = 0.03):
+    """Yield text word-by-word with a small delay for a natural typing effect."""
+    words = text.split(" ")
+    for i, word in enumerate(words):
+        yield word + ("" if i == len(words) - 1 else " ")
+        await asyncio.sleep(delay)
+
+
 @app.post("/chat/stream")
 async def chat_stream(payload: ChatRequest):
     """
@@ -4429,7 +4437,8 @@ async def chat_stream(payload: ChatRequest):
                 session["history"].append({"role": "user", "content": message})
                 session["history"].append({"role": "assistant", "content": GREETING_REPLY})
                 session["last_activity"] = datetime.now()
-                yield f"data: {json.dumps({'type': 'response', 'token': GREETING_REPLY, 'done': False})}\n\n"
+                async for token in _stream_words(GREETING_REPLY):
+                    yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
                 yield (
                     "data: "
                     f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'DETERMINISTIC_GREETING', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
@@ -4477,7 +4486,8 @@ async def chat_stream(payload: ChatRequest):
                     session["history"].append({"role": "user", "content": message})
                     session["history"].append({"role": "assistant", "content": fallback})
                     session["last_activity"] = datetime.now()
-                    yield f"data: {json.dumps({'type': 'response', 'token': fallback, 'done': False})}\n\n"
+                    async for token in _stream_words(fallback):
+                        yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
                     yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
                     return
                 else:
@@ -4486,7 +4496,8 @@ async def chat_stream(payload: ChatRequest):
                     session["history"].append({"role": "user", "content": message})
                     session["history"].append({"role": "assistant", "content": question})
                     session["last_activity"] = datetime.now()
-                    yield f"data: {json.dumps({'type': 'response', 'token': question, 'done': False})}\n\n"
+                    async for token in _stream_words(question):
+                        yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
                     yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
                     return
 
@@ -4508,7 +4519,8 @@ async def chat_stream(payload: ChatRequest):
                     session["history"].append({"role": "user", "content": message})
                     session["history"].append({"role": "assistant", "content": question})
                     session["last_activity"] = datetime.now()
-                    yield f"data: {json.dumps({'type': 'response', 'token': question, 'done': False})}\n\n"
+                    async for token in _stream_words(question):
+                        yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
                     yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
                     return
 
@@ -4525,7 +4537,8 @@ async def chat_stream(payload: ChatRequest):
                         session["history"].append({"role": "user", "content": message})
                         session["history"].append({"role": "assistant", "content": question})
                         session["last_activity"] = datetime.now()
-                        yield f"data: {json.dumps({'type': 'response', 'token': question, 'done': False})}\n\n"
+                        async for token in _stream_words(question):
+                            yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
                         yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE:LLM_PLANNER', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
                         return
                     if planner_decision.enriched_query:
@@ -4541,7 +4554,8 @@ async def chat_stream(payload: ChatRequest):
                 session["stored_original_query"] = message
                 session["stored_intent"] = "IA_ACCESS_ISSUE"
                 session["stored_platform"] = None
-                yield f"data: {json.dumps({'type': 'response', 'token': PLATFORM_CLARIFICATION_MESSAGE, 'done': False})}\n\n"
+                async for token in _stream_words(PLATFORM_CLARIFICATION_MESSAGE):
+                    yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
                 yield (
                     "data: "
                     f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'CLARIFICATION_NEEDED', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
