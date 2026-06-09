@@ -233,6 +233,28 @@ class TestExtractIssueType:
     def test_account_priority_over_access(self):
         assert extract_issue_type("I can't login to my account") == "account"
 
+    # VitalSource zero-content patterns (Bugfix: "0 Courses, 0 Materials" must not enter intake)
+    def test_zero_courses_zero_materials_is_missing(self):
+        assert extract_issue_type("I see '0 Courses, 0 Materials' on VitalSource") == "missing"
+
+    def test_zero_courses_zero_materials_lowercase_is_missing(self):
+        assert extract_issue_type("VitalSource says 0 courses 0 materials") == "missing"
+
+    def test_no_content_available_is_missing(self):
+        assert extract_issue_type("VitalSource says no content available") == "missing"
+
+    def test_no_materials_showing_is_missing(self):
+        assert extract_issue_type("My VitalSource bookshelf has no materials") == "missing"
+
+    def test_nothing_showing_is_missing(self):
+        assert extract_issue_type("nothing showing in VitalSource") == "missing"
+
+    def test_cant_see_textbook_is_missing(self):
+        assert extract_issue_type("I can't see my textbook on VitalSource") == "missing"
+
+    def test_no_courses_is_missing(self):
+        assert extract_issue_type("no courses, no materials on VitalSource") == "missing"
+
 
 class TestExtractCourseCode:
     def test_standard_code(self):
@@ -644,6 +666,16 @@ class TestShouldRunPlanner:
 
     def test_known_slots_none_still_runs_planner(self):
         assert should_run_planner("My book is locked", known_slots=None)
+
+    def test_zero_courses_zero_materials_vitalsource_skips_planner(self):
+        # Both platform (VitalSource) and issue (missing) are extractable — planner adds no value
+        assert not should_run_planner("I see 0 Courses 0 Materials on VitalSource")
+
+    def test_no_content_available_vitalsource_skips_planner(self):
+        assert not should_run_planner("VitalSource says no content available")
+
+    def test_cant_see_textbook_vitalsource_skips_planner(self):
+        assert not should_run_planner("I can't see my textbook on VitalSource")
 
 
 # ── is_unknown_answer ─────────────────────────────────────────────────────────

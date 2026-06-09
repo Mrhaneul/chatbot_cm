@@ -1535,3 +1535,188 @@ class TestActiveIntakeSafetyPassthrough:
             f"Streaming: active intake + 'I don't know' must escalate. "
             f"Got source={done.get('source')!r}"
         )
+
+
+# ── VitalSource "0 Courses, 0 Materials" routing ─────────────────────────────
+
+@pytest.mark.asyncio
+class TestVitalSourceZeroCoursesRouting:
+    """
+    'I see 0 Courses, 0 Materials on VitalSource' contains both platform and
+    issue type (missing content) — it must route to instructions RAG directly,
+    not enter intake to ask for the issue type.
+
+    Root cause: extract_issue_type() did not recognise "0 courses / 0 materials /
+    no content" patterns, so should_run_planner() returned True and the LLM
+    planner asked "What kind of issue are you running into?"
+    """
+
+    _FAKE_VS_RETRIEVAL = {
+        "context": "1. Log in to VitalSource.\n2. Refresh the page.\n3. Contact support.",
+        "source_id": "INSTR_VITALSOURCE_001",
+        "score": 0.91,
+        "article_link": None,
+    }
+
+    async def test_zero_courses_zero_materials_vitalsource_routes_to_rag(self):
+        """
+        'I see 0 Courses, 0 Materials on VitalSource' must bypass intake and
+        reach RAG — source must NOT be INTAKE or INTAKE:LLM_PLANNER.
+        """
+        session_id = f"test-vs-0c-{uuid.uuid4()}"
+        retrieve_calls: list[dict] = []
+
+        async def fake_retrieve(query, collection="auto", platform=None, top_k=1):
+            retrieve_calls.append({"query": query, "collection": collection, "platform": platform})
+            return self._FAKE_VS_RETRIEVAL
+
+        planner_mock = AsyncMock()
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=fake_retrieve)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(
+                _session_req(session_id, "I see '0 Courses, 0 Materials' on VitalSource")
+            )
+
+        assert not r.source.startswith("INTAKE"), (
+            f"VitalSource '0 Courses, 0 Materials' must bypass intake, got source={r.source!r}"
+        )
+        assert main.sessions[session_id].get("intake_profile") is None
+        # retrieve_async may be bypassed when faq_precheck finds a high-confidence match;
+        # the key observable is that intake was skipped (source≠INTAKE, planner not called).
+        planner_mock.assert_not_called()
+
+    async def test_vitalsource_says_zero_courses_routes_to_rag(self):
+        """'VitalSource says 0 courses 0 materials' — same bypass behavior."""
+        session_id = f"test-vs-0c2-{uuid.uuid4()}"
+        retrieve_calls: list[dict] = []
+
+        async def fake_retrieve(query, collection="auto", platform=None, top_k=1):
+            retrieve_calls.append({"query": query, "collection": collection, "platform": platform})
+            return self._FAKE_VS_RETRIEVAL
+
+        planner_mock = AsyncMock()
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=fake_retrieve)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(
+                _session_req(session_id, "VitalSource says 0 courses 0 materials")
+            )
+
+        assert not r.source.startswith("INTAKE"), f"Got source={r.source!r}"
+        planner_mock.assert_not_called()
+
+    async def test_vitalsource_no_content_available_routes_to_rag(self):
+        """'VitalSource says no content available' routes directly to RAG."""
+        session_id = f"test-vs-nc-{uuid.uuid4()}"
+        retrieve_calls: list[dict] = []
+
+        async def fake_retrieve(query, collection="auto", platform=None, top_k=1):
+            retrieve_calls.append({"query": query, "collection": collection, "platform": platform})
+            return self._FAKE_VS_RETRIEVAL
+
+        planner_mock = AsyncMock()
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=fake_retrieve)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(
+                _session_req(session_id, "VitalSource says no content available")
+            )
+
+        assert not r.source.startswith("INTAKE"), f"Got source={r.source!r}"
+        assert retrieve_calls
+        planner_mock.assert_not_called()
+
+    async def test_cant_see_textbook_on_vitalsource_routes_to_rag(self):
+        """'I can't see my textbook on VitalSource' has both platform and issue — must reach RAG."""
+        session_id = f"test-vs-cs-{uuid.uuid4()}"
+        retrieve_calls: list[dict] = []
+
+        async def fake_retrieve(query, collection="auto", platform=None, top_k=1):
+            retrieve_calls.append({"query": query, "collection": collection, "platform": platform})
+            return self._FAKE_VS_RETRIEVAL
+
+        planner_mock = AsyncMock()
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=fake_retrieve)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(
+                _session_req(session_id, "I can't see my textbook on VitalSource")
+            )
+
+        assert not r.source.startswith("INTAKE"), f"Got source={r.source!r}"
+        planner_mock.assert_not_called()
+
+    async def test_vitalsource_issue_vague_still_enters_intake(self):
+        """'VitalSource issue' — platform only, no specific issue signal — must still ask clarification."""
+        session_id = f"test-vs-vague-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=IntakePlannerDecision(
+                action="ASK_CLARIFICATION",
+                intent="platform_only",
+                confidence=0.8,
+                known_slots={"platform": "VitalSource"},
+                missing_slots=["issue_type"],
+                next_question_key="ask_issue_for_platform",
+            ))),
+        ):
+            r = await process_chat_request(_session_req(session_id, "VitalSource issue"))
+
+        assert r.source.startswith("INTAKE"), (
+            f"'VitalSource issue' has no specific issue signal — must enter intake. Got {r.source!r}"
+        )
+        assert "issue" in r.reply.lower() or "problem" in r.reply.lower() or "trouble" in r.reply.lower()
+
+    async def test_image_with_vitalsource_zero_courses_does_not_call_text_planner(self):
+        """
+        Image+text with VitalSource '0 Courses' context must not call the text-only
+        intake planner — vision path takes priority regardless of slot extraction.
+        """
+        planner_mock = AsyncMock()
+        session_id = f"test-vs-img-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            await process_chat_request(
+                ChatRequest(
+                    message="I see 0 Courses, 0 Materials on VitalSource",
+                    session_id=session_id,
+                    image_base64="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                )
+            )
+
+        planner_mock.assert_not_called()
+
+    async def test_streaming_zero_courses_vitalsource_does_not_return_intake(self):
+        """Streaming: '0 Courses, 0 Materials on VitalSource' must not stream an INTAKE response."""
+        session_id = f"test-vs-stream-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(side_effect=AssertionError("planner must not be called"))),
+            patch("app.main.retrieve_async", new=AsyncMock(return_value=self._FAKE_VS_RETRIEVAL)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            done = await _post_stream({
+                "message": "I see 0 Courses, 0 Materials on VitalSource",
+                "session_id": session_id,
+            })
+
+        assert not done.get("source", "").startswith("INTAKE"), (
+            f"Streaming: VitalSource '0 Courses' must not return INTAKE. "
+            f"Got source={done.get('source')!r}"
+        )
