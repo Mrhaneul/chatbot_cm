@@ -270,6 +270,30 @@ class TestSafetyGateNoLLM:
         )
         assert d.action == "ALLOW"
 
+    async def test_known_zero_content_signature_allowed_without_classifier(self):
+        from app.safety.safety_gate import run_safety_gate
+        d = await run_safety_gate(
+            "I see 0 Courses, 0 Materials",
+            enable_filter=True,
+            enable_classifier=False,
+        )
+        assert d.action == "ALLOW"
+        assert "known_cache_issue_signature" in d.matched_rules
+
+    async def test_known_zero_content_signature_skips_classifier(self):
+        from app.safety.safety_gate import run_safety_gate
+        classifier_mock = AsyncMock(side_effect=AssertionError("classifier must not be called"))
+        with patch("app.safety.safety_gate.classify_with_llm", new=classifier_mock):
+            d = await run_safety_gate(
+                "You currently have no content available",
+                enable_filter=True,
+                enable_classifier=True,
+                llm_client=object(),
+            )
+
+        assert d.action == "ALLOW"
+        classifier_mock.assert_not_called()
+
     async def test_out_of_scope_blocked_without_classifier(self):
         from app.safety.safety_gate import run_safety_gate
         d = await run_safety_gate(

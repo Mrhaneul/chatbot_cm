@@ -14,8 +14,8 @@ This document lists the environment variables Lance reads at runtime. Keep real 
 | Variable | Purpose | Default |
 |---|---|---|
 | `OLLAMA_BASE_URL` | Ollama API base URL. Keep local unless IT changes the deployment topology. | `http://127.0.0.1:11434` |
-| `PRIMARY_LLM_MODEL` | Primary Ollama model for normal generation. | `gemma4:e4b` |
-| `FALLBACK_LLM_MODEL` | Fallback Ollama model. | `gemma4:e2b` |
+| `PRIMARY_LLM_MODEL` | Primary Ollama model for normal generation. | `ministral-3:3b-cloud` |
+| `FALLBACK_LLM_MODEL` | Fallback Ollama model. | `ministral-3:8b-cloud` |
 | `RAG_TEMPERATURE` | LLM temperature for grounded answers. | `0.1` |
 | `RAG_NUM_PREDICT` | Maximum generated tokens for grounded answers. | `1024` |
 | `MAX_CONCURRENT_LLM_REQUESTS` | LLM concurrency cap. Keep conservative on local hardware. | `2` |
@@ -48,8 +48,8 @@ This document lists the environment variables Lance reads at runtime. Keep real 
 | Variable | Purpose | Default |
 |---|---|---|
 | `ENABLE_INTAKE_LLM_PLANNER` | Enables the LLM-assisted intake planner for ambiguous messages. | `true` |
-| `INTAKE_PLANNER_MODEL` | Primary Ollama model for the intake planner. Separate from `PRIMARY_LLM_MODEL` so a faster/lighter model can be used. | `gemma4:e2b` |
-| `INTAKE_PLANNER_FALLBACK_MODEL` | Fallback model if the primary planner model is unavailable. | `gemma3:latest` |
+| `INTAKE_PLANNER_MODEL` | Primary Ollama model for the intake planner. Separate from `PRIMARY_LLM_MODEL` so a faster/lighter model can be used. | `ministral-3:3b-cloud` |
+| `INTAKE_PLANNER_FALLBACK_MODEL` | Fallback model if the primary planner model is unavailable. | `ministral-3:8b-cloud` |
 | `INTAKE_PLANNER_TIMEOUT` | Per-attempt timeout in seconds for each planner Ollama call. | `20` |
 | `INTAKE_PLANNER_MAX_TOKENS` | Maximum tokens the planner model may generate. Keep low — the output is a small JSON object. | `160` |
 

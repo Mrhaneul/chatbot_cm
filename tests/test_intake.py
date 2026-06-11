@@ -639,6 +639,23 @@ class TestShouldRunPlanner:
     def test_refund_only_skips_planner(self):
         assert not should_run_planner("I want a refund")
 
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "How do I opt out of Immediate Access?",
+            "How do I opt out in Canvas?",
+            "Can I opt out of Immediate Access?",
+            "Where do I opt out?",
+            "What is Immediate Access?",
+            "What is the textbook refund policy?",
+            "How do I return a textbook?",
+            "Can I get a refund?",
+            "Where do I buy my textbooks?",
+        ],
+    )
+    def test_policy_faq_questions_skip_planner(self, message):
+        assert not should_run_planner(message)
+
     def test_platform_and_issue_present_skips_planner(self):
         # Both slots deterministically present — planner adds no value
         assert not should_run_planner("I can't access my Cengage MindTap book")

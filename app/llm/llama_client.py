@@ -15,8 +15,8 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip(
 OLLAMA_CHAT_URL = f"{OLLAMA_BASE_URL}/api/chat"
 OLLAMA_GENERATE_URL = f"{OLLAMA_BASE_URL}/api/generate"
 OLLAMA_TAGS_URL = f"{OLLAMA_BASE_URL}/api/tags"
-PRIMARY_LLM_MODEL = os.getenv("PRIMARY_LLM_MODEL", "gemma4:e4b")
-FALLBACK_LLM_MODEL = os.getenv("FALLBACK_LLM_MODEL", "gemma4:e2b")
+PRIMARY_LLM_MODEL = os.getenv("PRIMARY_LLM_MODEL", "ministral-3:3b-cloud")
+FALLBACK_LLM_MODEL = os.getenv("FALLBACK_LLM_MODEL", "ministral-3:8b-cloud")
 RAG_TEMPERATURE = float(os.getenv("RAG_TEMPERATURE", "0.1"))
 RAG_NUM_PREDICT = int(os.getenv("RAG_NUM_PREDICT", "1024"))
 
@@ -231,6 +231,7 @@ ONLY give a greeting when ALL of these are true:
 === GROUNDING RULES FOR CAMPUS STORE SUPPORT ===
 - Use ONLY the retrieved Campus Store documentation provided below.
 - Do NOT add platform steps, deadlines, refund rules, return rules, fees, emails, phone numbers, URLs, office locations, exceptions, or policy details unless they appear in the retrieved context.
+- Preserve email addresses exactly as written in the retrieved context.
 - If the retrieved context does not contain enough information to answer fully, say: "I do not have enough information in the Campus Store documentation to answer that fully."
 - If multiple retrieved sources contain different workflows, explain that the steps may depend on course or platform setup, then present only the workflows actually present in the context.
 - Do not choose one workflow as universally correct unless the context clearly says it is universal.
@@ -322,6 +323,7 @@ Answer the student's question using ONLY the retrieved Campus Store documentatio
 RULES:
 - Use only the provided context.
 - Do NOT add platform steps, deadlines, refund rules, return rules, fees, emails, phone numbers, URLs, office locations, exceptions, or policy details unless they appear in the context.
+- Preserve email addresses exactly as written in the source context.
 - If the context does not contain enough information to answer fully, say: "I do not have enough information in the Campus Store documentation to answer that fully."
 - If multiple retrieved sources contain different workflows, explain that the steps may depend on course or platform setup and present only the workflows actually present in the context.
 - Do not choose one workflow as universally correct unless the context clearly says so.

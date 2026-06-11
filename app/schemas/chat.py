@@ -15,6 +15,9 @@ class ChatResponse(BaseModel):
     response_id: Optional[str] = None
     session_id: Optional[str] = None
     retrieved_source_file: Optional[str] = None
+    llm_used: bool = False
+    route_type: Optional[str] = None
+    selected_source_file: Optional[str] = None
 
     # Performance metrics
     response_time_ms: Optional[float] = None

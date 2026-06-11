@@ -204,18 +204,25 @@ class TestIntakeLifecycleRouting:
         _assert_safety_block(r, expected_action="HARMFUL_REFUSAL")
 
     async def test_quick_help_exact_match_still_runs_before_intake(
-        self, block_retrieval, block_llm
+        self, block_retrieval
     ):
         session_id = f"test-intake-{uuid.uuid4()}"
-        with patch("app.main.ENABLE_SAFETY_CLASSIFIER", False):
+        llm_mock = AsyncMock(return_value=("Use the selected McGraw Hill Connect source steps.", 0.0))
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.call_llm_with_semaphore", new=llm_mock),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
             r = await process_chat_request(
                 _session_req(session_id, "I can't access my McGraw Hill Connect textbook")
             )
 
-        assert r.source.startswith("QUICK_HELP:")
+        assert r.source == "ia_mcgraw_hill_connect_access"
+        assert r.llm_used is True
+        assert r.route_type == "QUICK_HELP_LLM"
+        assert r.selected_source_file == "ia_mcgraw_hill_connect_access.txt"
         assert main.sessions[session_id].get("intake_profile") is None
-        assert r.retrieval_time_ms == 0
-        assert r.llm_time_ms == 0
+        llm_mock.assert_called_once()
 
     # ── Book access regression (fix/intake-vague-book-access) ─────────────────
 
@@ -460,21 +467,27 @@ class TestLLMIntakePlannerLifecycle:
         _assert_safety_block(r, expected_action="HARMFUL_REFUSAL")
 
     async def test_quick_help_exact_match_bypasses_planner(
-        self, block_retrieval, block_llm
+        self, block_retrieval
     ):
         """Quick Help deterministic routes run before the planner."""
         session_id = f"test-planner-{uuid.uuid4()}"
         planner_mock = AsyncMock()
+        llm_mock = AsyncMock(return_value=("Use the selected McGraw Hill Connect source steps.", 0.0))
         with (
             patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
             patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.call_llm_with_semaphore", new=llm_mock),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
         ):
             r = await process_chat_request(
                 _session_req(session_id, "I can't access my McGraw Hill Connect textbook")
             )
 
         planner_mock.assert_not_called()
-        assert r.source.startswith("QUICK_HELP:")
+        llm_mock.assert_called_once()
+        assert r.source == "ia_mcgraw_hill_connect_access"
+        assert r.route_type == "QUICK_HELP_LLM"
+        assert r.llm_used is True
 
     async def test_planner_allow_rag_does_not_return_intake_source(self):
         """When the planner returns ALLOW_RAG, source must not be INTAKE."""
@@ -802,8 +815,16 @@ class TestUnsafeDontKnowReplyIsBlocked:
 class TestNormalCampusStoreTrafficIsNotBlocked:
     """
     Verify that the safety gate does NOT block normal Campus Store questions.
-    These tests do NOT mock out retrieval or LLM.
+    These tests stub generation because they only verify safety pass-through.
     """
+
+    @pytest.fixture(autouse=True)
+    def _stub_generation(self):
+        with (
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(return_value=("Grounded test answer.", 0.0))),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            yield
 
     async def test_cengage_question_reaches_rag(self):
         with patch("app.main.ENABLE_SAFETY_CLASSIFIER", False):
@@ -840,6 +861,193 @@ class TestNormalCampusStoreTrafficIsNotBlocked:
 
 
 # ── Phase 8 planner redundancy regression tests ───────────────────────────────
+
+@pytest.mark.asyncio
+class TestPolicyFaqBypassesIntakePlanner:
+    """Clear FAQ/policy questions must not be treated as intake problems."""
+
+    @staticmethod
+    async def _fake_llm(*args, **kwargs):
+        context = kwargs.get("context") or (args[1] if len(args) > 1 else "")
+        if "optout@calbaptist.edu" in context and "Want to Opt-Out" in context:
+            return (
+                "To opt out of Immediate Access in Canvas, open your course, click Immediate Access, "
+                "select the title, click Want to Opt-Out, choose a reason, and click Opt Out. "
+                "If you are still having issues opting out, email optout@calbaptist.edu.",
+                0.0,
+            )
+        if "physical" in context.lower() or "print isbn" in context.lower():
+            return ("You may buy a physical copy when the Campus Store source lists a print ISBN.", 0.0)
+        return ("This is a grounded FAQ answer, not a platform clarification.", 0.0)
+
+    @staticmethod
+    async def _fake_stream_llm(*args, **kwargs):
+        yield {"type": "response", "token": "Canvas opt-out steps from the selected source. optout@calbaptist.edu"}
+
+    @staticmethod
+    async def _fake_faq_candidates(query, top_k=5):
+        q = query.lower()
+        if "opt out" in q or "opt-out" in q:
+            return [{
+                "context": "QUESTION:\nHow do I opt out of Immediate Access?\n\nANSWER:\nImmediate Access opt-out policy answer.",
+                "source_id": "ia_opt_out_canvas",
+                "score": 1.0,
+                "article_link": None,
+                "metadata": {"source_file": "immediate_access/ia_opt_out_canvas.txt"},
+            }]
+        if "textbook refund" in q or "return a textbook" in q:
+            return [{
+                "context": "QUESTION:\nWhat is the textbook refund policy?\n\nANSWER:\nTextbook refund policy answer.",
+                "source_id": "FAQ_SOURCE_TEXTBOOK_REFUND",
+                "score": 1.0,
+                "article_link": None,
+                "metadata": {"source_file": "textbook_refund_policy.txt"},
+            }]
+        if "refund" in q:
+            return [{
+                "context": "QUESTION:\nCan I get a refund?\n\nANSWER:\nCampus Store refund policy answer.",
+                "source_id": "FAQ_SOURCE_REFUND_POLICY",
+                "score": 1.0,
+                "article_link": None,
+                "metadata": {"source_file": "campus_store_refund_process.txt"},
+            }]
+        return [{
+            "context": "QUESTION:\nWhat is Immediate Access?\n\nANSWER:\nImmediate Access overview answer.",
+            "source_id": "FAQ_SOURCE_IA_OVERVIEW",
+            "score": 1.0,
+            "article_link": None,
+            "metadata": {"source_file": "ia_overview.txt"},
+        }]
+
+    async def _assert_policy_reaches_faq_without_planner(self, message: str, expected_source: str):
+        planner_mock = AsyncMock(side_effect=AssertionError("planner must not be called for policy FAQ"))
+        llm_mock = AsyncMock(side_effect=self._fake_llm)
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.retrieve_faq_candidates", new=AsyncMock(side_effect=self._fake_faq_candidates)),
+            patch("app.main.call_llm_with_semaphore", new=llm_mock),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(_session_req(f"test-policy-{uuid.uuid4()}", message))
+
+        assert not r.source.startswith("INTAKE"), f"{message!r} returned intake source {r.source!r}"
+        assert r.source == expected_source
+        assert r.llm_used is True
+        assert r.route_type in {"QUICK_HELP_LLM", "RAG_LLM"}
+        if expected_source == "ia_opt_out_canvas":
+            assert r.selected_source_file == "immediate_access/ia_opt_out_canvas.txt"
+            assert "optout@calbaptist.edu" in r.reply
+        assert "platform or publisher" not in r.reply.lower()
+        assert "i do not have enough information" not in r.reply.lower()
+        planner_mock.assert_not_called()
+        llm_mock.assert_called_once()
+
+    async def test_opt_out_question_reaches_faq_without_planner(self):
+        await self._assert_policy_reaches_faq_without_planner(
+            "How do I opt out of Immediate Access?",
+            "ia_opt_out_canvas",
+        )
+        match = main.build_quick_help_match("How do I opt out of Immediate Access?")
+        assert match is not None
+        assert "opt out" in match.reply.lower()
+        assert "canvas" in match.reply.lower()
+        assert "optout@calbaptist.edu" in match.reply
+        assert "i do not have enough information" not in match.reply.lower()
+
+    async def test_canvas_opt_out_question_reaches_new_source_without_planner(self):
+        await self._assert_policy_reaches_faq_without_planner(
+            "How do I opt out in Canvas?",
+            "ia_opt_out_canvas",
+        )
+
+    async def test_can_i_opt_out_in_canvas_reaches_new_source_without_planner(self):
+        await self._assert_policy_reaches_faq_without_planner(
+            "Can I opt out in Canvas?",
+            "ia_opt_out_canvas",
+        )
+
+    async def test_physical_textbook_after_opt_out_still_uses_physical_source(self):
+        planner_mock = AsyncMock(side_effect=AssertionError("planner must not be called for policy FAQ"))
+        llm_mock = AsyncMock(side_effect=self._fake_llm)
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.call_llm_with_semaphore", new=llm_mock),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(_session_req(
+                f"test-policy-physical-{uuid.uuid4()}",
+                "Can I buy a physical textbook after opting out?",
+            ))
+
+        assert r.source == "ia_opt_out_physical_textbooks"
+        assert r.llm_used is True
+        assert r.route_type == "QUICK_HELP_LLM"
+        assert "physical copy" in r.reply.lower() or "print isbn" in r.reply.lower()
+        planner_mock.assert_not_called()
+        llm_mock.assert_called_once()
+
+    async def test_immediate_access_overview_reaches_faq_without_planner(self):
+        await self._assert_policy_reaches_faq_without_planner(
+            "What is Immediate Access?",
+            "FAQ_SOURCE_IA_OVERVIEW",
+        )
+
+    async def test_textbook_refund_policy_reaches_faq_without_planner(self):
+        await self._assert_policy_reaches_faq_without_planner(
+            "What is the textbook refund policy?",
+            "FAQ_SOURCE_TEXTBOOK_REFUND",
+        )
+
+    async def test_generic_refund_question_reaches_faq_without_planner(self):
+        await self._assert_policy_reaches_faq_without_planner(
+            "Can I get a refund?",
+            "FAQ_SOURCE_REFUND_POLICY",
+        )
+
+    async def test_vague_access_problem_still_enters_planner(self, block_retrieval, block_llm):
+        planner_decision = IntakePlannerDecision(
+            action="ASK_CLARIFICATION",
+            intent="vague_book_access",
+            confidence=0.8,
+            known_slots={},
+            missing_slots=["platform"],
+            next_question_key="ask_platform_for_book_access",
+        )
+        planner_mock = AsyncMock(return_value=planner_decision)
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+        ):
+            r = await process_chat_request(_session_req(f"test-policy-planner-{uuid.uuid4()}", "My book is locked"))
+
+        assert r.source == "INTAKE:LLM_PLANNER"
+        assert "platform" in r.reply.lower() or "publisher" in r.reply.lower()
+        planner_mock.assert_called_once()
+
+    async def test_streaming_opt_out_question_reaches_faq_without_planner(self):
+        planner_mock = AsyncMock(side_effect=AssertionError("planner must not be called for streaming policy FAQ"))
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.retrieve_faq_candidates", new=AsyncMock(side_effect=self._fake_faq_candidates)),
+            patch("app.main.stream_llm_response", new=self._fake_stream_llm),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            done = await _post_stream({
+                "message": "How do I opt out of Immediate Access?",
+                "session_id": f"test-policy-stream-{uuid.uuid4()}",
+            })
+
+        assert done.get("source") in {
+            "ia_opt_out_canvas",
+        }
+        assert done.get("llm_used") is True
+        assert done.get("route_type") == "QUICK_HELP_LLM"
+        assert done.get("selected_source_file") == "immediate_access/ia_opt_out_canvas.txt"
+        planner_mock.assert_not_called()
+
 
 class TestPlannerRedundantClarificationRegression:
     """
@@ -1556,7 +1764,65 @@ class TestVitalSourceZeroCoursesRouting:
         "source_id": "INSTR_VITALSOURCE_001",
         "score": 0.91,
         "article_link": None,
+        "metadata": {"source_file": "ia_vitalsource_bookshelf_account_creation.txt"},
     }
+    _FAKE_CACHE_RETRIEVAL = {
+        "context": (
+            "QUESTION:\n"
+            "I see 0 Courses, 0 Materials. How do I fix this?\n\n"
+            "ANSWER:\n"
+            "Clear your browser cookies, cache, and history, then return to Blackboard "
+            "and try the Immediate Access link again."
+        ),
+        "source_id": "ia_zero_courses_zero_materials_cache",
+        "score": 0.95,
+        "article_link": None,
+        "metadata": {"source_file": "immediate_access/ia_zero_courses_zero_materials_cache.txt"},
+    }
+
+    @staticmethod
+    async def _fake_stream_llm(*args, **kwargs):
+        yield {"type": "response", "token": "Clear your browser cache and cookies, then reopen the browser."}
+
+    @staticmethod
+    async def _fake_llm(*args, **kwargs):
+        context = kwargs.get("context") or (args[1] if len(args) > 1 else "")
+        context_lower = context.lower()
+        if "0 courses" in context_lower or "no content available" in context_lower:
+            return (
+                "Clear your browser cache and cookies, close and reopen your browser, "
+                "then try accessing your Immediate Access materials again.",
+                0.0,
+            )
+        if "vitalsource" in context_lower or "bookshelf" in context_lower:
+            return ("Create your VitalSource Bookshelf account using the documented account creation steps.", 0.0)
+        return ("Stubbed answer.", 0.0)
+
+    async def _fake_faq_candidates(self, query, top_k=5):
+        return [self._FAKE_CACHE_RETRIEVAL]
+
+    def _assert_cache_response(self, response):
+        assert response.source == "ia_zero_courses_zero_materials_cache"
+        assert response.llm_used is True
+        assert response.route_type == "KNOWN_ISSUE_LLM"
+        assert response.selected_source_file == "immediate_access/ia_zero_courses_zero_materials_cache.txt"
+        assert "cache" in response.reply.lower() or "cookies" in response.reply.lower()
+        assert "browser" in response.reply.lower()
+        assert "account creation" not in response.reply.lower()
+        assert "create a vitalsource bookshelf account" not in response.reply.lower()
+        assert "missing textbook" not in response.reply.lower()
+
+    @pytest.fixture(autouse=True)
+    def _stub_generation_and_vision(self):
+        self.llm_mock = AsyncMock(side_effect=self._fake_llm)
+        with (
+            patch("app.main.call_llm_with_semaphore", new=self.llm_mock),
+            patch("app.main.stream_llm_response", new=self._fake_stream_llm),
+            patch("app.llm.llama_client.analyze_image_for_retrieval", new=AsyncMock(return_value={})),
+            patch("app.llm.llama_client.build_augmented_query", side_effect=lambda message, image_context: message),
+            patch("app.main.retrieve_faq_candidates", new=AsyncMock(side_effect=self._fake_faq_candidates)),
+        ):
+            yield
 
     async def test_zero_courses_zero_materials_vitalsource_routes_to_rag(self):
         """
@@ -1584,10 +1850,45 @@ class TestVitalSourceZeroCoursesRouting:
         assert not r.source.startswith("INTAKE"), (
             f"VitalSource '0 Courses, 0 Materials' must bypass intake, got source={r.source!r}"
         )
+        self._assert_cache_response(r)
+        self.llm_mock.assert_called()
         assert main.sessions[session_id].get("intake_profile") is None
         # retrieve_async may be bypassed when faq_precheck finds a high-confidence match;
         # the key observable is that intake was skipped (source≠INTAKE, planner not called).
         planner_mock.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "I see 0 Courses, 0 Materials",
+            "It says 0 courses 0 materials",
+            "You currently have no content available",
+            "It says no content available",
+        ],
+    )
+    async def test_zero_courses_known_issue_without_platform_routes_to_cache_llm(self, message):
+        """
+        Strong zero-content signatures are known IA/browser cache issues by themselves.
+        They must not rely on platform, Blackboard, textbook, or material context.
+        """
+        session_id = f"test-zero-no-platform-{uuid.uuid4()}"
+        planner_mock = AsyncMock(side_effect=AssertionError("planner must not be called"))
+        classifier_mock = AsyncMock(side_effect=AssertionError("safety classifier must not be called"))
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", True),
+            patch("app.safety.safety_gate.classify_with_llm", new=classifier_mock),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=AssertionError("platform RAG must not be called"))),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(_session_req(session_id, message))
+
+        self._assert_cache_response(r)
+        assert "i want to make sure i understand" not in r.reply.lower()
+        assert "could you describe what you need help with" not in r.reply.lower()
+        planner_mock.assert_not_called()
+        classifier_mock.assert_not_called()
+        self.llm_mock.assert_called()
 
     async def test_vitalsource_says_zero_courses_routes_to_rag(self):
         """'VitalSource says 0 courses 0 materials' — same bypass behavior."""
@@ -1610,6 +1911,8 @@ class TestVitalSourceZeroCoursesRouting:
             )
 
         assert not r.source.startswith("INTAKE"), f"Got source={r.source!r}"
+        self._assert_cache_response(r)
+        self.llm_mock.assert_called()
         planner_mock.assert_not_called()
 
     async def test_vitalsource_no_content_available_routes_to_rag(self):
@@ -1633,8 +1936,59 @@ class TestVitalSourceZeroCoursesRouting:
             )
 
         assert not r.source.startswith("INTAKE"), f"Got source={r.source!r}"
-        assert retrieve_calls
+        self._assert_cache_response(r)
+        self.llm_mock.assert_called()
         planner_mock.assert_not_called()
+
+    async def test_blackboard_zero_courses_routes_to_cache_faq(self):
+        """'0 Courses, 0 Materials' in Blackboard is the same cache/cookies issue."""
+        session_id = f"test-bb-0c-{uuid.uuid4()}"
+        planner_mock = AsyncMock(side_effect=AssertionError("planner must not be called"))
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=AssertionError("platform RAG must not be called"))),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(
+                _session_req(session_id, "I see 0 Courses, 0 Materials in Blackboard")
+            )
+
+        self._assert_cache_response(r)
+        self.llm_mock.assert_called()
+        planner_mock.assert_not_called()
+
+    async def test_mid_intake_zero_courses_vitalsource_overrides_platform_guide(self):
+        """
+        Known error signature > platform guide, even when an active intake profile
+        exists and the message also names VitalSource.
+        """
+        session_id = f"test-vs-mid-0c-{uuid.uuid4()}"
+        planner_decision = IntakePlannerDecision(
+            action="ASK_CLARIFICATION",
+            intent="vague_book_access",
+            confidence=0.8,
+            known_slots={},
+            missing_slots=["platform"],
+            next_question_key="ask_platform_for_book_access",
+        )
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=planner_decision)),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=AssertionError("platform RAG must not be called"))),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r1 = await process_chat_request(_session_req(session_id, "My book is locked"))
+            r2 = await process_chat_request(_session_req(session_id, "VitalSource issue"))
+            r3 = await process_chat_request(
+                _session_req(session_id, "I see 0 Courses, 0 Materials on VitalSource")
+            )
+
+        assert r1.source.startswith("INTAKE")
+        assert r2.source.startswith("INTAKE")
+        self._assert_cache_response(r3)
+        self.llm_mock.assert_called()
+        assert main.sessions[session_id].get("intake_profile") is None
 
     async def test_cant_see_textbook_on_vitalsource_routes_to_rag(self):
         """'I can't see my textbook on VitalSource' has both platform and issue — must reach RAG."""
@@ -1680,6 +2034,23 @@ class TestVitalSourceZeroCoursesRouting:
         )
         assert "issue" in r.reply.lower() or "problem" in r.reply.lower() or "trouble" in r.reply.lower()
 
+    async def test_vitalsource_account_creation_still_routes_to_account_guide(self):
+        """Specific account-creation question must still use the VitalSource guide."""
+        session_id = f"test-vs-account-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.retrieve_async", new=AsyncMock(return_value=self._FAKE_VS_RETRIEVAL)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(
+                _session_req(session_id, "How do I create a VitalSource Bookshelf account?")
+            )
+
+        assert r.source == "INSTR_VITALSOURCE_001"
+        assert r.llm_used is True
+        self.llm_mock.assert_called()
+        assert not r.source.startswith("INTAKE")
+
     async def test_image_with_vitalsource_zero_courses_does_not_call_text_planner(self):
         """
         Image+text with VitalSource '0 Courses' context must not call the text-only
@@ -1720,3 +2091,7 @@ class TestVitalSourceZeroCoursesRouting:
             f"Streaming: VitalSource '0 Courses' must not return INTAKE. "
             f"Got source={done.get('source')!r}"
         )
+        assert done.get("source") == "ia_zero_courses_zero_materials_cache"
+        assert done.get("llm_used") is True
+        assert done.get("route_type") == "KNOWN_ISSUE_LLM"
+        assert done.get("selected_source_file") == "immediate_access/ia_zero_courses_zero_materials_cache.txt"

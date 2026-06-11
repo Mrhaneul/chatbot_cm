@@ -12,11 +12,26 @@ EXPECTED_QUICK_HELP_SOURCES = {
     "My book is not showing up in Immediate Access": (
         "data/faqs/ia_bundle_missing_textbook.txt",
     ),
+    "Can I buy a physical textbook after opting out?": (
+        "data/faqs/ia_opt_out_physical_textbooks.txt",
+    ),
     "How do I opt out of Immediate Access?": (
-        "data/faqs/ia_overview.txt",
+        "data/faqs/immediate_access/ia_opt_out_canvas.txt",
+    ),
+    "How do I opt out in Canvas?": (
+        "data/faqs/immediate_access/ia_opt_out_canvas.txt",
+    ),
+    "Can I opt out of Immediate Access?": (
+        "data/faqs/immediate_access/ia_opt_out_canvas.txt",
+    ),
+    "Can I opt out in Canvas?": (
+        "data/faqs/immediate_access/ia_opt_out_canvas.txt",
     ),
     "Where do I opt out from Immediate Access?": (
-        "data/faqs/ia_overview.txt",
+        "data/faqs/immediate_access/ia_opt_out_canvas.txt",
+    ),
+    "Where do I opt out of Immediate Access?": (
+        "data/faqs/immediate_access/ia_opt_out_canvas.txt",
     ),
     "How do I return a textbook?": (
         "data/faqs/textbook_refund_policy.txt",

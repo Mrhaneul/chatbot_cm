@@ -25,6 +25,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any
 import uuid
 import time
+from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 try:
@@ -38,6 +39,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 import yaml
 from app.rag.config import cfg
+from app.rag.metadata import load_document_with_metadata
 from app.rag.model import get_model
 from app.rag.grounding_verifier import verify_answer_grounding, GROUNDING_SAFE_FALLBACK
 from app.quick_help_routes import build_quick_help_match
@@ -1395,6 +1397,15 @@ def is_ambiguous_refund_policy_query(message: str) -> bool:
     if "refund" not in m:
         return False
 
+    normalized = re.sub(r"[^a-z0-9\s]", "", m)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    if normalized in {
+        "can i get a refund",
+        "do i get a refund",
+        "will i get a refund",
+    }:
+        return False
+
     scoped_terms = [
         "immediate access",
         "ia ",
@@ -1503,6 +1514,9 @@ def is_browser_cache_issue(message: str) -> bool:
     # These are verbatim IA/VitalSource error strings — IA context is inherent,
     # no second signal needed.
     strong_ia_symptoms = [
+        "0 courses",
+        "0 materials",
+        "no content available",
         "you currently have no content available",
         "currently have no content available",
         "you currently have no content",
@@ -1757,6 +1771,52 @@ def is_general_ia_question(message: str) -> bool:
     return has_ia_signal and not has_platform and not has_troubleshooting
 
 
+def is_textbook_purchase_query(message: str) -> bool:
+    """Detect Campus Store textbook purchase questions, not IA troubleshooting."""
+    m = (message or "").lower()
+    return any(s in m for s in [
+        "where do i buy my textbooks",
+        "where do i buy textbooks",
+        "where do i buy my textbook",
+        "where do i buy a textbook",
+        "where can i buy my textbooks",
+        "where can i buy textbooks",
+        "where can i buy my textbook",
+        "where can i buy a textbook",
+        "how do i buy my textbooks",
+        "how do i buy textbooks",
+    ])
+
+
+def is_generic_refund_faq_query(message: str) -> bool:
+    m = (message or "").lower()
+    normalized = re.sub(r"[^a-z0-9\s]", "", m)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized in {
+        "can i get a refund",
+        "do i get a refund",
+        "will i get a refund",
+    }
+
+
+def is_clear_faq_policy_query(message: str) -> bool:
+    """
+    True for direct policy/FAQ questions that should go to FAQ/RAG without
+    intake planning. The planner is only for ambiguous troubleshooting.
+    """
+    return (
+        is_opt_out_policy_question(message)
+        or is_ia_overview_query(message)
+        or is_general_ia_question(message)
+        or is_access_code_question(message)
+        or is_textbook_return_query(message)
+        or is_merchandise_return_query(message)
+        or is_technology_return_query(message)
+        or is_textbook_purchase_query(message)
+        or is_generic_refund_faq_query(message)
+    )
+
+
 def is_access_code_question(message: str) -> bool:
     """
     Detect general questions about access codes that don't require
@@ -1920,6 +1980,65 @@ def build_browser_cache_faq_query(message: str) -> str:
     if "firefox" in _m:
         return "clear browser cache cookies Immediate Access Firefox Mac no content available"
     return "clear browser cache cookies Immediate Access Chrome no content available"
+
+
+async def get_browser_cache_faq_retrieval(message: str) -> dict | None:
+    """Return the best cache/cookies FAQ for known zero-content signatures."""
+    wrapper_path = Path(cfg.FAQ_DIR) / "immediate_access" / "ia_zero_courses_zero_materials_cache.txt"
+    if wrapper_path.is_file():
+        metadata, body = load_document_with_metadata(wrapper_path)
+        metadata = dict(metadata)
+        metadata["source_file"] = "immediate_access/ia_zero_courses_zero_materials_cache.txt"
+        return {
+            "context": body,
+            "source_id": metadata.get("source_id", "ia_zero_courses_zero_materials_cache"),
+            "score": 1.0,
+            "article_link": None,
+            "metadata": metadata,
+        }
+
+    candidates = await retrieve_faq_candidates(build_browser_cache_faq_query(message), top_k=5)
+    if not candidates:
+        return None
+    ranked = rerank_faq_candidates(candidates, build_browser_cache_faq_query(message))
+    cache_candidates = [
+        candidate for candidate in ranked
+        if "ia_browser_cache_clear" in str(candidate.get("metadata", {}).get("source_file", ""))
+        or "ia_browser_cache_clear" in str(candidate.get("context", ""))
+    ]
+    return cache_candidates[0] if cache_candidates else ranked[0]
+
+
+def _knowledge_relative_source_file(source_path: str) -> str:
+    normalized = Path(source_path).as_posix()
+    for prefix in ("data/faqs/", "data/instructions/"):
+        if normalized.startswith(prefix):
+            return normalized[len(prefix):]
+    return Path(source_path).name
+
+
+def quick_help_match_to_retrieval(quick_help_match) -> dict:
+    """Represent a Quick Help route as selected RAG context for final LLM generation."""
+    source_path = quick_help_match.source_paths[0]
+    resolved = Path(__file__).resolve().parents[1] / source_path
+    metadata, _ = load_document_with_metadata(resolved)
+    metadata = dict(metadata)
+    metadata["source_file"] = _knowledge_relative_source_file(source_path)
+    return {
+        "context": quick_help_match.context,
+        "source_id": metadata.get("source_id", Path(source_path).stem),
+        "score": 1.0,
+        "article_link": None,
+        "metadata": metadata,
+    }
+
+
+def browser_cache_fallback_reply() -> str:
+    return (
+        "This usually means your Immediate Access session is stuck with stale browser data. "
+        "Please clear your browser cookies, cache, and history, then return to Blackboard "
+        "and try the Immediate Access link again."
+    )
 
 
 def extract_likely_platform_name(message: str) -> str:
@@ -2358,6 +2477,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         _completed_intake_platform = None
         _completed_intake_issue_type = None
         _completed_intake_material_type = None
+        forced_retrieval = None
+        forced_route_type = None
+        forced_selected_source_file = None
+        force_llm_generation = False
         is_cache_issue = is_browser_cache_issue(message) or is_browser_cache_issue(retrieval_query)
 
         # ── Safety gate ───────────────────────────────────────────────────────
@@ -2417,34 +2540,41 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         quick_help_match = build_quick_help_match(message)
         if quick_help_match:
             print(
-                "[QUICK HELP] Deterministic route matched "
+                "[QUICK HELP] Deterministic route selected for LLM grounding "
                 f"{quick_help_match.source}: {quick_help_match.source_paths}"
             )
             session["awaiting_vitalsource_screen_confirm"] = False
             session["awaiting_platform_type"] = False
             session["awaiting_publisher_list_response"] = False
             session["awaiting_class_access_clarification"] = False
-            session["history"].append({"role": "user", "content": message})
-            session["history"].append({"role": "assistant", "content": quick_help_match.reply})
-            if len(session["history"]) > MAX_HISTORY_TURNS * 2:
-                session["history"] = session["history"][-MAX_HISTORY_TURNS * 2:]
-            session["last_activity"] = datetime.now()
-            total_time_ms = (time.time() - request_start) * 1000
-            return ChatResponse(
-                reply=quick_help_match.reply,
-                source=quick_help_match.source,
-                article_link=None,
-                confidence=1.0,
-                retrieval_time_ms=0,
-                llm_time_ms=0,
-                total_time_ms=round(total_time_ms, 2),
-                recommended_pdfs=[],
-                debug_mode=debug_mode,
-            )
+            session["intake_profile"] = None
+            forced_retrieval = quick_help_match_to_retrieval(quick_help_match)
+            forced_route_type = "QUICK_HELP_LLM"
+            forced_selected_source_file = forced_retrieval.get("metadata", {}).get("source_file")
+            force_llm_generation = True
+            intent = "GENERAL_FAQ"
 
         # ── Intake: mid-flow turn (existing intake_profile in session) ───────────
+        # Known zero-content signatures outrank platform routing and active
+        # intake. "0 Courses, 0 Materials" is a browser cache/cookies issue,
+        # not a VitalSource account-creation problem.
+        if forced_retrieval is None and is_browser_cache_issue(message):
+            retrieval_start = time.time()
+            forced_retrieval = await get_browser_cache_faq_retrieval(message)
+            retrieval_time_ms = (time.time() - retrieval_start) * 1000
+            forced_route_type = "KNOWN_ISSUE_LLM"
+            forced_selected_source_file = (
+                forced_retrieval.get("metadata", {}).get("source_file")
+                if forced_retrieval else None
+            )
+            force_llm_generation = True
+            intent = "GENERAL_FAQ"
+            session["intake_profile"] = None
+            session["awaiting_vitalsource_screen_confirm"] = False
+            session["awaiting_platform_type"] = False
+
         _raw_profile = session.get("intake_profile")
-        if _raw_profile is not None:
+        if forced_retrieval is None and _raw_profile is not None:
             profile = IntakeProfile.from_dict(_raw_profile)
             profile = update_profile(profile, message)
             if intake_is_complete(profile):
@@ -2530,7 +2660,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # Guard: skip if mid-flow intake already completed this turn.
         # Without this guard, a vague completion message (e.g. "I can't access
         # the textbook") re-triggers first-turn intake after slots are filled.
-        if not _intake_completed and should_enter_intake(message, session):
+        _clear_faq_policy_query = is_clear_faq_policy_query(message)
+        if forced_retrieval is None and not _intake_completed and not _clear_faq_policy_query and should_enter_intake(message, session):
             new_profile = IntakeProfile(original_message=message)
             new_profile = update_profile(new_profile, message)
             if intake_is_complete(new_profile):
@@ -2573,7 +2704,13 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         _session_known_slots: dict[str, str] = {}
         if session.get("stored_platform"):
             _session_known_slots["platform"] = session["stored_platform"]
-        if not _intake_completed and not has_image and should_run_planner(message, known_slots=_session_known_slots):
+        if (
+            not _intake_completed
+            and forced_retrieval is None
+            and not _clear_faq_policy_query
+            and not has_image
+            and should_run_planner(message, known_slots=_session_known_slots)
+        ):
             planner_decision = await run_intake_planner(message, semaphore=llm_semaphore, known_slots=_session_known_slots)
             if planner_decision.action == "ASK_CLARIFICATION":
                 question = get_question_for_decision(planner_decision)
@@ -2629,8 +2766,11 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             platform = _completed_intake_platform
             session["stored_platform"] = platform
             session["stored_intent"] = "IA_ACCESS_ISSUE"
+        elif forced_retrieval is not None:
+            intent = "GENERAL_FAQ"
+            platform = None
 
-        if is_ambiguous_refund_policy_query(message):
+        if forced_retrieval is None and is_ambiguous_refund_policy_query(message):
             clarification = ambiguous_refund_clarification_reply()
             session["history"].append({"role": "user", "content": message})
             session["history"].append({"role": "assistant", "content": clarification})
@@ -2649,7 +2789,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             )
         
         # Check for ambiguous class access queries (need clarification)
-        if is_ambiguous_class_access_query(message):
+        if forced_retrieval is None and is_ambiguous_class_access_query(message):
             clarification = (
                 "I'd be happy to help! Just to clarify, are you having trouble accessing **the class itself** "
                 "(logging in, finding your course), or accessing **the class materials** "
@@ -2671,7 +2811,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 debug_mode=debug_mode
             )
 
-        if session.get("awaiting_vitalsource_screen_confirm", False):
+        if forced_retrieval is None and session.get("awaiting_vitalsource_screen_confirm", False):
             msg_lower = message.lower().strip()
             yes_signals = [
                 "yes", "yeah", "yep", "it does", "i see it", "that's what i see",
@@ -2776,7 +2916,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # exists, skip all clarification branches and answer directly.
         precheck_intent = intent or detect_intent(message)
         is_bundle_faq = is_bundle_admin_question(message)
-        if (precheck_intent == "GENERAL_FAQ" or is_bundle_faq) and not session.get("awaiting_platform_type", False):
+        if forced_retrieval is None and (precheck_intent == "GENERAL_FAQ" or is_bundle_faq) and not session.get("awaiting_platform_type", False):
             faq_precheck_result = await faq_precheck(retrieval_query)
             if faq_precheck_result:
                 print(f"[FAQ PRECHECK] High-confidence match found — suppressing clarification")
@@ -2785,7 +2925,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             print(f"[FAQ PRECHECK] Bundle admin question — overriding intent to GENERAL_FAQ")
 
         if (
-            not faq_precheck_result
+            forced_retrieval is None
+            and not faq_precheck_result
             and (is_vague_books_missing_query(message) or is_blank_page_query(message))
             and not is_browser_cache_issue(message)
             and not session.get("awaiting_platform_type", False)
@@ -2810,7 +2951,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 debug_mode=debug_mode
             )
 
-        if is_login_account_issue(message) and not session.get("awaiting_platform_type", False) and platform is None:
+        if forced_retrieval is None and is_login_account_issue(message) and not session.get("awaiting_platform_type", False) and platform is None:
             reply = (
                 "I can help with account access issues. To give you the right steps, "
                 "could you let me know which platform or publisher your textbook uses?\n\n"
@@ -2838,7 +2979,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             )
 
         # Handle follow-up questions about class materials
-        if is_confirmed_materials_issue(message) and not is_browser_cache_issue(message) and not is_textbook_return_query(message) and not is_merchandise_return_query(message) and not is_technology_return_query(message) and not is_vague_books_missing_query(message) and not is_blank_page_query(message) and not session.get("awaiting_vitalsource_screen_confirm", False) and not session.get("awaiting_platform_type", False) and not session.get("awaiting_publisher_list_response", False) and not session.get("awaiting_class_access_clarification", False) and platform is None:
+        if forced_retrieval is None and is_confirmed_materials_issue(message) and not is_browser_cache_issue(message) and not is_textbook_return_query(message) and not is_merchandise_return_query(message) and not is_technology_return_query(message) and not is_vague_books_missing_query(message) and not is_blank_page_query(message) and not session.get("awaiting_vitalsource_screen_confirm", False) and not session.get("awaiting_platform_type", False) and not session.get("awaiting_publisher_list_response", False) and not session.get("awaiting_class_access_clarification", False) and platform is None:
             # User is asking about materials, trigger platform clarification
             clarification = PLATFORM_CLARIFICATION_MESSAGE
             session["history"].append({"role": "user", "content": message})
@@ -2865,7 +3006,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         
         print(f"[PLATFORM DEBUG] is_ambiguous = {is_ambiguous}")
         
-        if is_ambiguous:
+        if forced_retrieval is None and is_ambiguous:
             print("[PLATFORM DEBUG] ENTERING ambiguity block")
             session["history"].append({
                 "role": "user",
@@ -2900,7 +3041,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # ===== EARLY CHECK: Ambiguous Platform Queries =====
         publisher, needs_clarification = is_ambiguous_platform_query(message)
 
-        if needs_clarification and not is_missing_read_now_button(message) and not skip_platform_ambiguity_clarification:
+        if forced_retrieval is None and needs_clarification and not is_missing_read_now_button(message) and not skip_platform_ambiguity_clarification:
             print(f"[CLARIFICATION DEBUG] Detected ambiguous query for {publisher}")
             
             session["history"].append({
@@ -3552,7 +3693,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             print(f"🔍 [PLATFORM DEBUG] Detected platform: {platform}")
 
         # Check for ambiguous class access queries (need clarification)
-        if is_ambiguous_class_access_query(message):
+        if forced_retrieval is None and is_ambiguous_class_access_query(message):
             clarification = (
                 "I'd be happy to help! Just to clarify, are you having trouble accessing **the class itself** "
                 "(logging in, finding your course), or accessing **the class materials** "
@@ -3575,7 +3716,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             )
 
         # Check for explicit login issues (not ambiguous)
-        if is_explicit_login_issue(message):
+        if forced_retrieval is None and is_explicit_login_issue(message):
             login_reply = (
                 "It sounds like this is a Blackboard/InsideCBU login or class-access issue. "
                 "Please contact CBU IT support (or the Pre-College support team) to restore account/class access first. "
@@ -3814,7 +3955,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 platform = session.get("stored_platform") or detect_recent_platform_from_history(session["history"])
                 print(f"[INTENT DEBUG] IA continuity applied: platform={platform}")
 
-        if intent == "GENERAL_FAQ" and is_ia_enrollment_query(message):
+        if forced_retrieval is None and intent == "GENERAL_FAQ" and is_ia_enrollment_query(message):
             enrollment_reply = ia_enrollment_reply()
             session["history"].append({
                 "role": "user",
@@ -3838,7 +3979,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             )
 
         # Out-of-scope guard for obvious non-campus-store topics.
-        if intent == "GENERAL_FAQ" and is_out_of_scope_query(message):
+        if forced_retrieval is None and intent == "GENERAL_FAQ" and is_out_of_scope_query(message):
             out_of_scope_reply = (
                 "I can help with Campus Store topics like Immediate Access, textbook access, "
                 "returns, and related policies. For parking permits, please check the appropriate "
@@ -3865,7 +4006,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 debug_mode=debug_mode
             )
 
-        if intent == "GENERAL_FAQ" and is_blackboard_location_query(message) and not is_blank_page_query(message):
+        if forced_retrieval is None and intent == "GENERAL_FAQ" and is_blackboard_location_query(message) and not is_blank_page_query(message):
             blackboard_reply = (
                 "Blackboard is a web-based learning platform — it doesn't have a physical location. "
                 "You can access it through your web browser by searching for \"CBU Blackboard\" or "
@@ -3887,7 +4028,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 debug_mode=debug_mode
             )
 
-        if intent == "GENERAL_FAQ" and is_vague_campus_store_query(message):
+        if forced_retrieval is None and intent == "GENERAL_FAQ" and is_vague_campus_store_query(message):
             clarification_reply = (
                 "I can help with Campus Store information. What do you need specifically: "
                 "store hours, location/address, phone, directions, or textbook return policy?"
@@ -3961,6 +4102,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             platform = detect_platform_from_text(message)
         needs_platform_clarification = (
             intent == "IA_ACCESS_ISSUE" and
+            forced_retrieval is None and
             platform is None and
             not explicit_textbook_selection
         )
@@ -4051,7 +4193,14 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             retrieval_start = time.time()
 
             # ✨ NEW: Skip retrieval for vague queries
-            if is_vague_query:
+            if forced_retrieval is not None:
+                retrieval = forced_retrieval
+                context = strip_article_link_lines(strip_meta_prefix(retrieval["context"])) if retrieval.get("context") else ""
+                print(
+                    f"[RAG ROUTE] Using selected context route={forced_route_type} "
+                    f"source_file={forced_selected_source_file}"
+                )
+            elif is_vague_query:
                 retrieval = None
                 context = ""
                 print("[RAG DEBUG] Query too vague - skipping retrieval, will ask for clarification")
@@ -4160,9 +4309,20 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             context = ""
             retrieval_time_ms = (time.time() - retrieval_start) * 1000
 
+        selected_source_file = (
+            forced_selected_source_file
+            or (retrieval or {}).get("metadata", {}).get("source_file")
+        )
+        normalized_selected_source_file = str(selected_source_file or "").replace("\\", "/")
+        if normalized_selected_source_file.endswith("ia_vitalsource_bookshelf_account_creation.txt"):
+            force_llm_generation = True
+            forced_route_type = forced_route_type or "RAG_LLM"
+
         # Deterministic instruction response path for instruction retrieval.
         # This avoids LLM variability (greeting/meta leakage, meta commentary) when docs are available.
         if (
+            not force_llm_generation
+            and
             intent == "IA_ACCESS_ISSUE"
             and retrieval
             and retrieval.get("source_id", "").startswith("INSTR_")
@@ -4324,6 +4484,16 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     "so you can see the exact error message they are getting."
                 )
 
+        if force_llm_generation:
+            route_hint = (
+                "Use only the provided Campus Store context. "
+                "Do not invent extra policy details, deadlines, fees, exceptions, or unsupported instructions. "
+                "Preserve email addresses exactly as written in the source. "
+                "If the context does not answer the question, say: "
+                "\"I do not have enough information in the Campus Store documentation to answer that fully.\""
+            )
+            system_hint = f"{route_hint}\n\n{system_hint}".strip()
+
         # ✨ START LLM TIMER
         llm_start = time.time()
 
@@ -4427,6 +4597,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             source=source,
             article_link=article_link,
             confidence=confidence,
+            retrieved_source_file=selected_source_file,
+            llm_used=True,
+            route_type=forced_route_type or "RAG_LLM",
+            selected_source_file=selected_source_file,
             retrieval_time_ms=round(retrieval_time_ms, 2),
             llm_time_ms=round(llm_time_ms, 2),
             total_time_ms=round(total_time_ms, 2),
@@ -4516,6 +4690,9 @@ async def chat_stream(payload: ChatRequest):
 
             platform = detect_platform_from_text(message)
             intent = detect_intent(message)
+            stream_forced_retrieval = None
+            stream_forced_route_type = None
+            stream_forced_selected_source_file = None
 
             # Deterministic greeting: skip retrieval and LLM entirely.
             if len(message.split()) <= 3 and any(kw in message.lower() for kw in GREETING_KEYWORDS):
@@ -4529,6 +4706,36 @@ async def chat_stream(payload: ChatRequest):
                     f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'DETERMINISTIC_GREETING', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
                 )
                 return
+
+            quick_help_match = build_quick_help_match(message)
+            if quick_help_match:
+                print(
+                    "[STREAM QUICK HELP] Deterministic route selected for LLM grounding "
+                    f"{quick_help_match.source}: {quick_help_match.source_paths}"
+                )
+                session["awaiting_vitalsource_screen_confirm"] = False
+                session["awaiting_platform_type"] = False
+                session["awaiting_publisher_list_response"] = False
+                session["awaiting_class_access_clarification"] = False
+                session["intake_profile"] = None
+                stream_forced_retrieval = quick_help_match_to_retrieval(quick_help_match)
+                stream_forced_route_type = "QUICK_HELP_LLM"
+                stream_forced_selected_source_file = stream_forced_retrieval.get("metadata", {}).get("source_file")
+                intent = "GENERAL_FAQ"
+
+            if stream_forced_retrieval is None and is_browser_cache_issue(message):
+                retrieval_start = time.time()
+                stream_forced_retrieval = await get_browser_cache_faq_retrieval(message)
+                _stream_forced_retrieval_ms = (time.time() - retrieval_start) * 1000
+                stream_forced_route_type = "KNOWN_ISSUE_LLM"
+                stream_forced_selected_source_file = (
+                    stream_forced_retrieval.get("metadata", {}).get("source_file")
+                    if stream_forced_retrieval else None
+                )
+                intent = "GENERAL_FAQ"
+                session["intake_profile"] = None
+                session["awaiting_vitalsource_screen_confirm"] = False
+                session["awaiting_platform_type"] = False
 
             # --- Vision retrieval augmentation ---
             image_context = {}
@@ -4559,7 +4766,7 @@ async def chat_stream(payload: ChatRequest):
             _stream_completed_issue_type: str | None = None
             _stream_completed_material_type: str | None = None
             _raw_profile = session.get("intake_profile")
-            if _raw_profile is not None:
+            if stream_forced_retrieval is None and _raw_profile is not None:
                 profile = IntakeProfile.from_dict(_raw_profile)
                 profile = update_profile(profile, message)
                 if intake_is_complete(profile):
@@ -4615,7 +4822,7 @@ async def chat_stream(payload: ChatRequest):
                     return
 
             # ── Intake: first vague message ──────────────────────────────────────
-            elif should_enter_intake(message, session):
+            elif stream_forced_retrieval is None and not is_clear_faq_policy_query(message) and should_enter_intake(message, session):
                 new_profile = IntakeProfile(original_message=message)
                 new_profile = update_profile(new_profile, message)
                 if intake_is_complete(new_profile):
@@ -4650,7 +4857,13 @@ async def chat_stream(payload: ChatRequest):
                 _stream_known_slots: dict[str, str] = {}
                 if session.get("stored_platform"):
                     _stream_known_slots["platform"] = session["stored_platform"]
-                if not payload.image_base64 and should_run_planner(message, known_slots=_stream_known_slots):
+                if (
+                    stream_forced_retrieval is None
+                    and
+                    not is_clear_faq_policy_query(message)
+                    and not payload.image_base64
+                    and should_run_planner(message, known_slots=_stream_known_slots)
+                ):
                     planner_decision = await run_intake_planner(message, semaphore=llm_semaphore, known_slots=_stream_known_slots)
                     if planner_decision.action == "ASK_CLARIFICATION":
                         question = get_question_for_decision(planner_decision)
@@ -4675,7 +4888,7 @@ async def chat_stream(payload: ChatRequest):
 
             # Ask for platform before retrieval — prevents wrong-platform hallucination.
             # Skip when already overridden to GENERAL_FAQ (e.g. browser cache issue).
-            if intent == "IA_ACCESS_ISSUE" and platform is None:
+            if stream_forced_retrieval is None and intent == "IA_ACCESS_ISSUE" and platform is None:
                 session["history"].append({"role": "user", "content": message})
                 session["history"].append({"role": "assistant", "content": PLATFORM_CLARIFICATION_MESSAGE})
                 session["last_activity"] = datetime.now()
@@ -4694,7 +4907,13 @@ async def chat_stream(payload: ChatRequest):
             retrieval_start = time.time()
             retrieval = None
             try:
-                if platform and intent == "IA_ACCESS_ISSUE":
+                if stream_forced_retrieval is not None:
+                    retrieval = stream_forced_retrieval
+                    print(
+                        f"[STREAM RAG ROUTE] Using selected context route={stream_forced_route_type} "
+                        f"source_file={stream_forced_selected_source_file}"
+                    )
+                elif platform and intent == "IA_ACCESS_ISSUE":
                     retrieval = await retrieve_async(
                         retrieval_query,
                         collection="instructions",
@@ -4735,6 +4954,10 @@ async def chat_stream(payload: ChatRequest):
                 else ""
             )
             confidence = float(retrieval.get("score") or 0.0) if retrieval else 0.0
+            stream_selected_source_file = (
+                stream_forced_selected_source_file
+                or (retrieval or {}).get("metadata", {}).get("source_file")
+            )
 
             if confidence < CONFIDENCE_THRESHOLD or not context:
                 escalation = (
@@ -4795,6 +5018,16 @@ async def chat_stream(payload: ChatRequest):
                     "The user is asking a general Campus Store or Immediate Access question. "
                     "If the retrieved content is a FAQ, answer directly from it with no greeting."
                 )
+
+            if stream_forced_retrieval is not None:
+                route_hint = (
+                    "Use only the provided Campus Store context. "
+                    "Do not invent extra policy details, deadlines, fees, exceptions, or unsupported instructions. "
+                    "Preserve email addresses exactly as written in the source. "
+                    "If the context does not answer the question, say: "
+                    "\"I do not have enough information in the Campus Store documentation to answer that fully.\""
+                )
+                system_hint = f"{route_hint}\n\n{system_hint}".strip()
 
             has_image = bool(payload.image_base64)
             if has_image and intent == "GENERAL_FAQ" and context:
@@ -4866,7 +5099,7 @@ async def chat_stream(payload: ChatRequest):
                     recommended_pdfs = []
                 yield (
                     "data: "
-                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': retrieval.get('source_id', 'LLM_VISION') if retrieval else 'LLM_VISION', 'confidence': confidence, 'recommended_pdfs': recommended_pdfs, 'debug_mode': debug_mode, 'thought': vision_thought})}\n\n"
+                    f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': retrieval.get('source_id', 'LLM_VISION') if retrieval else 'LLM_VISION', 'confidence': confidence, 'retrieved_source_file': stream_selected_source_file, 'llm_used': True, 'route_type': stream_forced_route_type or 'RAG_LLM', 'selected_source_file': stream_selected_source_file, 'recommended_pdfs': recommended_pdfs, 'debug_mode': debug_mode, 'thought': vision_thought})}\n\n"
                 )
                 return
 
@@ -4944,7 +5177,7 @@ async def chat_stream(payload: ChatRequest):
             )
             yield (
                 "data: "
-                f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': source, 'confidence': confidence, 'recommended_pdfs': recommended_pdfs, 'debug_mode': debug_mode, 'thought': full_thought})}\n\n"
+                f"{json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': source, 'confidence': confidence, 'retrieved_source_file': stream_selected_source_file, 'llm_used': True, 'route_type': stream_forced_route_type or 'RAG_LLM', 'selected_source_file': stream_selected_source_file, 'recommended_pdfs': recommended_pdfs, 'debug_mode': debug_mode, 'thought': full_thought})}\n\n"
             )
 
         except Exception as e:

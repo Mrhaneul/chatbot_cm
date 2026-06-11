@@ -16,17 +16,17 @@ def test_audit_loads_quick_help_prompts_from_frontend_config():
 
 def test_audit_evaluator_passes_known_expected_sources():
     expectation = QuickHelpExpectation(
-        expected_source_files=("data/faqs/ia_overview.txt",),
+        expected_source_files=("data/faqs/immediate_access/ia_opt_out_canvas.txt",),
         forbidden_source_files=("data/faqs/ia_access_issue.txt",),
     )
 
     result = evaluate_audit_result(
         prompt="How do I opt out of Immediate Access?",
-        source="QUICK_HELP:ia_overview.txt",
-        source_paths=["data/faqs/ia_overview.txt"],
+        source="QUICK_HELP:immediate_access/ia_opt_out_canvas.txt",
+        source_paths=["data/faqs/immediate_access/ia_opt_out_canvas.txt"],
         reply="Immediate Access has a 14-day opt-out period.",
         clarification_triggered=False,
-        llm_calls=0,
+        llm_calls=1,
         retrieval_time_ms=0,
         expectation=expectation,
     )
@@ -38,7 +38,7 @@ def test_audit_evaluator_passes_known_expected_sources():
 
 def test_audit_evaluator_fails_for_forbidden_source():
     expectation = QuickHelpExpectation(
-        expected_source_files=("data/faqs/ia_overview.txt",),
+        expected_source_files=("data/faqs/immediate_access/ia_opt_out_canvas.txt",),
         forbidden_source_files=("data/faqs/ia_access_issue.txt",),
     )
 

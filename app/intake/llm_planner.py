@@ -30,10 +30,10 @@ from app.intake.slot_extractor import extract_platform, extract_issue_type
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_CHAT_URL = f"{OLLAMA_BASE_URL}/api/chat"
-PRIMARY_LLM_MODEL = os.getenv("PRIMARY_LLM_MODEL", "gemma4:e4b")
-FALLBACK_LLM_MODEL = os.getenv("FALLBACK_LLM_MODEL", "gemma4:e2b")
-INTAKE_PLANNER_MODEL = os.getenv("INTAKE_PLANNER_MODEL", "gemma4:e2b")
-INTAKE_PLANNER_FALLBACK_MODEL = os.getenv("INTAKE_PLANNER_FALLBACK_MODEL", "gemma3:latest")
+PRIMARY_LLM_MODEL = os.getenv("PRIMARY_LLM_MODEL", "ministral-3:3b-cloud")
+FALLBACK_LLM_MODEL = os.getenv("FALLBACK_LLM_MODEL", "ministral-3:8b-cloud")
+INTAKE_PLANNER_MODEL = os.getenv("INTAKE_PLANNER_MODEL", "ministral-3:3b-cloud")
+INTAKE_PLANNER_FALLBACK_MODEL = os.getenv("INTAKE_PLANNER_FALLBACK_MODEL", "ministral-3:8b-cloud")
 _PLANNER_TIMEOUT = float(os.getenv("INTAKE_PLANNER_TIMEOUT", "20.0"))
 _PLANNER_MAX_TOKENS = int(os.getenv("INTAKE_PLANNER_MAX_TOKENS", "160"))
 
@@ -47,6 +47,17 @@ _TOPIC_KEYWORDS = frozenset({
     "mindtap", "mylab", "mastering", "connect", "bookshelf", "achieve",
     "course material", "immediate access",
 })
+
+_POLICY_FAQ_PATTERNS = (
+    re.compile(r"\b(how|where|can|could|do|does|what)\b.*\bopt[- ]?out\b"),
+    re.compile(r"\bopt[- ]?out\b.*\b(immediate access|textbook|book|physical|print)\b"),
+    re.compile(r"\bwhat\s+is\s+(immediate access|ia)\b"),
+    re.compile(r"\bwhat(?:'s| is)\s+the\s+textbook\s+refund\s+policy\b"),
+    re.compile(r"\bhow\s+do\s+i\s+return\s+(a\s+)?(textbook|book)\b"),
+    re.compile(r"\b(can|do|will)\s+i\s+get\s+a\s+refund\b"),
+    re.compile(r"\bwhere\s+do\s+i\s+buy\s+(my\s+)?(textbooks|textbook|books|book)\b"),
+    re.compile(r"\bwhere\s+can\s+i\s+buy\s+(my\s+)?(textbooks|textbook|books|book)\b"),
+)
 
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -100,6 +111,8 @@ def should_run_planner(
     - Both platform and issue type are already known (from session or message text).
     """
     msg_lower = message.lower()
+    if any(pattern.search(msg_lower) for pattern in _POLICY_FAQ_PATTERNS):
+        return False
     if not any(kw in msg_lower for kw in _TOPIC_KEYWORDS):
         return False
     # Skip if both slots are already known from the session.

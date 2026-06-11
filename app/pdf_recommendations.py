@@ -293,8 +293,11 @@ def get_pdf_recommendations(
 
             # 1. Dynamic Firestore mapping (set by admin UI uploads).
             #    Supports multiple PDFs per .txt file.
+            #    Firestore document IDs must not contain "/" — sanitize nested
+            #    paths (e.g. "immediate_access/ia_foo.txt") by replacing "/" with "__".
             try:
-                map_doc = db.collection("txt_to_pdf_map").document(source_filename).get(timeout=5.0)
+                safe_firestore_id = source_filename.replace("/", "__").replace("\\", "__")
+                map_doc = db.collection("txt_to_pdf_map").document(safe_firestore_id).get(timeout=5.0)
                 if map_doc.exists:
                     found_in_firestore = True
                     pdf_doc_ids = map_doc.to_dict().get("pdf_doc_ids", [])
