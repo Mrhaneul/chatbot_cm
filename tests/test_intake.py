@@ -6,6 +6,10 @@ Covers: models, slot_extractor, questions, flow, and multi-turn lifecycle.
 """
 from __future__ import annotations
 
+import asyncio
+import json
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from app.intake.models import IntakeProfile
@@ -23,10 +27,20 @@ from app.intake.flow import (
     next_question as intake_next_question,
     intake_is_complete,
     intake_fallback_message,
+    is_unknown_answer,
+    INTAKE_ESCALATION_MESSAGE,
+    MAX_UNKNOWN_ATTEMPTS,
 )
 from app.intake.planner_models import IntakePlannerDecision
-from app.intake.question_templates import QUESTION_TEMPLATES, FALLBACK_QUESTION
-from app.intake.llm_planner import should_run_planner, get_question_for_decision
+from app.intake.question_templates import QUESTION_TEMPLATES, FALLBACK_QUESTION, QUESTION_KEY_TO_SLOT
+from app.intake.llm_planner import (
+    should_run_planner,
+    get_question_for_decision,
+    run_intake_planner,
+    INTAKE_PLANNER_MODEL,
+    INTAKE_PLANNER_FALLBACK_MODEL,
+    _PLANNER_MAX_TOKENS,
+)
 
 
 # ── IntakeProfile ─────────────────────────────────────────────────────────────
@@ -218,6 +232,28 @@ class TestExtractIssueType:
 
     def test_account_priority_over_access(self):
         assert extract_issue_type("I can't login to my account") == "account"
+
+    # VitalSource zero-content patterns (Bugfix: "0 Courses, 0 Materials" must not enter intake)
+    def test_zero_courses_zero_materials_is_missing(self):
+        assert extract_issue_type("I see '0 Courses, 0 Materials' on VitalSource") == "missing"
+
+    def test_zero_courses_zero_materials_lowercase_is_missing(self):
+        assert extract_issue_type("VitalSource says 0 courses 0 materials") == "missing"
+
+    def test_no_content_available_is_missing(self):
+        assert extract_issue_type("VitalSource says no content available") == "missing"
+
+    def test_no_materials_showing_is_missing(self):
+        assert extract_issue_type("My VitalSource bookshelf has no materials") == "missing"
+
+    def test_nothing_showing_is_missing(self):
+        assert extract_issue_type("nothing showing in VitalSource") == "missing"
+
+    def test_cant_see_textbook_is_missing(self):
+        assert extract_issue_type("I can't see my textbook on VitalSource") == "missing"
+
+    def test_no_courses_is_missing(self):
+        assert extract_issue_type("no courses, no materials on VitalSource") == "missing"
 
 
 class TestExtractCourseCode:
@@ -603,6 +639,23 @@ class TestShouldRunPlanner:
     def test_refund_only_skips_planner(self):
         assert not should_run_planner("I want a refund")
 
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "How do I opt out of Immediate Access?",
+            "How do I opt out in Canvas?",
+            "Can I opt out of Immediate Access?",
+            "Where do I opt out?",
+            "What is Immediate Access?",
+            "What is the textbook refund policy?",
+            "How do I return a textbook?",
+            "Can I get a refund?",
+            "Where do I buy my textbooks?",
+        ],
+    )
+    def test_policy_faq_questions_skip_planner(self, message):
+        assert not should_run_planner(message)
+
     def test_platform_and_issue_present_skips_planner(self):
         # Both slots deterministically present — planner adds no value
         assert not should_run_planner("I can't access my Cengage MindTap book")
@@ -630,3 +683,231 @@ class TestShouldRunPlanner:
 
     def test_known_slots_none_still_runs_planner(self):
         assert should_run_planner("My book is locked", known_slots=None)
+
+    def test_zero_courses_zero_materials_vitalsource_skips_planner(self):
+        # Both platform (VitalSource) and issue (missing) are extractable — planner adds no value
+        assert not should_run_planner("I see 0 Courses 0 Materials on VitalSource")
+
+    def test_no_content_available_vitalsource_skips_planner(self):
+        assert not should_run_planner("VitalSource says no content available")
+
+    def test_cant_see_textbook_vitalsource_skips_planner(self):
+        assert not should_run_planner("I can't see my textbook on VitalSource")
+
+
+# ── is_unknown_answer ─────────────────────────────────────────────────────────
+
+class TestIsUnknownAnswer:
+    def test_i_dont_know(self):
+        assert is_unknown_answer("I don't know")
+
+    def test_i_dont_know_contraction(self):
+        assert is_unknown_answer("I dont know")
+
+    def test_i_do_not_know(self):
+        assert is_unknown_answer("I do not know")
+
+    def test_not_sure(self):
+        assert is_unknown_answer("not sure")
+
+    def test_im_not_sure(self):
+        assert is_unknown_answer("I'm not sure")
+
+    def test_no_idea(self):
+        assert is_unknown_answer("no idea")
+
+    def test_i_have_no_idea(self):
+        assert is_unknown_answer("I have no idea")
+
+    def test_unsure(self):
+        assert is_unknown_answer("unsure")
+
+    def test_not_sure_which(self):
+        assert is_unknown_answer("not sure which platform")
+
+    def test_no_clue(self):
+        assert is_unknown_answer("no clue")
+
+    def test_platform_name_is_not_unknown(self):
+        assert not is_unknown_answer("Cengage MindTap")
+
+    def test_normal_message_is_not_unknown(self):
+        assert not is_unknown_answer("My book is locked")
+
+    def test_partial_match_still_detected(self):
+        assert is_unknown_answer("I really don't know which publisher")
+
+
+# ── IntakeProfile new fields ──────────────────────────────────────────────────
+
+class TestIntakeProfileUnknownSlots:
+    def test_last_requested_slot_default_none(self):
+        p = IntakeProfile()
+        assert p.last_requested_slot is None
+
+    def test_attempted_slots_default_empty(self):
+        p = IntakeProfile()
+        assert p.attempted_slots == []
+
+    def test_last_requested_slot_roundtrip(self):
+        p = IntakeProfile(original_message="help", last_requested_slot="platform")
+        p2 = IntakeProfile.from_dict(p.to_dict())
+        assert p2.last_requested_slot == "platform"
+
+    def test_attempted_slots_roundtrip(self):
+        p = IntakeProfile(original_message="help")
+        p.attempted_slots = ["platform", "course_or_material"]
+        p2 = IntakeProfile.from_dict(p.to_dict())
+        assert p2.attempted_slots == ["platform", "course_or_material"]
+
+    def test_from_dict_missing_new_fields_uses_defaults(self):
+        d = {
+            "platform": None, "issue_type": None, "material_type": None,
+            "course_code": None, "turns_spent": 1, "original_message": "x",
+        }
+        p = IntakeProfile.from_dict(d)
+        assert p.last_requested_slot is None
+        assert p.attempted_slots == []
+
+    def test_to_dict_includes_new_fields(self):
+        p = IntakeProfile(original_message="x", last_requested_slot="issue_type")
+        p.attempted_slots = ["platform"]
+        d = p.to_dict()
+        assert d["last_requested_slot"] == "issue_type"
+        assert d["attempted_slots"] == ["platform"]
+
+
+# ── question_templates new additions ─────────────────────────────────────────
+
+class TestQuestionTemplatesUnknownPlatform:
+    def test_new_template_present(self):
+        assert "ask_course_or_material_when_platform_unknown" in QUESTION_TEMPLATES
+
+    def test_template_contains_email_address(self):
+        q = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"]
+        assert "ImmediateAccess@calbaptist.edu" in q
+
+    def test_template_does_not_ask_for_course_code_or_instructor(self):
+        q = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"].lower()
+        assert "course code" not in q
+        assert "instructor" not in q
+        assert "student id" not in q
+
+    def test_question_key_to_slot_has_new_key(self):
+        assert "ask_course_or_material_when_platform_unknown" in QUESTION_KEY_TO_SLOT
+
+    def test_platform_key_maps_to_platform_slot(self):
+        assert QUESTION_KEY_TO_SLOT["ask_platform_for_book_access"] == "platform"
+
+    def test_new_key_maps_to_course_or_material(self):
+        assert QUESTION_KEY_TO_SLOT["ask_course_or_material_when_platform_unknown"] == "course_or_material"
+
+
+# ── Phase 8: planner model config ─────────────────────────────────────────────
+
+class TestPlannerModelConfig:
+    """run_intake_planner must use INTAKE_PLANNER_* vars and correct payload options."""
+
+    @staticmethod
+    def _make_success_response(action: str = "ALLOW_RAG") -> MagicMock:
+        content = json.dumps({
+            "action": action,
+            "intent": "test",
+            "confidence": 0.9,
+            "known_slots": {},
+            "missing_slots": [],
+            "next_question_key": None,
+            "enriched_query": None,
+        })
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = b"ok"
+        resp.json.return_value = {"message": {"content": content}}
+        return resp
+
+    @staticmethod
+    def _mock_client(post_fn):
+        """Return a context-manager-compatible mock client with the given post function."""
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        client.post = post_fn
+        return client
+
+    def test_planner_uses_intake_planner_model(self):
+        """Payload 'model' must be INTAKE_PLANNER_MODEL, not PRIMARY_LLM_MODEL."""
+        captured: list[dict] = []
+
+        async def mock_post(url, json=None, **kw):
+            captured.append(json or {})
+            return self._make_success_response()
+
+        with patch("app.intake.llm_planner.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value = self._mock_client(mock_post)
+            asyncio.run(run_intake_planner("my book is locked"))
+
+        assert captured, "post() was never called"
+        assert captured[0].get("model") == INTAKE_PLANNER_MODEL
+
+    def test_planner_payload_includes_format_json(self):
+        """Payload must include 'format': 'json' to request JSON-mode output."""
+        captured: list[dict] = []
+
+        async def mock_post(url, json=None, **kw):
+            captured.append(json or {})
+            return self._make_success_response()
+
+        with patch("app.intake.llm_planner.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value = self._mock_client(mock_post)
+            asyncio.run(run_intake_planner("my book is locked"))
+
+        assert captured[0].get("format") == "json"
+
+    def test_planner_payload_num_predict_matches_max_tokens(self):
+        """options.num_predict must equal _PLANNER_MAX_TOKENS."""
+        captured: list[dict] = []
+
+        async def mock_post(url, json=None, **kw):
+            captured.append(json or {})
+            return self._make_success_response()
+
+        with patch("app.intake.llm_planner.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value = self._mock_client(mock_post)
+            asyncio.run(run_intake_planner("my book is locked"))
+
+        assert captured[0].get("options", {}).get("num_predict") == _PLANNER_MAX_TOKENS
+
+    def test_planner_fallback_model_used_on_primary_http_error(self):
+        """When primary model returns HTTP 500, the fallback model is tried next."""
+        call_count = 0
+        captured_models: list[str] = []
+
+        async def mock_post(url, json=None, **kw):
+            nonlocal call_count
+            call_count += 1
+            captured_models.append((json or {}).get("model", ""))
+            if call_count == 1:
+                resp = MagicMock()
+                resp.status_code = 500
+                resp.content = b"server error"
+                return resp
+            return self._make_success_response()
+
+        with patch("app.intake.llm_planner.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value = self._mock_client(mock_post)
+            asyncio.run(run_intake_planner("my book is locked"))
+
+        assert INTAKE_PLANNER_FALLBACK_MODEL in captured_models
+
+    def test_planner_timeout_fails_safe_to_ask_clarification(self):
+        """TimeoutException on all models must return ASK_CLARIFICATION, not raise."""
+        import httpx as _httpx
+
+        async def mock_post(url, json=None, **kw):
+            raise _httpx.TimeoutException("timed out", request=None)
+
+        with patch("app.intake.llm_planner.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value = self._mock_client(mock_post)
+            result = asyncio.run(run_intake_planner("my book is locked"))
+
+        assert result.action == "ASK_CLARIFICATION"

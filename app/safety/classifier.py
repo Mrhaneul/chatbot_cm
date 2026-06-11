@@ -168,14 +168,14 @@ async def classify_with_llm(message: str, llm_client) -> SafetyDecision:
         return decision
 
     except httpx.HTTPStatusError as exc:
-        # Ollama returned 4xx/5xx — server is up but having issues.
-        # Allow through: deterministic rules already ran.
-        logger.warning("[SAFETY] Classifier HTTP error %s — allowing through", exc.response.status_code)
+        logger.warning(
+            "[SAFETY] Classifier HTTP error %s — returning ASK_CLARIFICATION",
+            exc.response.status_code,
+        )
         return _SERVER_ERROR_FALLBACK
     except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError) as exc:
-        # Ollama unreachable or timed out.
-        logger.warning("[SAFETY] Classifier connectivity error — allowing through: %s", exc)
+        logger.warning("[SAFETY] Classifier unavailable — returning ASK_CLARIFICATION: %s", exc)
         return _SERVER_ERROR_FALLBACK
     except Exception as exc:
-        logger.warning("[SAFETY] Classifier unexpected exception — allowing through: %s", exc)
+        logger.warning("[SAFETY] Classifier unexpected error — returning ASK_CLARIFICATION: %s", exc)
         return _SERVER_ERROR_FALLBACK

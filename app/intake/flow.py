@@ -19,6 +19,34 @@ from app.intake.slot_extractor import (
 
 _MAX_INTAKE_TURNS = 3
 
+MAX_UNKNOWN_ATTEMPTS = 1  # kept for import compatibility; escalation now fires on the first unknown
+
+INTAKE_ESCALATION_MESSAGE = (
+    "No problem. Please contact ImmediateAccess@calbaptist.edu for help with your "
+    "textbook access issue. They can help identify the correct platform and material "
+    "for your course. If possible, include a screenshot of what you are seeing when "
+    "you email them."
+)
+
+_UNKNOWN_ANSWER_PHRASES = (
+    "don't know",
+    "dont know",
+    "do not know",
+    "not sure",
+    "no idea",
+    "have no idea",
+    "unsure",
+    "no clue",
+    "have no clue",
+    "can't find",
+    "cant find",
+    "cannot find",
+    "can not find",
+    "don't see",
+    "dont see",
+    "do not see",
+)
+
 _PLATFORM_LOW_INFO_PATTERNS = (
     "issue",
     "problem",
@@ -32,6 +60,12 @@ _PLATFORM_LOW_INFO_PATTERNS = (
     "not show anything",
     "not showing anything",
 )
+
+
+def is_unknown_answer(message: str) -> bool:
+    """True when the user signals they cannot supply the requested slot value."""
+    msg_lower = message.lower()
+    return any(phrase in msg_lower for phrase in _UNKNOWN_ANSWER_PHRASES)
 
 
 def is_vague_message(message: str) -> bool:

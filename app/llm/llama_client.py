@@ -15,8 +15,8 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip(
 OLLAMA_CHAT_URL = f"{OLLAMA_BASE_URL}/api/chat"
 OLLAMA_GENERATE_URL = f"{OLLAMA_BASE_URL}/api/generate"
 OLLAMA_TAGS_URL = f"{OLLAMA_BASE_URL}/api/tags"
-PRIMARY_LLM_MODEL = os.getenv("PRIMARY_LLM_MODEL", "gemma4:e4b")
-FALLBACK_LLM_MODEL = os.getenv("FALLBACK_LLM_MODEL", "gemma4:e2b")
+PRIMARY_LLM_MODEL = os.getenv("PRIMARY_LLM_MODEL", "ministral-3:3b-cloud")
+FALLBACK_LLM_MODEL = os.getenv("FALLBACK_LLM_MODEL", "ministral-3:8b-cloud")
 RAG_TEMPERATURE = float(os.getenv("RAG_TEMPERATURE", "0.1"))
 RAG_NUM_PREDICT = int(os.getenv("RAG_NUM_PREDICT", "1024"))
 
@@ -231,6 +231,7 @@ ONLY give a greeting when ALL of these are true:
 === GROUNDING RULES FOR CAMPUS STORE SUPPORT ===
 - Use ONLY the retrieved Campus Store documentation provided below.
 - Do NOT add platform steps, deadlines, refund rules, return rules, fees, emails, phone numbers, URLs, office locations, exceptions, or policy details unless they appear in the retrieved context.
+- Preserve email addresses exactly as written in the retrieved context.
 - If the retrieved context does not contain enough information to answer fully, say: "I do not have enough information in the Campus Store documentation to answer that fully."
 - If multiple retrieved sources contain different workflows, explain that the steps may depend on course or platform setup, then present only the workflows actually present in the context.
 - Do not choose one workflow as universally correct unless the context clearly says it is universal.
@@ -322,6 +323,7 @@ Answer the student's question using ONLY the retrieved Campus Store documentatio
 RULES:
 - Use only the provided context.
 - Do NOT add platform steps, deadlines, refund rules, return rules, fees, emails, phone numbers, URLs, office locations, exceptions, or policy details unless they appear in the context.
+- Preserve email addresses exactly as written in the source context.
 - If the context does not contain enough information to answer fully, say: "I do not have enough information in the Campus Store documentation to answer that fully."
 - If multiple retrieved sources contain different workflows, explain that the steps may depend on course or platform setup and present only the workflows actually present in the context.
 - Do not choose one workflow as universally correct unless the context clearly says so.
@@ -359,8 +361,9 @@ def _is_faq_context(context: str) -> bool:
     return "QUESTION:" in context and "ANSWER:" in context
 
 
-def build_grounded_vision_faq_prompt(message: str, context: str) -> str:
+def build_grounded_vision_faq_prompt(message: str, context: str, system_hint: str = "") -> str:
     """Ground FAQ answers even when the student attaches a screenshot."""
+    hint_block = f"\n\nADDITIONAL GUIDANCE:\n{system_hint}" if system_hint else ""
     return f"""You are Lance, the CBU Campus Store assistant. Answer the student's question using ONLY the information provided below.
 
 RULES:
@@ -371,7 +374,7 @@ RULES:
 - The student has also attached a screenshot. Use it only to understand their error or screen state.
 - Your answer must come from the FAQ content below, not from the screenshot by itself.
 - Do NOT describe the screenshot back to the student
-- Be concise and helpful
+- Be concise and helpful{hint_block}
 
 CONTEXT:
 {context}
@@ -911,8 +914,10 @@ class LlamaClient(LLMClient):
 
             # FAQ+image should stay grounded in the FAQ answer rather than
             # switching to the troubleshooting-oriented vision prompt.
+            # Pass system_hint so route-specific guards (e.g. known-issue cache routes)
+            # can suppress misleading on-screen text like "contact your faculty/program manager".
             if image_base64 and context and _is_faq_context(context):
-                system_content = build_grounded_vision_faq_prompt(message, context)
+                system_content = build_grounded_vision_faq_prompt(message, context, system_hint=system_hint)
             elif image_base64:
                 system_content = build_vision_system_prompt(context, system_hint)
             else:

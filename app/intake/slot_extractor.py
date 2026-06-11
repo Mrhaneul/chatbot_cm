@@ -28,6 +28,16 @@ _ACCESS_SIGNALS = [
 _MISSING_SIGNALS = [
     "missing", "not there", "disappeared", "gone", "don't see",
     "do not see", "can't find", "cannot find", "not showing",
+    # No-content / zero-content / visibility patterns
+    # (e.g. "0 Courses, 0 Materials" VitalSource error, "no content available")
+    "0 courses",
+    "0 materials",
+    "no courses",
+    "no materials",
+    "no content",
+    "nothing showing",
+    "can't see",
+    "cannot see",
 ]
 _ACCOUNT_SIGNALS = [
     "login", "log in", "log-in", "password", "account", "sign in",

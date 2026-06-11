@@ -51,6 +51,16 @@ def _load_rules() -> _CompiledRules:
 
 _RULES: _CompiledRules = _load_rules()
 
+_KNOWN_CACHE_ISSUE_RE = re.compile(
+    r"""(?ix)
+    (
+        \b0\s+courses?\s*,?\s*0\s+materials?\b
+        | \byou\s+currently\s+have\s+no\s+content\s+available\b
+        | \bno\s+content\s+available\b
+    )
+    """
+)
+
 
 def check_deterministic(message: str) -> SafetyDecision | None:
     """
@@ -100,6 +110,17 @@ def check_deterministic(message: str) -> SafetyDecision | None:
             )
 
     # 3. Greeting — always allow (handled downstream)
+    # Known Immediate Access/VitalSource empty-content error strings are safe,
+    # in-scope support issues even when the student omits platform context.
+    if _KNOWN_CACHE_ISSUE_RE.search(message):
+        return SafetyDecision(
+            action="ALLOW",
+            category="campus_store",
+            confidence=0.98,
+            reason="Known Immediate Access empty-content issue signature.",
+            matched_rules=["known_cache_issue_signature"],
+        )
+
     words = re.split(r"[\s,!?.]+", normalized)
     first_word = words[0] if words else ""
     if first_word in _RULES.greeting_keywords or normalized in _RULES.greeting_keywords:

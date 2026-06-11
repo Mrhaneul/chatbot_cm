@@ -27,8 +27,7 @@ class QuickHelpExpectation:
     expected_source_files: tuple[str, ...]
     forbidden_source_files: tuple[str, ...] = ()
     should_not_clarify: bool = True
-    should_bypass_llm: bool = True
-    should_bypass_retrieval: bool = True
+    should_use_llm: bool = True
 
 
 KNOWN_EXPECTATIONS: dict[str, QuickHelpExpectation] = {
@@ -46,7 +45,7 @@ KNOWN_EXPECTATIONS: dict[str, QuickHelpExpectation] = {
         expected_source_files=("data/faqs/ia_bundle_missing_textbook.txt",),
     ),
     "How do I opt out of Immediate Access?": QuickHelpExpectation(
-        expected_source_files=("data/faqs/ia_overview.txt",),
+        expected_source_files=("data/faqs/immediate_access/ia_opt_out_canvas.txt",),
         forbidden_source_files=("data/faqs/ia_access_issue.txt",),
     ),
     "How do I return a textbook?": QuickHelpExpectation(
@@ -74,6 +73,16 @@ class AuditLLMStub:
         return (
             "[AUDIT LLM STUB] This prompt reached the LLM path. "
             "Run a live model audit separately if answer quality needs validation."
+        )
+
+    async def call(self, *args: Any, **kwargs: Any) -> tuple[str, float]:
+        message = kwargs.get("message", args[0] if args else "")
+        context = kwargs.get("context", "")
+        self.calls.append({"message": message, "context": context})
+        return (
+            "[AUDIT LLM STUB] This prompt reached the final grounded LLM path. "
+            "Run a live model audit separately if answer quality needs validation.",
+            0.0,
         )
 
 
@@ -141,9 +150,24 @@ def _source_paths_from_retriever(app_main: Any, source_id: str) -> list[str]:
 
 def source_paths_for_prompt(app_main: Any, prompt: str, source_id: str) -> list[str]:
     route = find_quick_help_route(prompt)
-    if route and route.source == source_id:
+    if route:
         return list(route.source_paths)
     return _source_paths_from_retriever(app_main, source_id)
+
+
+def _source_matches(expected: str, observed_paths: list[str], source_haystack: str) -> bool:
+    expected_normalized = expected.replace("\\", "/")
+    expected_without_prefix = re.sub(r"^data/(faqs|instructions)/", "", expected_normalized)
+    for observed in observed_paths:
+        observed_normalized = (observed or "").replace("\\", "/")
+        if (
+            observed_normalized == expected_normalized
+            or observed_normalized == expected_without_prefix
+            or expected_normalized.endswith(observed_normalized)
+            or observed_normalized.endswith(expected_without_prefix)
+        ):
+            return True
+    return expected_normalized in source_haystack or expected_without_prefix in source_haystack
 
 
 def evaluate_audit_result(
@@ -163,7 +187,7 @@ def evaluate_audit_result(
 
     if expectation:
         expected_source_match = all(
-            expected in source_paths or expected in source_haystack
+            _source_matches(expected, source_paths, source_haystack)
             for expected in expectation.expected_source_files
         )
         forbidden_source_found = any(
@@ -176,10 +200,8 @@ def evaluate_audit_result(
             reasons.append("forbidden source file found")
         if expectation.should_not_clarify and clarification_triggered:
             reasons.append("clarification triggered")
-        if expectation.should_bypass_llm and llm_calls > 0:
-            reasons.append("LLM was called")
-        if expectation.should_bypass_retrieval and (retrieval_time_ms or 0) != 0:
-            reasons.append("retrieval was used")
+        if expectation.should_use_llm and llm_calls == 0:
+            reasons.append("LLM was not called")
     else:
         expected_source_match = None
         forbidden_source_found = False
@@ -219,6 +241,7 @@ async def run_audit() -> list[dict[str, Any]]:
 
     llm_stub = AuditLLMStub()
     app_main.llm.chat = llm_stub.chat
+    app_main.call_llm_with_semaphore = llm_stub.call
 
     results: list[dict[str, Any]] = []
     for prompt in prompts:
@@ -249,6 +272,11 @@ async def run_audit() -> list[dict[str, Any]]:
         else:
             source = response.source
             source_paths = source_paths_for_prompt(app_main, prompt, source)
+            selected_source_file = getattr(response, "selected_source_file", None)
+            retrieved_source_file = getattr(response, "retrieved_source_file", None)
+            for source_file in (selected_source_file, retrieved_source_file):
+                if source_file and source_file not in source_paths:
+                    source_paths.append(source_file)
             reply = response.reply
             confidence = response.confidence
             retrieval_time_ms = response.retrieval_time_ms

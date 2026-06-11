@@ -30,9 +30,12 @@ from app.intake.slot_extractor import extract_platform, extract_issue_type
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_CHAT_URL = f"{OLLAMA_BASE_URL}/api/chat"
-PRIMARY_LLM_MODEL = os.getenv("PRIMARY_LLM_MODEL", "gemma4:e4b")
-FALLBACK_LLM_MODEL = os.getenv("FALLBACK_LLM_MODEL", "gemma4:e2b")
-_PLANNER_TIMEOUT = float(os.getenv("INTAKE_PLANNER_TIMEOUT", "8.0"))
+PRIMARY_LLM_MODEL = os.getenv("PRIMARY_LLM_MODEL", "ministral-3:3b-cloud")
+FALLBACK_LLM_MODEL = os.getenv("FALLBACK_LLM_MODEL", "ministral-3:8b-cloud")
+INTAKE_PLANNER_MODEL = os.getenv("INTAKE_PLANNER_MODEL", "ministral-3:3b-cloud")
+INTAKE_PLANNER_FALLBACK_MODEL = os.getenv("INTAKE_PLANNER_FALLBACK_MODEL", "ministral-3:8b-cloud")
+_PLANNER_TIMEOUT = float(os.getenv("INTAKE_PLANNER_TIMEOUT", "20.0"))
+_PLANNER_MAX_TOKENS = int(os.getenv("INTAKE_PLANNER_MAX_TOKENS", "160"))
 
 _VALID_QUESTION_KEYS = frozenset(QUESTION_TEMPLATES.keys())
 
@@ -44,6 +47,17 @@ _TOPIC_KEYWORDS = frozenset({
     "mindtap", "mylab", "mastering", "connect", "bookshelf", "achieve",
     "course material", "immediate access",
 })
+
+_POLICY_FAQ_PATTERNS = (
+    re.compile(r"\b(how|where|can|could|do|does|what)\b.*\bopt[- ]?out\b"),
+    re.compile(r"\bopt[- ]?out\b.*\b(immediate access|textbook|book|physical|print)\b"),
+    re.compile(r"\bwhat\s+is\s+(immediate access|ia)\b"),
+    re.compile(r"\bwhat(?:'s| is)\s+the\s+textbook\s+refund\s+policy\b"),
+    re.compile(r"\bhow\s+do\s+i\s+return\s+(a\s+)?(textbook|book)\b"),
+    re.compile(r"\b(can|do|will)\s+i\s+get\s+a\s+refund\b"),
+    re.compile(r"\bwhere\s+do\s+i\s+buy\s+(my\s+)?(textbooks|textbook|books|book)\b"),
+    re.compile(r"\bwhere\s+can\s+i\s+buy\s+(my\s+)?(textbooks|textbook|books|book)\b"),
+)
 
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -58,38 +72,20 @@ async def _optional_semaphore(sem: asyncio.Semaphore | None):
         yield
 
 _SYSTEM_PROMPT = (
-    "You are an intake classifier for a university campus store chatbot.\n\n"
-    "Your ONLY job is to decide whether enough context exists to retrieve helpful "
-    "support information, or whether one clarifying question is needed first.\n\n"
-    "DO NOT answer the student's question.\n"
-    "DO NOT provide troubleshooting steps.\n"
-    "Return ONLY valid JSON — no explanation, no other text.\n\n"
-    "VALID next_question_key values (choose exactly one, or null):\n"
-    "- ask_platform_for_book_access        (missing: which publisher/platform)\n"
-    "- ask_issue_for_platform              (missing: what kind of problem)\n"
-    "- ask_course_code                     (missing: course code)\n"
-    "- ask_error_message                   (missing: what error they see)\n"
-    "- ask_material_type                   (missing: textbook vs workbook vs lab)\n"
-    "- ask_blackboard_or_publisher_location  (missing: where they access from)\n\n"
+    "You are an intake classifier for a university campus store chatbot.\n"
+    "ONLY output valid JSON — no explanation, no prose, no markdown fences.\n\n"
+    "VALID next_question_key values (one of these exact strings, or null):\n"
+    "ask_platform_for_book_access | ask_issue_for_platform | ask_course_code | "
+    "ask_error_message | ask_material_type | ask_blackboard_or_publisher_location\n\n"
     "RULES:\n"
-    "1. If the message names a specific platform (Cengage, VitalSource, McGraw Hill, "
-    "Pearson, Wiley, etc.) AND describes a specific issue: action = \"ALLOW_RAG\".\n"
-    "2. If the message is vague about course materials and is missing platform or "
-    "issue type: action = \"ASK_CLARIFICATION\", set next_question_key.\n"
-    "3. If the message is unrelated to course material access (store hours, refunds, "
-    "general questions): action = \"ALLOW_RAG\".\n"
-    "4. When uncertain, choose \"ASK_CLARIFICATION\" — safer to ask one question "
-    "than to retrieve wrong content.\n\n"
-    "Return JSON in exactly this format:\n"
-    "{\n"
-    '  "action": "ALLOW_RAG" or "ASK_CLARIFICATION",\n'
-    '  "intent": "<brief description>",\n'
-    '  "confidence": <0.0 to 1.0>,\n'
-    '  "known_slots": {},\n'
-    '  "missing_slots": [],\n'
-    '  "next_question_key": null or "<key>",\n'
-    '  "enriched_query": null or "<query string>"\n'
-    "}"
+    "1. Platform named AND issue described → action=ALLOW_RAG, next_question_key=null.\n"
+    "2. Platform or issue missing → action=ASK_CLARIFICATION, set next_question_key.\n"
+    "3. Unrelated to course materials → action=ALLOW_RAG, next_question_key=null.\n"
+    "4. When uncertain → action=ASK_CLARIFICATION.\n\n"
+    "Output JSON only, no other text:\n"
+    '{"action":"ALLOW_RAG or ASK_CLARIFICATION","intent":"<3 words max>",'
+    '"confidence":0.0,"known_slots":{},"missing_slots":[],'
+    '"next_question_key":null,"enriched_query":null}'
 )
 
 _SAFE_FALLBACK = IntakePlannerDecision(
@@ -115,6 +111,8 @@ def should_run_planner(
     - Both platform and issue type are already known (from session or message text).
     """
     msg_lower = message.lower()
+    if any(pattern.search(msg_lower) for pattern in _POLICY_FAQ_PATTERNS):
+        return False
     if not any(kw in msg_lower for kw in _TOPIC_KEYWORDS):
         return False
     # Skip if both slots are already known from the session.
@@ -161,6 +159,8 @@ async def run_intake_planner(
     message: str,
     semaphore: asyncio.Semaphore | None = None,
     known_slots: dict[str, str] | None = None,
+    last_requested_slot: str | None = None,
+    attempted_slots: list[str] | None = None,
 ) -> IntakePlannerDecision:
     """
     Call the Ollama LLM and return a structured intake decision.
@@ -173,16 +173,23 @@ async def run_intake_planner(
 
     known_slots, if provided, surfaces already-collected session state to the LLM
     so it does not ask for slots the student already supplied.
+
+    last_requested_slot and attempted_slots surface prior intake state so the
+    planner can choose an alternative question when the student cannot answer.
     """
-    models = [PRIMARY_LLM_MODEL]
-    if FALLBACK_LLM_MODEL and FALLBACK_LLM_MODEL != PRIMARY_LLM_MODEL:
-        models.append(FALLBACK_LLM_MODEL)
+    models = [INTAKE_PLANNER_MODEL]
+    if INTAKE_PLANNER_FALLBACK_MODEL and INTAKE_PLANNER_FALLBACK_MODEL != INTAKE_PLANNER_MODEL:
+        models.append(INTAKE_PLANNER_FALLBACK_MODEL)
 
     user_content = f"Student message: {message}"
     if known_slots:
         filled = {k: v for k, v in known_slots.items() if v}
         if filled:
             user_content += f"\nAlready known from session: {filled}"
+    if last_requested_slot:
+        user_content += f"\nLast question asked about slot: {last_requested_slot}"
+    if attempted_slots:
+        user_content += f"\nSlots student said they don't know: {attempted_slots}"
 
     payload: dict = {
         "messages": [
@@ -190,9 +197,10 @@ async def run_intake_planner(
             {"role": "user", "content": user_content},
         ],
         "stream": False,
+        "format": "json",
         "options": {
             "temperature": 0.0,
-            "num_predict": 512,
+            "num_predict": _PLANNER_MAX_TOKENS,
         },
     }
 
@@ -203,7 +211,10 @@ async def run_intake_planner(
             timeout = httpx.Timeout(_PLANNER_TIMEOUT, read=_PLANNER_TIMEOUT)
             async with _optional_semaphore(semaphore):
                 async with httpx.AsyncClient(timeout=timeout) as client:
-                    print(f"[PLANNER] model={model_name} message={message[:80]!r}")
+                    print(
+                        f"[PLANNER] model={model_name} url={OLLAMA_CHAT_URL} "
+                        f"message={message[:80]!r}"
+                    )
                     response = await client.post(
                         OLLAMA_CHAT_URL, json={**payload, "model": model_name}
                     )

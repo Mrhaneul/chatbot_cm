@@ -18,6 +18,8 @@ class IntakeProfile:
     course_code: Optional[str] = None       # e.g. "CS101"
     turns_spent: int = 0
     original_message: str = ""
+    last_requested_slot: Optional[str] = None   # slot most recently asked for
+    attempted_slots: list = field(default_factory=list)  # slots user said they don't know
 
     _MAX_TURNS: int = field(default=3, init=False, repr=False, compare=False)
 
@@ -35,6 +37,8 @@ class IntakeProfile:
             "course_code": self.course_code,
             "turns_spent": self.turns_spent,
             "original_message": self.original_message,
+            "last_requested_slot": self.last_requested_slot,
+            "attempted_slots": list(self.attempted_slots),
         }
 
     @classmethod
@@ -46,6 +50,8 @@ class IntakeProfile:
             course_code=d.get("course_code"),
             turns_spent=d.get("turns_spent", 0),
             original_message=d.get("original_message", ""),
+            last_requested_slot=d.get("last_requested_slot"),
+            attempted_slots=list(d.get("attempted_slots") or []),
         )
 
     def build_enriched_query(self, display_names: dict[str, str]) -> str:
