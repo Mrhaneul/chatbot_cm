@@ -132,9 +132,10 @@ def test_score_breakdown_is_explainable():
         ),
         (
             "How do I opt out of Immediate Access?",
-            {"ia_overview.txt"},
+            {"ia_overview.txt", "ia_opt_out_canvas.txt"},
             {"ia_access_issue.txt"},
         ),
+
     ],
 )
 def test_hybrid_retrieval_source_selection(

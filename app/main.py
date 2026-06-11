@@ -141,6 +141,7 @@ MAX_CONCURRENT_LLM_REQUESTS = int(os.getenv("MAX_CONCURRENT_LLM_REQUESTS", "2"))
 GROUNDING_TOP_K = int(os.getenv("GROUNDING_TOP_K", "3"))
 CORS_ORIGINS = parse_csv_env("CORS_ORIGINS", "http://localhost:3000")
 ENABLE_DEBUG_ROUTES = parse_bool_env("ENABLE_DEBUG_ROUTES", default=False)
+ENABLE_DEBUG_MODE = parse_bool_env("ENABLE_DEBUG_MODE", default=False)
 ENABLE_SAFETY_FILTER = parse_bool_env("ENABLE_SAFETY_FILTER", default=True)
 ENABLE_SAFETY_CLASSIFIER = parse_bool_env("ENABLE_SAFETY_CLASSIFIER", default=True)
 
@@ -741,14 +742,14 @@ def enhance_query_with_conversation_context(message: str, history: list) -> str:
         ]
         user_doesnt_know = any(phrase in msg_lower for phrase in doesnt_know_phrases)
 
-        # If student doesn't know ebook vs courseware → escalate to email
+        # If student doesn't know ebook vs courseware -> escalate to email
         if user_doesnt_know and any(keyword in last_bot_message for keyword in [
             "standalone ebook", "stand-alone ebook", "courseware",
             "homework assignments", "publisher's platform"
         ]):
             return "ESCALATE_TO_EMAIL"
 
-        # If student doesn't know textbook vs platform → ask ebook vs courseware
+        # If student doesn't know textbook vs platform -> ask ebook vs courseware
         if user_doesnt_know and any(keyword in last_bot_message for keyword in [
             "mcgraw hill textbook or mcgraw hill connect",
             "cengage textbook or cengage mindtap",
@@ -2596,7 +2597,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             elif is_unknown_answer(message) and profile.last_requested_slot:
                 print(
                     f"[INTAKE] Unknown answer for slot={profile.last_requested_slot!r} "
-                    f"→ escalating to ImmediateAccess email"
+                    f"-> escalating to ImmediateAccess email"
                 )
                 session["intake_profile"] = None
                 escalation = INTAKE_ESCALATION_MESSAGE
@@ -3749,14 +3750,14 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         # these as GENERAL_FAQ when the phrasing lacks other IA signals.
         if is_missing_read_now_button(message) and platform is not None and intent != "IA_ACCESS_ISSUE":
             intent = "IA_ACCESS_ISSUE"
-            print(f"[INTENT DEBUG] Read Now missing override → IA_ACCESS_ISSUE (platform={platform})")
+            print(f"[INTENT DEBUG] Read Now missing override -> IA_ACCESS_ISSUE (platform={platform})")
 
         # Browser/session cache issues ("0 Courses, 0 Materials", "no content available")
         # are device-level problems, not platform-specific. Force GENERAL_FAQ so they
         # route to the FAQ cache-clearing instructions rather than platform clarification.
         if is_cache_issue and intent != "GENERAL_FAQ":
             intent = "GENERAL_FAQ"
-            print(f"[INTENT DEBUG] Browser cache issue override → GENERAL_FAQ (cache detected in query or image)")
+            print(f"[INTENT DEBUG] Browser cache issue override -> GENERAL_FAQ (cache detected in query or image)")
 
         # NOW the intent is set!
         if _intake_completed:
@@ -4187,7 +4188,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 is_cache_issue = is_browser_cache_issue(message) or is_browser_cache_issue(retrieval_query)
                 if is_cache_issue and intent != "GENERAL_FAQ":
                     intent = "GENERAL_FAQ"
-                    print(f"[INTENT DEBUG] Browser cache issue override → GENERAL_FAQ (cache detected in query or image)")
+                    print(f"[INTENT DEBUG] Browser cache issue override -> GENERAL_FAQ (cache detected in query or image)")
 
             # ✨ START RETRIEVAL TIMER
             retrieval_start = time.time()
@@ -4222,7 +4223,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 # Without this override, platform-specific general-access chunks win
                 # in FAISS because they contain "Read section" language.
                 _plat_raw = platform.lower().split('_')[0] if platform else None
-                # Resolve aliased platforms to their shared index key (e.g. VITALSOURCE → bedford)
+                # Resolve aliased platforms to their shared index key (e.g. VITALSOURCE -> bedford)
                 read_now_retrieval_platform = PLATFORM_RETRIEVAL_KEY.get(
                     platform, _plat_raw
                 ) if platform else None
@@ -4780,7 +4781,7 @@ async def chat_stream(payload: ChatRequest):
             is_cache_issue = is_browser_cache_issue(message) or is_browser_cache_issue(retrieval_query)
             if is_cache_issue and intent != "GENERAL_FAQ":
                 intent = "GENERAL_FAQ"
-                print("[STREAM INTENT] Browser cache override → GENERAL_FAQ (cache detected in query or image)")
+                print("[STREAM INTENT] Browser cache override -> GENERAL_FAQ (cache detected in query or image)")
 
             # ── Intake: mid-flow turn (user replied to an intake question) ────────
             _stream_intake_completed = False
@@ -4808,7 +4809,7 @@ async def chat_stream(payload: ChatRequest):
                 elif is_unknown_answer(message) and profile.last_requested_slot:
                     print(
                         f"[STREAM INTAKE] Unknown answer for slot={profile.last_requested_slot!r} "
-                        f"→ escalating to ImmediateAccess email"
+                        f"-> escalating to ImmediateAccess email"
                     )
                     session["intake_profile"] = None
                     escalation = INTAKE_ESCALATION_MESSAGE

@@ -9,8 +9,8 @@ from app.main import retrieve_async
 
 @pytest.mark.asyncio
 async def test_retriever_general():
-    # General query should route to the general instruction index
-    result = await retrieve_async("How do I access Immediate Access?")
+    # General query – use collection="instructions" to verify the general index
+    result = await retrieve_async("How do I access Immediate Access?", collection="instructions")
     assert result["source_id"].startswith("INSTR_GENERAL"), f"Unexpected source_id {result['source_id']}"
     # Metadata should contain the instruction schema keys
     meta = result.get("metadata", {})

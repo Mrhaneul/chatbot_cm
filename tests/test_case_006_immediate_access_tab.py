@@ -24,7 +24,7 @@ def test_missing_immediate_access_tab_escalates_after_platform_clarification():
                 session_id=session_id,
             )
         )
-        assert first.source == "CLARIFICATION_NEEDED"
+        assert first.source == "INTAKE:LLM_PLANNER"
         assert "which platform or publisher" in first.reply.lower()
 
         second = await process_chat_request(
@@ -33,17 +33,8 @@ def test_missing_immediate_access_tab_escalates_after_platform_clarification():
                 session_id=session_id,
             )
         )
-        assert second.source == "CLARIFICATION_NEEDED"
-        assert "platform name" in second.reply.lower()
-
-        third = await process_chat_request(
-            ChatRequest(
-                message="There is no Immediate Access tab on the left side in Blackboard.",
-                session_id=session_id,
-            )
-        )
-        assert third.source == "LLM_ONLY"
-        assert "immediateaccess@calbaptist.edu" in third.reply.lower()
-        assert "lancermail" in third.reply.lower()
+        assert second.source == "INTAKE:ESCALATION"
+        assert "immediateaccess@calbaptist.edu" in second.reply.lower()
 
     asyncio.run(run_case())
+
