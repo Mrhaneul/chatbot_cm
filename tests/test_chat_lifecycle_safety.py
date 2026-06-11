@@ -2198,3 +2198,144 @@ class TestVitalSourceZeroCoursesRouting:
             "Cache-specific vision note must be in the streaming system prompt when "
             f"route=KNOWN_ISSUE_LLM + image. Got: {combined_system[:400]!r}"
         )
+
+    # ── Vague text + image: scope bypass tests ───────────────────────────────
+
+    async def test_vague_text_with_cache_screenshot_bypasses_scope_check(self):
+        """
+        Non-streaming: 'I'm running into this problem' + VitalSource no-content
+        screenshot must NOT be blocked as OUT_OF_SCOPE. The augmented query
+        (which includes visible_error) is used for safety scope evaluation, so
+        the known issue signature satisfies Campus Store relevance.
+        """
+        session_id = f"test-vague-img-ns-{uuid.uuid4()}"
+        fake_image_context = {
+            "detected_platform": "VITALSOURCE",
+            "visible_error": self._VITALSOURCE_FACULTY_ERROR,
+        }
+
+        async def capturing_llm(*args, **kwargs):
+            context = kwargs.get("context") or (args[1] if len(args) > 1 else "")
+            if "no content available" in context.lower() or "0 courses" in context.lower():
+                return (
+                    "Clear your browser cache and cookies, close and reopen your browser, "
+                    "then try accessing your Immediate Access materials again.",
+                    0.0,
+                )
+            return ("Stubbed.", 0.0)
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", True),
+            patch("app.llm.llama_client.analyze_image_for_retrieval", new=AsyncMock(return_value=fake_image_context)),
+            patch("app.llm.llama_client.build_augmented_query", side_effect=lambda m, ic: (
+                f"{m} platform {ic.get('detected_platform', '')} {ic.get('visible_error', '')}"
+            )),
+            patch("app.main.run_intake_planner", new=AsyncMock(side_effect=AssertionError("planner must not be called"))),
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(side_effect=capturing_llm)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(
+                ChatRequest(
+                    message="I'm running into this problem",
+                    session_id=session_id,
+                    image_base64=self._TINY_PNG,
+                )
+            )
+
+        assert not r.source.startswith("SAFETY"), (
+            f"Vague text + cache screenshot must not be blocked by safety. Got source={r.source!r}"
+        )
+        assert r.route_type == "KNOWN_ISSUE_LLM", f"Got route_type={r.route_type!r}"
+        assert r.selected_source_file == "immediate_access/ia_zero_courses_zero_materials_cache.txt"
+        assert r.llm_used is True
+        assert "cache" in r.reply.lower() or "cookies" in r.reply.lower()
+
+    async def test_streaming_vague_text_with_cache_screenshot_bypasses_scope_check(self):
+        """
+        Streaming: same scenario — vague text + VitalSource no-content screenshot
+        must not be blocked as OUT_OF_SCOPE, must route to KNOWN_ISSUE_LLM.
+        """
+        session_id = f"test-vague-img-stream-{uuid.uuid4()}"
+        fake_image_context = {
+            "detected_platform": "VITALSOURCE",
+            "visible_error": self._VITALSOURCE_FACULTY_ERROR,
+        }
+
+        async def capturing_stream_chat(*args, **kwargs):
+            yield {"type": "response", "token": "Clear your browser cache and cookies, then reopen the browser."}
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", True),
+            patch("app.llm.llama_client.analyze_image_for_retrieval", new=AsyncMock(return_value=fake_image_context)),
+            patch("app.llm.llama_client.build_augmented_query", side_effect=lambda m, ic: (
+                f"{m} platform {ic.get('detected_platform', '')} {ic.get('visible_error', '')}"
+            )),
+            patch("app.main.run_intake_planner", new=AsyncMock(side_effect=AssertionError("planner must not be called"))),
+            patch("app.main.stream_llm_chat_response", new=capturing_stream_chat),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            done = await _post_stream({
+                "message": "I'm running into this problem",
+                "session_id": session_id,
+                "image_base64": self._TINY_PNG,
+            })
+
+        assert not done.get("source", "").startswith("SAFETY"), (
+            f"Streaming vague text + cache screenshot must not be blocked. Got source={done.get('source')!r}"
+        )
+        assert done.get("route_type") == "KNOWN_ISSUE_LLM", f"Got route_type={done.get('route_type')!r}"
+        assert done.get("selected_source_file") == "immediate_access/ia_zero_courses_zero_materials_cache.txt"
+        assert done.get("llm_used") is True
+
+    async def test_vague_text_no_image_does_not_route_to_known_issue(self):
+        """
+        Regression: 'I'm running into this problem' with NO image must not
+        route to KNOWN_ISSUE_LLM — the known-issue trigger requires image
+        context containing the cache error signature.
+        The FAQ retrieval mock in this class may still return the cache source
+        file via normal RAG, which is acceptable; what must not happen is that
+        the message bypasses safety scope via the image-augmented path.
+        """
+        session_id = f"test-vague-no-img-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(
+                _session_req(session_id, "I'm running into this problem")
+            )
+
+        # The key invariant: vague text with no image must NOT use the known-issue
+        # fast-path (KNOWN_ISSUE_LLM). It may still hit the cache source via normal
+        # RAG (since the FAQ mock returns it for all queries), but the route type
+        # must be different.
+        assert r.route_type != "KNOWN_ISSUE_LLM", (
+            f"Vague text with no image must not route to KNOWN_ISSUE_LLM. Got route_type={r.route_type!r}"
+        )
+
+    async def test_image_with_no_campus_store_signal_does_not_auto_allow(self):
+        """
+        Regression: an image with no recognizable Campus Store issue signature
+        (empty visible_error, no known platform) must not bypass safety.
+        Hard safety still runs; benign campus store messages are handled normally.
+        """
+        session_id = f"test-no-signal-img-{uuid.uuid4()}"
+        empty_image_context: dict = {}
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.llm.llama_client.analyze_image_for_retrieval", new=AsyncMock(return_value=empty_image_context)),
+            patch("app.llm.llama_client.build_augmented_query", side_effect=lambda m, ic: m),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(
+                ChatRequest(
+                    message="Hi",
+                    session_id=session_id,
+                    image_base64=self._TINY_PNG,
+                )
+            )
+
+        assert r.route_type != "KNOWN_ISSUE_LLM", (
+            f"Image with no cache signal must not route to KNOWN_ISSUE_LLM. Got route_type={r.route_type!r}"
+        )
