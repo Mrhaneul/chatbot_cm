@@ -4505,14 +4505,15 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         ):
             _cache_vision_guard = (
                 "SCREENSHOT INTERPRETATION: The student's screenshot shows a known "
-                "Immediate Access issue. VitalSource may display "
+                "Immediate Access issue. VitalSource may also display "
                 "\"please contact your faculty or digital program manager for assistance\" "
-                "on this screen. This is a generic VitalSource platform message and does "
-                "NOT apply to CBU Immediate Access students. "
-                "DO NOT tell the student to contact their faculty or digital program manager. "
-                "Answer with the browser cache, cookies, and history clearing guidance from "
+                "on this screen. For CBU Immediate Access troubleshooting, treat this as "
+                "the known 0 Courses / 0 Materials issue. "
+                "Answer with the browser cache, cookies, and history clearing steps from "
                 "the Campus Store source. "
-                "If the issue persists, direct the student to ImmediateAccess@calbaptist.edu."
+                "Do not make contacting faculty or a digital program manager the primary advice. "
+                "If the issue continues, direct the student to ImmediateAccess@calbaptist.edu "
+                "with a screenshot."
             )
             system_hint = f"{system_hint}\n\n{_cache_vision_guard}".strip() if system_hint else _cache_vision_guard
 
@@ -5069,12 +5070,13 @@ async def chat_stream(payload: ChatRequest):
                         "\"0 Courses, 0 Materials\" or \"You currently have no content available.\"\n"
                         "VitalSource may also display \"please contact your faculty or digital program "
                         "manager for assistance\" on this screen. "
-                        "This is a generic VitalSource platform message and does NOT apply to CBU "
-                        "Immediate Access students.\n"
-                        "DO NOT tell the student to contact their faculty or digital program manager.\n"
+                        "For CBU Immediate Access troubleshooting, treat this as the known "
+                        "0 Courses / 0 Materials issue.\n"
                         "Answer using the browser cache, cookies, and history clearing guidance "
                         "from the Campus Store source above.\n"
-                        "If the issue persists, direct the student to ImmediateAccess@calbaptist.edu.\n"
+                        "Do not make contacting faculty or a digital program manager the primary advice.\n"
+                        "If the issue continues, direct the student to ImmediateAccess@calbaptist.edu "
+                        "with a screenshot.\n"
                         "=== END SCREENSHOT GUIDANCE ==="
                     )
                 else:

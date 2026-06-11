@@ -56,9 +56,10 @@ Purpose: answers "0 Courses, 0 Materials", "You currently have no content availa
 and the VitalSource screenshot variant "You currently have no content available, please
 contact your faculty or digital program manager for assistance."
 
-**Important:** VitalSource displays the "faculty or digital program manager" text on the
-same screen. The source must explicitly tell the LLM this message does NOT apply to CBU
-Immediate Access — students should clear browser cache, not contact faculty.
+**Important:** VitalSource displays "please contact your faculty or digital program manager
+for assistance" on the same screen. The source must direct the LLM to treat this screen as
+the known 0 Courses / 0 Materials issue and answer with the cache-clearing steps first —
+without making faculty/program manager contact the primary advice.
 
 The source now includes full browser-specific cache clearing steps inline (Chrome, Firefox,
 Safari, Chrome on iPad) so the LLM has all guidance in a single grounding context.
@@ -79,7 +80,7 @@ QUESTION:
 I see "0 Courses, 0 Materials" or "You currently have no content available" or "You currently have no content available, please contact your faculty or digital program manager for assistance." What should I do?
 
 ANSWER:
-IMPORTANT NOTE FOR CBU IMMEDIATE ACCESS: VitalSource sometimes displays "You currently have no content available, please contact your faculty or digital program manager for assistance." on this screen. This is a generic VitalSource platform message and does NOT apply to CBU Immediate Access students. CBU students should NOT contact their faculty or digital program manager for this issue. The correct resolution is to clear your browser cache, cookies, and history using the steps below. If the issue persists, contact ImmediateAccess@calbaptist.edu.
+CBU IMMEDIATE ACCESS SUPPORT NOTE: VitalSource may also display "please contact your faculty or digital program manager for assistance" on this screen. For CBU Immediate Access troubleshooting, treat this screen as the known 0 Courses / 0 Materials issue. First clear your browser cache, cookies, and history using the documented steps below. If the issue continues, contact ImmediateAccess@calbaptist.edu with a screenshot.
 
 If you see "0 Courses, 0 Materials" or "You currently have no content available" when trying to access Immediate Access materials, this is caused by stale browser data. Clear your browser cache, cookies, and history, then try again.
 

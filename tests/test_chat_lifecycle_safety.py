@@ -2153,9 +2153,9 @@ class TestVitalSourceZeroCoursesRouting:
         # "faculty/digital program manager" advice from the on-screen text.
         assert captured_hints, "LLM was never called"
         combined_hint = " ".join(captured_hints)
-        assert "generic vitalsource platform message" in combined_hint.lower(), (
-            "Cache vision guard ('generic VitalSource platform message') must be injected into "
-            f"system_hint when route=KNOWN_ISSUE_LLM + image. Got: {combined_hint[:400]!r}"
+        assert "cbu immediate access troubleshooting" in combined_hint.lower(), (
+            "Cache vision guard must be injected into system_hint when route=KNOWN_ISSUE_LLM + image. "
+            f"Got: {combined_hint[:400]!r}"
         )
 
     async def test_streaming_image_vitalsource_faculty_message_routes_to_known_issue_cache(self):
@@ -2194,7 +2194,7 @@ class TestVitalSourceZeroCoursesRouting:
         assert done.get("llm_used") is True
         assert captured_systems, "stream_llm_chat_response was never called"
         combined_system = " ".join(captured_systems)
-        assert "generic vitalsource platform message" in combined_system.lower(), (
+        assert "cbu immediate access troubleshooting" in combined_system.lower(), (
             "Cache-specific vision note must be in the streaming system prompt when "
             f"route=KNOWN_ISSUE_LLM + image. Got: {combined_system[:400]!r}"
         )
