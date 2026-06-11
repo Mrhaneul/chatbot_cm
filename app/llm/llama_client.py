@@ -361,8 +361,9 @@ def _is_faq_context(context: str) -> bool:
     return "QUESTION:" in context and "ANSWER:" in context
 
 
-def build_grounded_vision_faq_prompt(message: str, context: str) -> str:
+def build_grounded_vision_faq_prompt(message: str, context: str, system_hint: str = "") -> str:
     """Ground FAQ answers even when the student attaches a screenshot."""
+    hint_block = f"\n\nADDITIONAL GUIDANCE:\n{system_hint}" if system_hint else ""
     return f"""You are Lance, the CBU Campus Store assistant. Answer the student's question using ONLY the information provided below.
 
 RULES:
@@ -373,7 +374,7 @@ RULES:
 - The student has also attached a screenshot. Use it only to understand their error or screen state.
 - Your answer must come from the FAQ content below, not from the screenshot by itself.
 - Do NOT describe the screenshot back to the student
-- Be concise and helpful
+- Be concise and helpful{hint_block}
 
 CONTEXT:
 {context}
@@ -913,8 +914,10 @@ class LlamaClient(LLMClient):
 
             # FAQ+image should stay grounded in the FAQ answer rather than
             # switching to the troubleshooting-oriented vision prompt.
+            # Pass system_hint so route-specific guards (e.g. known-issue cache routes)
+            # can suppress misleading on-screen text like "contact your faculty/program manager".
             if image_base64 and context and _is_faq_context(context):
-                system_content = build_grounded_vision_faq_prompt(message, context)
+                system_content = build_grounded_vision_faq_prompt(message, context, system_hint=system_hint)
             elif image_base64:
                 system_content = build_vision_system_prompt(context, system_hint)
             else:

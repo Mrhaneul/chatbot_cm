@@ -4494,6 +4494,28 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             )
             system_hint = f"{route_hint}\n\n{system_hint}".strip()
 
+        # For known-issue cache routes with an image: inject an explicit guard so the
+        # LLM does not relay the generic VitalSource "contact your faculty or digital
+        # program manager" text as the primary advice — that message appears on the
+        # same VitalSource screen but is not the CBU Immediate Access resolution.
+        if (
+            forced_route_type == "KNOWN_ISSUE_LLM"
+            and "ia_zero_courses_zero_materials_cache" in (forced_selected_source_file or "")
+            and has_image
+        ):
+            _cache_vision_guard = (
+                "SCREENSHOT INTERPRETATION: The student's screenshot shows a known "
+                "Immediate Access issue. VitalSource may display "
+                "\"please contact your faculty or digital program manager for assistance\" "
+                "on this screen. This is a generic VitalSource platform message and does "
+                "NOT apply to CBU Immediate Access students. "
+                "DO NOT tell the student to contact their faculty or digital program manager. "
+                "Answer with the browser cache, cookies, and history clearing guidance from "
+                "the Campus Store source. "
+                "If the issue persists, direct the student to ImmediateAccess@calbaptist.edu."
+            )
+            system_hint = f"{system_hint}\n\n{_cache_vision_guard}".strip() if system_hint else _cache_vision_guard
+
         # ✨ START LLM TIMER
         llm_start = time.time()
 
@@ -5036,14 +5058,34 @@ async def chat_stream(payload: ChatRequest):
                 # Do NOT use build_vision_system_prompt here — it is designed for instruction
                 # retrieval and causes the LLM to misidentify FAQ content as irrelevant.
                 base = build_grounded_prompt(message, context)
-                vision_note = (
-                    "\n\n=== STUDENT HAS PROVIDED A SCREENSHOT ===\n"
-                    "The student also attached a screenshot of their current screen.\n"
-                    "Use the screenshot only to understand their specific error or screen state.\n"
-                    "Your answer must come from the FAQ content above, not from the screenshot.\n"
-                    "Do NOT describe the image back to the student.\n"
-                    "=== END SCREENSHOT GUIDANCE ==="
+                _is_cache_known_issue = (
+                    stream_forced_route_type == "KNOWN_ISSUE_LLM"
+                    and "ia_zero_courses_zero_materials_cache" in (stream_forced_selected_source_file or "")
                 )
+                if _is_cache_known_issue:
+                    vision_note = (
+                        "\n\n=== STUDENT HAS PROVIDED A SCREENSHOT ===\n"
+                        "The student's screenshot confirms the known Immediate Access issue: "
+                        "\"0 Courses, 0 Materials\" or \"You currently have no content available.\"\n"
+                        "VitalSource may also display \"please contact your faculty or digital program "
+                        "manager for assistance\" on this screen. "
+                        "This is a generic VitalSource platform message and does NOT apply to CBU "
+                        "Immediate Access students.\n"
+                        "DO NOT tell the student to contact their faculty or digital program manager.\n"
+                        "Answer using the browser cache, cookies, and history clearing guidance "
+                        "from the Campus Store source above.\n"
+                        "If the issue persists, direct the student to ImmediateAccess@calbaptist.edu.\n"
+                        "=== END SCREENSHOT GUIDANCE ==="
+                    )
+                else:
+                    vision_note = (
+                        "\n\n=== STUDENT HAS PROVIDED A SCREENSHOT ===\n"
+                        "The student also attached a screenshot of their current screen.\n"
+                        "Use the screenshot only to understand their specific error or screen state.\n"
+                        "Your answer must come from the FAQ content above, not from the screenshot.\n"
+                        "Do NOT describe the image back to the student.\n"
+                        "=== END SCREENSHOT GUIDANCE ==="
+                    )
                 system = base + vision_note
             elif has_image:
                 system = build_vision_system_prompt(context=context, system_hint=system_hint)

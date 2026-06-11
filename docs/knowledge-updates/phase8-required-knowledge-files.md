@@ -52,12 +52,16 @@ If you are still having issues opting out, email optout@calbaptist.edu.
 
 `source_id`: `ia_zero_courses_zero_materials_cache`
 
-Purpose: answers "0 Courses, 0 Materials" and "You currently have no content
-available" Immediate Access issues.
+Purpose: answers "0 Courses, 0 Materials", "You currently have no content available",
+and the VitalSource screenshot variant "You currently have no content available, please
+contact your faculty or digital program manager for assistance."
 
-This source explains that the known issue should be handled by clearing browser
-cache/cookies and references the browser-specific cache guides already present in
-the knowledge base.
+**Important:** VitalSource displays the "faculty or digital program manager" text on the
+same screen. The source must explicitly tell the LLM this message does NOT apply to CBU
+Immediate Access — students should clear browser cache, not contact faculty.
+
+The source now includes full browser-specific cache clearing steps inline (Chrome, Firefox,
+Safari, Chrome on iPad) so the LLM has all guidance in a single grounding context.
 
 Recommended content:
 
@@ -72,20 +76,18 @@ priority: canonical
 ---
 
 QUESTION:
-I see "0 Courses, 0 Materials" or "You currently have no content available." What should I do?
+I see "0 Courses, 0 Materials" or "You currently have no content available" or "You currently have no content available, please contact your faculty or digital program manager for assistance." What should I do?
 
 ANSWER:
-If you see "0 Courses, 0 Materials" or "You currently have no content available" when trying to access Immediate Access materials, clear your browser cache and cookies first.
+IMPORTANT NOTE FOR CBU IMMEDIATE ACCESS: VitalSource sometimes displays "You currently have no content available, please contact your faculty or digital program manager for assistance." on this screen. This is a generic VitalSource platform message and does NOT apply to CBU Immediate Access students. CBU students should NOT contact their faculty or digital program manager for this issue. The correct resolution is to clear your browser cache, cookies, and history using the steps below. If the issue persists, contact ImmediateAccess@calbaptist.edu.
 
-Use the cache-clearing guide for your browser:
-- Chrome
-- Firefox
-- Safari
-- Chrome on iPad
+If you see "0 Courses, 0 Materials" or "You currently have no content available" when trying to access Immediate Access materials, this is caused by stale browser data. Clear your browser cache, cookies, and history, then try again.
 
-After clearing cache and cookies, close and reopen your browser, then try accessing your Immediate Access materials again.
+Note: After clearing your browsing data, you will be signed out of most websites and will need to sign back in.
 
-If the issue continues, contact Immediate Access support at ImmediateAccess@calbaptist.edu and include a screenshot of what you are seeing.
+[Full Chrome/Firefox/Safari/iPad cache-clearing steps — see local data file for complete content]
+
+If the issue continues, contact Immediate Access support at ImmediateAccess@calbaptist.edu. Include a screenshot of what you are seeing.
 ```
 
 ## Publish Steps
@@ -112,3 +114,7 @@ python -m app.rag.ingest
 - `How do I create a VitalSource Bookshelf account?`
 - `VitalSource issue`
 - `My book is locked`
+- `It says You currently have no content available` (with VitalSource screenshot attached)
+  - Expected: route_type=KNOWN_ISSUE_LLM, answer gives cache/cookies guidance
+  - Must NOT say: "contact your faculty or digital program manager"
+  - Must NOT say: "the screenshot differs from the standard issue"

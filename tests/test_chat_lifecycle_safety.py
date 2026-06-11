@@ -2095,3 +2095,106 @@ class TestVitalSourceZeroCoursesRouting:
         assert done.get("llm_used") is True
         assert done.get("route_type") == "KNOWN_ISSUE_LLM"
         assert done.get("selected_source_file") == "immediate_access/ia_zero_courses_zero_materials_cache.txt"
+
+    # ── Image/vision path tests ───────────────────────────────────────────────
+
+    _TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    _VITALSOURCE_FACULTY_ERROR = (
+        "You currently have no content available, "
+        "please contact your faculty or digital program manager for assistance."
+    )
+
+    async def test_image_vitalsource_faculty_message_routes_to_known_issue_cache(self):
+        """
+        Non-streaming: VitalSource screenshot showing 'no content available,
+        contact faculty/digital program manager' must route to KNOWN_ISSUE_LLM
+        with the cache source, and the system_hint must contain the explicit guard
+        that prevents the LLM from relaying the on-screen faculty/program manager text.
+        """
+        session_id = f"test-vision-faculty-{uuid.uuid4()}"
+        fake_image_context = {
+            "detected_platform": "VITALSOURCE",
+            "visible_error": self._VITALSOURCE_FACULTY_ERROR,
+        }
+        captured_hints: list[str] = []
+
+        async def capturing_llm(*args, **kwargs):
+            captured_hints.append(kwargs.get("system_hint", ""))
+            context = kwargs.get("context") or (args[1] if len(args) > 1 else "")
+            if "no content available" in context.lower() or "0 courses" in context.lower():
+                return (
+                    "Clear your browser cache and cookies, close and reopen your browser, "
+                    "then try accessing your Immediate Access materials again.",
+                    0.0,
+                )
+            return ("Stubbed.", 0.0)
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.llm.llama_client.analyze_image_for_retrieval", new=AsyncMock(return_value=fake_image_context)),
+            patch("app.llm.llama_client.build_augmented_query", side_effect=lambda m, ic: m),
+            patch("app.main.run_intake_planner", new=AsyncMock(side_effect=AssertionError("planner must not be called"))),
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(side_effect=capturing_llm)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(
+                ChatRequest(
+                    message="It says You currently have no content available",
+                    session_id=session_id,
+                    image_base64=self._TINY_PNG,
+                )
+            )
+
+        assert r.route_type == "KNOWN_ISSUE_LLM", f"Got route_type={r.route_type!r}"
+        assert r.selected_source_file == "immediate_access/ia_zero_courses_zero_materials_cache.txt"
+        assert r.llm_used is True
+        assert "cache" in r.reply.lower() or "cookies" in r.reply.lower()
+        # The system_hint must carry the cache vision guard that suppresses
+        # "faculty/digital program manager" advice from the on-screen text.
+        assert captured_hints, "LLM was never called"
+        combined_hint = " ".join(captured_hints)
+        assert "generic vitalsource platform message" in combined_hint.lower(), (
+            "Cache vision guard ('generic VitalSource platform message') must be injected into "
+            f"system_hint when route=KNOWN_ISSUE_LLM + image. Got: {combined_hint[:400]!r}"
+        )
+
+    async def test_streaming_image_vitalsource_faculty_message_routes_to_known_issue_cache(self):
+        """
+        Streaming: same VitalSource screenshot scenario must route to KNOWN_ISSUE_LLM
+        and the system prompt built for the LLM must contain the cache-specific
+        vision guard (not the generic vision note).
+        """
+        session_id = f"test-vision-stream-faculty-{uuid.uuid4()}"
+        fake_image_context = {
+            "detected_platform": "VITALSOURCE",
+            "visible_error": self._VITALSOURCE_FACULTY_ERROR,
+        }
+        captured_systems: list[str] = []
+
+        async def capturing_stream_chat(*args, **kwargs):
+            captured_systems.append(kwargs.get("system") or (args[1] if len(args) > 1 else ""))
+            yield {"type": "response", "token": "Clear your browser cache and cookies, then reopen the browser."}
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.llm.llama_client.analyze_image_for_retrieval", new=AsyncMock(return_value=fake_image_context)),
+            patch("app.llm.llama_client.build_augmented_query", side_effect=lambda m, ic: m),
+            patch("app.main.run_intake_planner", new=AsyncMock(side_effect=AssertionError("planner must not be called"))),
+            patch("app.main.stream_llm_chat_response", new=capturing_stream_chat),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            done = await _post_stream({
+                "message": "It says You currently have no content available",
+                "session_id": session_id,
+                "image_base64": self._TINY_PNG,
+            })
+
+        assert done.get("route_type") == "KNOWN_ISSUE_LLM", f"Got route_type={done.get('route_type')!r}"
+        assert done.get("selected_source_file") == "immediate_access/ia_zero_courses_zero_materials_cache.txt"
+        assert done.get("llm_used") is True
+        assert captured_systems, "stream_llm_chat_response was never called"
+        combined_system = " ".join(captured_systems)
+        assert "generic vitalsource platform message" in combined_system.lower(), (
+            "Cache-specific vision note must be in the streaming system prompt when "
+            f"route=KNOWN_ISSUE_LLM + image. Got: {combined_system[:400]!r}"
+        )
