@@ -2512,25 +2512,52 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
         # -- Safety gate -------------------------------------------------------
         # Runs before Quick Help, retrieval, and LLM generation.
-        # When image context is available, evaluate the augmented query so
-        # screenshot-visible issue signatures (e.g. "no content available")
-        # can satisfy Campus Store scope checks. Hard safety (harm detection)
-        # still runs -- this only supplies richer scope context.
-        #
-        # Skip the fuzzy LLM classifier only for short, clearly safe follow-up
-        # replies within an active clarification session (e.g. "I don't know",
-        # "Cengage", "CS101"). Longer replies or replies containing suspicious
-        # terms are always classified. The deterministic rules always run.
+        # When image context is available, use the augmented query so screenshot
+        # visible_error can satisfy Campus Store scope checks.
+        # When an active intake profile exists, build an effective eval message
+        # from the original problem + collected slots + current reply so short
+        # issue-type answers like "I can't access" or "login issue" are not
+        # classified as out-of-scope without their intake context.
+        # Hard safety patterns (HARMFUL, ABUSE) in deterministic_rules always
+        # run because the raw reply is the last segment of every effective message.
         _safety_eval_message = retrieval_query if (image_context and retrieval_query != message) else message
+        _active_intake_profile = session.get("intake_profile")
+        _active_intake = _active_intake_profile is not None
+        if _active_intake and _safety_eval_message == message:
+            # Build: "original_problem. Platform: X. Material: Y. current_reply"
+            _s_intake = IntakeProfile.from_dict(_active_intake_profile)
+            _s_ctx: list[str] = []
+            if _s_intake.original_message:
+                _s_ctx.append(_s_intake.original_message)
+            if _s_intake.platform:
+                _s_ctx.append(
+                    f"Platform: {PLATFORM_DISPLAY_NAMES.get(_s_intake.platform, _s_intake.platform)}"
+                )
+            if _s_intake.material_type:
+                _s_ctx.append(f"Material: {_s_intake.material_type}")
+            if _s_intake.issue_type:
+                _s_ctx.append(f"Issue: {_s_intake.issue_type}")
+            _s_ctx.append(message)
+            if len(_s_ctx) > 1:
+                _safety_eval_message = ". ".join(_s_ctx)
+                print(
+                    f"[INTAKE][SAFETY] session={session_id!r} active_intake=True "
+                    f"raw={message!r} effective={_safety_eval_message!r}"
+                )
+
         _session_in_clarification = (
             session.get("awaiting_platform_type", False)
             or session.get("awaiting_publisher_list_response", False)
             or session.get("awaiting_class_access_clarification", False)
             or session.get("awaiting_vitalsource_screen_confirm", False)
-            or session.get("intake_profile") is not None
+            or _active_intake
         )
         _skip_classifier = (
             _session_in_clarification and _is_low_risk_clarification_reply(message)
+        )
+        print(
+            f"[INTAKE][SAFETY] session={session_id!r} active_intake={_active_intake} "
+            f"skip_classifier={_skip_classifier} eval_msg={_safety_eval_message!r}"
         )
         safety_decision = await run_safety_gate(
             _safety_eval_message,
@@ -2607,7 +2634,17 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         _raw_profile = session.get("intake_profile")
         if forced_retrieval is None and _raw_profile is not None:
             profile = IntakeProfile.from_dict(_raw_profile)
+            print(
+                f"[INTAKE][MID-FLOW] session={session_id!r} raw={message!r} "
+                f"profile_before=platform={profile.platform} issue={profile.issue_type} "
+                f"material={profile.material_type} turns={profile.turns_spent}"
+            )
             profile = update_profile(profile, message)
+            print(
+                f"[INTAKE][MID-FLOW] profile_after=platform={profile.platform} "
+                f"issue={profile.issue_type} material={profile.material_type} "
+                f"complete={intake_is_complete(profile)}"
+            )
             if intake_is_complete(profile):
                 print(
                     f"[INTAKE] Complete: platform={profile.platform} "
@@ -4779,15 +4816,41 @@ async def chat_stream(payload: ChatRequest):
 
             # -- Safety gate (same order as /chat: runs before everything) --------
             _safety_eval_message = retrieval_query if (image_context and retrieval_query != message) else message
+            _active_intake_profile = session.get("intake_profile")
+            _active_intake = _active_intake_profile is not None
+            if _active_intake and _safety_eval_message == message:
+                _s_intake = IntakeProfile.from_dict(_active_intake_profile)
+                _s_ctx: list[str] = []
+                if _s_intake.original_message:
+                    _s_ctx.append(_s_intake.original_message)
+                if _s_intake.platform:
+                    _s_ctx.append(
+                        f"Platform: {PLATFORM_DISPLAY_NAMES.get(_s_intake.platform, _s_intake.platform)}"
+                    )
+                if _s_intake.material_type:
+                    _s_ctx.append(f"Material: {_s_intake.material_type}")
+                if _s_intake.issue_type:
+                    _s_ctx.append(f"Issue: {_s_intake.issue_type}")
+                _s_ctx.append(message)
+                if len(_s_ctx) > 1:
+                    _safety_eval_message = ". ".join(_s_ctx)
+                    print(
+                        f"[INTAKE][SAFETY] session={session_id!r} active_intake=True "
+                        f"raw={message!r} effective={_safety_eval_message!r}"
+                    )
             _session_in_clarification = (
                 session.get("awaiting_platform_type", False)
                 or session.get("awaiting_publisher_list_response", False)
                 or session.get("awaiting_class_access_clarification", False)
                 or session.get("awaiting_vitalsource_screen_confirm", False)
-                or session.get("intake_profile") is not None
+                or _active_intake
             )
             _skip_classifier = (
                 _session_in_clarification and _is_low_risk_clarification_reply(message)
+            )
+            print(
+                f"[INTAKE][SAFETY] session={session_id!r} active_intake={_active_intake} "
+                f"skip_classifier={_skip_classifier} eval_msg={_safety_eval_message!r}"
             )
             safety_decision = await run_safety_gate(
                 _safety_eval_message,
@@ -4888,7 +4951,17 @@ async def chat_stream(payload: ChatRequest):
             _raw_profile = session.get("intake_profile")
             if stream_forced_retrieval is None and _raw_profile is not None:
                 profile = IntakeProfile.from_dict(_raw_profile)
+                print(
+                    f"[INTAKE][MID-FLOW] session={session_id!r} raw={message!r} "
+                    f"profile_before=platform={profile.platform} issue={profile.issue_type} "
+                    f"material={profile.material_type} turns={profile.turns_spent}"
+                )
                 profile = update_profile(profile, message)
+                print(
+                    f"[INTAKE][MID-FLOW] profile_after=platform={profile.platform} "
+                    f"issue={profile.issue_type} material={profile.material_type} "
+                    f"complete={intake_is_complete(profile)}"
+                )
                 if intake_is_complete(profile):
                     session["intake_profile"] = None
                     print(
