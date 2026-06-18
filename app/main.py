@@ -2451,6 +2451,21 @@ def _is_low_risk_clarification_reply(message: str) -> bool:
     return bool(_LOW_RISK_CLARIFICATION_RE.fullmatch(msg)) or bool(_DONT_KNOW_SAFE_RE.fullmatch(msg))
 
 
+# Access-intent verbs used to resolve issue_type='access' when a platform is
+# already named but no explicit access keyword was extracted, e.g.
+# "Where do I find McGraw Hill Connect?" or "How do I use Cengage?".
+_ACCESS_INTENT_VERBS = (
+    "access", "open", "find", "locate", "view", "where", "get to", "get into",
+    "log in", "login", "use my", "use the", "how do i use", "how to use",
+)
+
+
+def _message_has_access_intent(message: str) -> bool:
+    """True when the message expresses intent to reach/open course materials."""
+    m = (message or "").lower()
+    return any(verb in m for verb in _ACCESS_INTENT_VERBS)
+
+
 async def process_chat_request(payload: ChatRequest) -> ChatResponse:
     """
     Main chat endpoint with session management and performance tracking.
@@ -2596,6 +2611,40 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             )
         # ---------------------------------------------------------------------
 
+        # -- Personal-info guard ----------------------------------------------
+        # Runs immediately after hard safety, before slot update, intake
+        # completion, planner, retrieval, and LLM. If the raw message contains a
+        # student ID or email, escalate to ImmediateAccess and stop — no
+        # retrieval, no LLM, no PDF recommendations. Applies to both fresh
+        # messages and active-intake replies.
+        _active_intake_now = (
+            session.get("intake_profile") is not None
+            or session.get("awaiting_platform_type", False)
+            or session.get("awaiting_publisher_list_response", False)
+            or session.get("awaiting_class_access_clarification", False)
+            or session.get("awaiting_vitalsource_screen_confirm", False)
+        )
+        if is_personal_info_reply(message, active_intake=_active_intake_now):
+            print("[INTAKE] Personal info (ID/email) detected -> escalating before routing")
+            session["intake_profile"] = None
+            session["awaiting_platform_type"] = False
+            session["history"].append({"role": "user", "content": message})
+            session["history"].append({"role": "assistant", "content": INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE})
+            session["last_activity"] = datetime.now()
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE,
+                source="INTAKE:ESCALATION",
+                article_link=None,
+                confidence=1.0,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[],
+                debug_mode=debug_mode,
+            )
+        # ---------------------------------------------------------------------
+
         quick_help_match = build_quick_help_match(message)
         if quick_help_match:
             print(
@@ -2704,24 +2753,6 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     _completed_intake_platform = profile.platform
                     _completed_intake_issue_type = profile.issue_type
                     _completed_intake_material_type = profile.material_type
-            elif is_personal_info_reply(message):
-                print("[INTAKE] Student provided personal info (ID/email) -> escalating")
-                session["intake_profile"] = None
-                session["history"].append({"role": "user", "content": message})
-                session["history"].append({"role": "assistant", "content": INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE})
-                session["last_activity"] = datetime.now()
-                total_time_ms = (time.time() - request_start) * 1000
-                return ChatResponse(
-                    reply=INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE,
-                    source="INTAKE:ESCALATION",
-                    article_link=None,
-                    confidence=1.0,
-                    retrieval_time_ms=0,
-                    llm_time_ms=0,
-                    total_time_ms=round(total_time_ms, 2),
-                    recommended_pdfs=[],
-                    debug_mode=debug_mode,
-                )
             elif is_unknown_answer(message) and profile.last_requested_slot:
                 print(
                     f"[INTAKE] Unknown answer for slot={profile.last_requested_slot!r} "
@@ -2848,51 +2879,75 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 if not _planner_profile.platform and _session_known_slots.get("platform"):
                     _planner_profile.platform = _session_known_slots["platform"]
                 # Map location/finding planner intent to issue_type='access'.
-                # "book_location" and similar intents mean the student wants to find
-                # or access their material — issue_type is inherently 'access'.
                 _LOCATION_INTENTS = {"book_location", "finding_materials", "where_to_access",
                                      "material_location", "access_material", "book_access"}
                 if _planner_profile.issue_type is None and planner_decision.intent in _LOCATION_INTENTS:
                     _planner_profile.issue_type = "access"
-                # If the planner asks for a slot already present in the profile
-                # (e.g. material_type was already extracted from the original message),
-                # redirect to the next genuinely missing slot.
-                # ask_course_code is always redirected — Lance must never ask students
+
+                # ask_course_code is always redirected — Lance never asks students
                 # for their course code, section, or enrollment details.
                 _next_key = planner_decision.next_question_key or "ask_platform_for_book_access"
                 if _next_key == "ask_course_code":
                     _next_key = "ask_issue_for_platform" if _planner_profile.platform else "ask_platform_for_book_access"
                     print(f"[PLANNER] ask_course_code suppressed -> {_next_key}")
                 _requested_slot = QUESTION_KEY_TO_SLOT.get(_next_key, "platform")
-                if _requested_slot == "material_type" and _planner_profile.material_type is not None:
-                    if _planner_profile.platform is None:
-                        _next_key = "ask_platform_for_book_access"
-                        _requested_slot = "platform"
-                    elif _planner_profile.issue_type is None:
+
+                # Bug 1: the planner wants to ask for platform, but platform is
+                # already known (from the message or session). Don't re-ask. Resolve
+                # the issue (extracted or a clear access intent) and complete intake;
+                # if the issue is still unknown, ask for the ISSUE instead of platform.
+                _complete_via_planner = False
+                if _requested_slot == "platform" and _planner_profile.platform is not None:
+                    if _planner_profile.issue_type is None and _message_has_access_intent(message):
+                        _planner_profile.issue_type = "access"
+                    if _planner_profile.issue_type is not None:
+                        _complete_via_planner = True
+                    else:
                         _next_key = "ask_issue_for_platform"
                         _requested_slot = "issue_type"
-                elif _requested_slot == "issue_type" and _planner_profile.issue_type is not None:
-                    if _planner_profile.platform is None:
-                        _next_key = "ask_platform_for_book_access"
-                        _requested_slot = "platform"
-                question = QUESTION_TEMPLATES.get(_next_key, FALLBACK_QUESTION)
-                _planner_profile.last_requested_slot = _requested_slot
-                session["intake_profile"] = _planner_profile.to_dict()
-                session["history"].append({"role": "user", "content": message})
-                session["history"].append({"role": "assistant", "content": question})
-                session["last_activity"] = datetime.now()
-                total_time_ms = (time.time() - request_start) * 1000
-                return ChatResponse(
-                    reply=question,
-                    source="INTAKE:LLM_PLANNER",
-                    article_link=None,
-                    confidence=0.0,
-                    retrieval_time_ms=0,
-                    llm_time_ms=0,
-                    total_time_ms=round(total_time_ms, 2),
-                    recommended_pdfs=[],
-                    debug_mode=debug_mode,
-                )
+
+                if _complete_via_planner:
+                    session["intake_profile"] = None
+                    session["stored_platform"] = _planner_profile.platform
+                    session["stored_intent"] = "IA_ACCESS_ISSUE"
+                    _enriched_query = _planner_profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
+                    _intake_completed = True
+                    _completed_intake_platform = _planner_profile.platform
+                    _completed_intake_issue_type = _planner_profile.issue_type
+                    _completed_intake_material_type = _planner_profile.material_type
+                    print(
+                        f"[PLANNER] platform={_planner_profile.platform} present + "
+                        f"issue={_planner_profile.issue_type} -> completing intake, skip ask_platform"
+                    )
+                    # fall through to RAG (do not return)
+                else:
+                    # Redirect away from slots already filled.
+                    if _requested_slot == "material_type" and _planner_profile.material_type is not None:
+                        if _planner_profile.platform is None:
+                            _next_key, _requested_slot = "ask_platform_for_book_access", "platform"
+                        elif _planner_profile.issue_type is None:
+                            _next_key, _requested_slot = "ask_issue_for_platform", "issue_type"
+                    elif _requested_slot == "issue_type" and _planner_profile.issue_type is not None:
+                        if _planner_profile.platform is None:
+                            _next_key, _requested_slot = "ask_platform_for_book_access", "platform"
+                    question = QUESTION_TEMPLATES.get(_next_key, FALLBACK_QUESTION)
+                    _planner_profile.last_requested_slot = _requested_slot
+                    session["intake_profile"] = _planner_profile.to_dict()
+                    session["history"].append({"role": "user", "content": message})
+                    session["history"].append({"role": "assistant", "content": question})
+                    session["last_activity"] = datetime.now()
+                    total_time_ms = (time.time() - request_start) * 1000
+                    return ChatResponse(
+                        reply=question,
+                        source="INTAKE:LLM_PLANNER",
+                        article_link=None,
+                        confidence=0.0,
+                        retrieval_time_ms=0,
+                        llm_time_ms=0,
+                        total_time_ms=round(total_time_ms, 2),
+                        recommended_pdfs=[],
+                        debug_mode=debug_mode,
+                    )
             if planner_decision.enriched_query:
                 retrieval_query = planner_decision.enriched_query
         # ---------------------------------------------------------------------
@@ -4905,6 +4960,27 @@ async def chat_stream(payload: ChatRequest):
                 )
                 return
 
+            # -- Personal-info guard (same order as /chat) --------------------
+            # ID/email -> escalate before intake, planner, retrieval, or LLM.
+            _active_intake_now = (
+                session.get("intake_profile") is not None
+                or session.get("awaiting_platform_type", False)
+                or session.get("awaiting_publisher_list_response", False)
+                or session.get("awaiting_class_access_clarification", False)
+                or session.get("awaiting_vitalsource_screen_confirm", False)
+            )
+            if is_personal_info_reply(message, active_intake=_active_intake_now):
+                print("[STREAM INTAKE] Personal info (ID/email) detected -> escalating before routing")
+                session["intake_profile"] = None
+                session["awaiting_platform_type"] = False
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE})
+                session["last_activity"] = datetime.now()
+                async for token in _stream_words(INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE):
+                    yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE:ESCALATION', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                return
+
             platform = detect_platform_from_text(message)
             intent = detect_intent(message)
             stream_forced_retrieval = None
@@ -5032,16 +5108,6 @@ async def chat_stream(payload: ChatRequest):
                         _stream_completed_issue_type = profile.issue_type
                         _stream_completed_material_type = profile.material_type
                         # fall through to retrieval
-                elif is_personal_info_reply(message):
-                    print("[STREAM INTAKE] Student provided personal info (ID/email) -> escalating")
-                    session["intake_profile"] = None
-                    session["history"].append({"role": "user", "content": message})
-                    session["history"].append({"role": "assistant", "content": INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE})
-                    session["last_activity"] = datetime.now()
-                    async for token in _stream_words(INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE):
-                        yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
-                    yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE:ESCALATION', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
-                    return
                 elif is_unknown_answer(message) and profile.last_requested_slot:
                     print(
                         f"[STREAM INTAKE] Unknown answer for slot={profile.last_requested_slot!r} "
@@ -5136,36 +5202,62 @@ async def chat_stream(payload: ChatRequest):
                                              "material_location", "access_material", "book_access"}
                         if _planner_profile.issue_type is None and planner_decision.intent in _LOCATION_INTENTS:
                             _planner_profile.issue_type = "access"
-                        # If the planner asks for a slot already present in the profile,
-                        # redirect to the next genuinely missing slot.
-                        # ask_course_code is always suppressed — Lance never asks students
-                        # for their course code or enrollment details.
+
+                        # ask_course_code is always suppressed.
                         _next_key = planner_decision.next_question_key or "ask_platform_for_book_access"
                         if _next_key == "ask_course_code":
                             _next_key = "ask_issue_for_platform" if _planner_profile.platform else "ask_platform_for_book_access"
                             print(f"[STREAM PLANNER] ask_course_code suppressed -> {_next_key}")
                         _requested_slot = QUESTION_KEY_TO_SLOT.get(_next_key, "platform")
-                        if _requested_slot == "material_type" and _planner_profile.material_type is not None:
-                            if _planner_profile.platform is None:
-                                _next_key = "ask_platform_for_book_access"
-                                _requested_slot = "platform"
-                            elif _planner_profile.issue_type is None:
+
+                        # Bug 1: planner wants platform but platform is already known
+                        # -> complete intake (resolve issue) or ask the ISSUE instead.
+                        _complete_via_planner = False
+                        if _requested_slot == "platform" and _planner_profile.platform is not None:
+                            if _planner_profile.issue_type is None and _message_has_access_intent(message):
+                                _planner_profile.issue_type = "access"
+                            if _planner_profile.issue_type is not None:
+                                _complete_via_planner = True
+                            else:
                                 _next_key = "ask_issue_for_platform"
                                 _requested_slot = "issue_type"
-                        elif _requested_slot == "issue_type" and _planner_profile.issue_type is not None:
-                            if _planner_profile.platform is None:
-                                _next_key = "ask_platform_for_book_access"
-                                _requested_slot = "platform"
-                        question = QUESTION_TEMPLATES.get(_next_key, FALLBACK_QUESTION)
-                        _planner_profile.last_requested_slot = _requested_slot
-                        session["intake_profile"] = _planner_profile.to_dict()
-                        session["history"].append({"role": "user", "content": message})
-                        session["history"].append({"role": "assistant", "content": question})
-                        session["last_activity"] = datetime.now()
-                        async for token in _stream_words(question):
-                            yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
-                        yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE:LLM_PLANNER', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
-                        return
+
+                        if _complete_via_planner:
+                            session["intake_profile"] = None
+                            session["stored_platform"] = _planner_profile.platform
+                            session["stored_intent"] = "IA_ACCESS_ISSUE"
+                            platform = _planner_profile.platform
+                            intent = "IA_ACCESS_ISSUE"
+                            retrieval_query = _planner_profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
+                            _stream_intake_completed = True
+                            _stream_enriched_query = retrieval_query
+                            _stream_completed_platform = _planner_profile.platform
+                            _stream_completed_issue_type = _planner_profile.issue_type
+                            _stream_completed_material_type = _planner_profile.material_type
+                            print(
+                                f"[STREAM PLANNER] platform={_planner_profile.platform} present + "
+                                f"issue={_planner_profile.issue_type} -> completing intake, skip ask_platform"
+                            )
+                            # fall through to retrieval (no return)
+                        else:
+                            if _requested_slot == "material_type" and _planner_profile.material_type is not None:
+                                if _planner_profile.platform is None:
+                                    _next_key, _requested_slot = "ask_platform_for_book_access", "platform"
+                                elif _planner_profile.issue_type is None:
+                                    _next_key, _requested_slot = "ask_issue_for_platform", "issue_type"
+                            elif _requested_slot == "issue_type" and _planner_profile.issue_type is not None:
+                                if _planner_profile.platform is None:
+                                    _next_key, _requested_slot = "ask_platform_for_book_access", "platform"
+                            question = QUESTION_TEMPLATES.get(_next_key, FALLBACK_QUESTION)
+                            _planner_profile.last_requested_slot = _requested_slot
+                            session["intake_profile"] = _planner_profile.to_dict()
+                            session["history"].append({"role": "user", "content": message})
+                            session["history"].append({"role": "assistant", "content": question})
+                            session["last_activity"] = datetime.now()
+                            async for token in _stream_words(question):
+                                yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
+                            yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE:LLM_PLANNER', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                            return
                     if planner_decision.enriched_query:
                         retrieval_query = planner_decision.enriched_query
 

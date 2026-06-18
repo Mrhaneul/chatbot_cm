@@ -20,11 +20,33 @@ from app.intake.slot_extractor import (
 
 _MAX_INTAKE_TURNS = 3
 
-# Detects student ID numbers (7-digit CBU IDs) and email addresses.
-# When a student provides this kind of personal info during intake instead of
-# answering the platform/issue question, escalate to ImmediateAccess immediately.
-_STUDENT_ID_RE = re.compile(r"\b\d{7}\b")
+# -- Personal-info detection (student ID / email) ------------------------------
+# When a student provides personal info instead of answering the platform/issue
+# question, Lance must not collect it — escalate to ImmediateAccess instead.
+
+# Any email address. Official Campus Store support addresses are excluded so a
+# student referencing them ("I already emailed ImmediateAccess@...") is not
+# escalated for that reason alone.
 _EMAIL_RE = re.compile(r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b")
+_OFFICIAL_EMAILS = frozenset({
+    "immediateaccess@calbaptist.edu",
+    "optout@calbaptist.edu",
+})
+
+# Labeled student ID, 5-10 digits: "ID 774117", "ID: 774117", "ID# 774117",
+# "ID is 774117", "student ID 774117". The connector between "id" and the
+# digits is constrained so far-apart numbers do not false-match.
+_LABELED_ID_RE = re.compile(
+    r"\b(?:student\s+)?id\b\s*(?:number|num|no\.?|#)?\s*(?:is|=|:)?\s*(\d{5,10})\b",
+    re.IGNORECASE,
+)
+
+# Bare 6-8 digit number — treated as a student ID only during active intake
+# (stricter mode), to avoid false positives on prices, page counts, etc.
+_BARE_ID_RE = re.compile(r"\b\d{6,8}\b")
+
+# Course code (ENGL1301, BIOL2401) — never treated as a student ID.
+_COURSE_CODE_RE = re.compile(r"\b[A-Za-z]{2,6}\s*-?\s*\d{3,4}[A-Za-z]?\b")
 
 MAX_UNKNOWN_ATTEMPTS = 1  # kept for import compatibility; escalation now fires on the first unknown
 
@@ -40,10 +62,10 @@ INTAKE_ACCOUNT_ESCALATION_MESSAGE = (
     "or login issue. If possible, include a screenshot of what you are seeing."
 )
 
+# Neutral wording: do not state that the student shared personal information.
 INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE = (
-    "It looks like you've shared personal account information. "
-    "Please contact ImmediateAccess@calbaptist.edu directly for assistance. "
-    "If possible, include a screenshot of what you are seeing when you email them."
+    "Please contact ImmediateAccess@calbaptist.edu for more help with this issue. "
+    "If possible, include a screenshot of what you are seeing."
 )
 
 _UNKNOWN_ANSWER_PHRASES = (
@@ -87,13 +109,35 @@ def is_unknown_answer(message: str) -> bool:
     return any(phrase in msg_lower for phrase in _UNKNOWN_ANSWER_PHRASES)
 
 
-def is_personal_info_reply(message: str) -> bool:
+def _has_non_official_email(message: str) -> bool:
+    """True when the message contains an email address other than an official one."""
+    return any(addr.lower() not in _OFFICIAL_EMAILS for addr in _EMAIL_RE.findall(message))
+
+
+def is_personal_info_reply(message: str, *, active_intake: bool = False) -> bool:
     """
-    True when the student provides a student ID number (7-digit CBU ID) or an
-    email address instead of answering the platform/issue clarification question.
-    These should not be collected by Lance; escalate to ImmediateAccess instead.
+    True when the student provides personal info (a student ID or email address)
+    instead of answering the platform/issue clarification. Lance must not collect
+    this; escalate to ImmediateAccess instead.
+
+    - Non-official email addresses always count.
+    - Labeled student IDs ("my ID is 774117", "ID# 774117") with 5-10 digits
+      always count.
+    - A bare 6-8 digit number counts only when active_intake=True, to avoid
+      false positives on prices/quantities in fresh messages.
+    - Course codes (ENGL1301, BIOL2401) are never treated as student IDs.
     """
-    return bool(_STUDENT_ID_RE.search(message)) or bool(_EMAIL_RE.search(message))
+    if _has_non_official_email(message):
+        return True
+    if _LABELED_ID_RE.search(message):
+        return True
+    if active_intake:
+        # Strip course codes first so e.g. ENGL1301 cannot register as an ID,
+        # then look for a bare 6-8 digit run.
+        cleaned = _COURSE_CODE_RE.sub(" ", message)
+        if _BARE_ID_RE.search(cleaned):
+            return True
+    return False
 
 
 def is_vague_message(message: str) -> bool:

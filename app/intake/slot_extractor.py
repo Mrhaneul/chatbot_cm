@@ -24,6 +24,12 @@ _ACCESS_SIGNALS = [
     "won't load", "not loading", "access issue", "can't get in",
     "cannot get in", "won't let me in", "access denied",
     "don't have access", "do not have access", "can't have access",
+    # "How do I access/open/get into <platform>?" — explicit access intent.
+    # (Login/sign-in verbs are intentionally NOT here; they are account signals.)
+    "how do i access", "how can i access", "how to access", "how do you access",
+    "how do i open", "how can i open", "how to open",
+    "how do i get to", "how can i get to",
+    "how do i get into", "how can i get into",
     # Location / finding queries -- "where can I see/find/access my book?"
     # Patterns require an explicit material keyword to avoid false positives
     # on unrelated queries (e.g. "where can i see my schedule").

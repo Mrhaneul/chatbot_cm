@@ -3039,3 +3039,228 @@ class TestActiveIntakeSafetyContext:
         # no intake profile was corrupted.
         assert r.reply  # Has some response
         assert "INTAKE" not in r.source or r.source.startswith("INTAKE")  # Valid state
+
+
+# -- Bug 1/2/3: direct platform access + personal-info escalation --------------
+
+def _planner_asks_platform() -> IntakePlannerDecision:
+    """Simulates the planner trying to ask for platform (the Bug 1 trigger)."""
+    return IntakePlannerDecision(
+        action="ASK_CLARIFICATION",
+        intent="access_platform",
+        confidence=0.70,
+        known_slots={},
+        missing_slots=["platform"],
+        next_question_key="ask_platform_for_book_access",
+        enriched_query=None,
+    )
+
+
+@pytest.mark.asyncio
+class TestDirectPlatformAccessAndPersonalInfo:
+    """
+    Bug 1: a message naming a platform with access intent routes to that
+    platform's instructions without asking for platform again.
+    Bug 2/3: a student ID or email anywhere in the message escalates to
+    ImmediateAccess with a neutral message, before retrieval/LLM/PDFs.
+    """
+
+    @staticmethod
+    async def _fake_llm(*args, **kwargs):
+        context = kwargs.get("context") or (args[1] if len(args) > 1 else "")
+        cl = context.lower()
+        if "cengage" in cl or "mindtap" in cl:
+            return ("Here is how to access your Cengage MindTap textbook: log in and open your course.", 0.0)
+        if "pearson" in cl or "mylab" in cl:
+            return ("Here is how to access Pearson MyLab.", 0.0)
+        if "mcgraw" in cl or "connect" in cl:
+            return ("Here is how to access McGraw Hill Connect.", 0.0)
+        return ("Platform access steps.", 0.0)
+
+    @staticmethod
+    async def _fake_retrieve(query, collection="auto", platform=None, top_k=1):
+        q = (query or "").lower()
+        if platform == "CENGAGE" or "cengage" in q or "mindtap" in q:
+            sid, src = "INSTR_CENGAGE_001", "ia_cengage_mindtap_access.txt"
+        elif platform == "PEARSON" or "pearson" in q or "mylab" in q:
+            sid, src = "INSTR_PEARSON_001", "ia_pearson_mylab_mastering_access.txt"
+        elif platform == "MCGRAW_HILL" or "mcgraw" in q or "connect" in q:
+            sid, src = "INSTR_MCGRAW_001", "ia_mcgraw_hill_connect_access.txt"
+        else:
+            sid, src = "INSTR_GENERAL_001", "ia_etextbook_general_access.txt"
+        return {
+            "context": f"STEP 1: Open {sid}. STEP 2: Click your course.",
+            "source_id": sid,
+            "score": 0.95,
+            "article_link": None,
+            "metadata": {"source_file": src},
+        }
+
+    @pytest.mark.parametrize("message", [
+        "How do I access to Cengage?",
+        "How do I access Cengage MindTap?",
+    ])
+    async def test_direct_cengage_access_routes_without_platform_question(self, message):
+        session_id = f"test-direct-cengage-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=_planner_asks_platform())),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=self._fake_retrieve)),
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(side_effect=self._fake_llm)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(_session_req(session_id, message))
+
+        assert not r.source.startswith("INTAKE"), f"Must not enter intake. Got {r.source!r}"
+        assert "which platform" not in r.reply.lower(), f"Must not ask platform. Got: {r.reply!r}"
+        assert "cengage" in r.reply.lower() or "mindtap" in r.reply.lower()
+
+    @pytest.mark.parametrize("message", [
+        "How can I open Pearson MyLab?",
+        "Where do I find McGraw Hill Connect?",
+    ])
+    async def test_direct_platform_access_aliases(self, message):
+        """
+        Core Bug 1 guarantee for aliases: a named platform with access intent
+        must not re-ask for platform and must not enter intake. (The exact source
+        can be an instruction route or a matched FAQ depending on retrieval.)
+        """
+        session_id = f"test-direct-alias-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=_planner_asks_platform())),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=self._fake_retrieve)),
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(side_effect=self._fake_llm)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(_session_req(session_id, message))
+
+        assert not r.source.startswith("INTAKE"), f"Must not enter intake. Got {r.source!r}"
+        assert "which platform or publisher" not in r.reply.lower(), (
+            f"Must not re-ask for platform. Got: {r.reply!r}"
+        )
+
+    async def test_active_intake_id_escalates(self):
+        from app.intake.flow import INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE
+        session_id = f"test-intake-id-{uuid.uuid4()}"
+        retrieve = AsyncMock(side_effect=AssertionError("must not retrieve"))
+        llm = AsyncMock(side_effect=AssertionError("must not call LLM"))
+        pdf = AsyncMock(side_effect=AssertionError("must not recommend PDFs"))
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=_planner_asks_platform())),
+            patch("app.main.retrieve_async", new=retrieve),
+            patch("app.main.call_llm_with_semaphore", new=llm),
+            patch("app.main.get_recommendations_for_chat", new=pdf),
+        ):
+            r1 = await process_chat_request(_session_req(session_id, "How do I access to my book?"))
+            assert r1.source.startswith("INTAKE")  # asks platform
+            r2 = await process_chat_request(_session_req(session_id, "Cengage, here's my ID: 774117"))
+
+        assert r2.source == "INTAKE:ESCALATION", f"Got {r2.source!r}"
+        assert r2.reply == INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE
+        assert "ImmediateAccess@calbaptist.edu" in r2.reply
+        assert "personal information" not in r2.reply.lower()
+        assert "personal account information" not in r2.reply.lower()
+        assert r2.recommended_pdfs == []
+
+    async def test_active_intake_email_escalates(self):
+        from app.intake.flow import INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE
+        session_id = f"test-intake-email-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=_planner_asks_platform())),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=AssertionError("must not retrieve"))),
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(side_effect=AssertionError("must not call LLM"))),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            await process_chat_request(_session_req(session_id, "How do I access to my book?"))
+            r2 = await process_chat_request(
+                _session_req(session_id, "Cengage, here's my email: haneul.kim@calbaptist.edu")
+            )
+
+        assert r2.source == "INTAKE:ESCALATION", f"Got {r2.source!r}"
+        assert r2.reply == INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE
+        assert "personal information" not in r2.reply.lower()
+
+    async def test_fresh_message_with_id_escalates(self):
+        session_id = f"test-fresh-id-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(side_effect=AssertionError("must not plan"))),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=AssertionError("must not retrieve"))),
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(side_effect=AssertionError("must not call LLM"))),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(
+                _session_req(session_id, "How do I access to Cengage? Here's my ID: 774117")
+            )
+
+        assert r.source == "INTAKE:ESCALATION", f"Got {r.source!r}"
+        assert "which platform" not in r.reply.lower()
+        assert "cengage" not in r.reply.lower()
+        assert "personal information" not in r.reply.lower()
+
+    async def test_fresh_message_with_email_escalates(self):
+        session_id = f"test-fresh-email-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(side_effect=AssertionError("must not plan"))),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=AssertionError("must not retrieve"))),
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(side_effect=AssertionError("must not call LLM"))),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(
+                _session_req(session_id, "How do I access to Cengage? My email is haneul.kim@calbaptist.edu")
+            )
+
+        assert r.source == "INTAKE:ESCALATION", f"Got {r.source!r}"
+        assert "cengage" not in r.reply.lower()
+        assert "personal information" not in r.reply.lower()
+
+    async def test_streaming_fresh_message_with_id_escalates(self):
+        session_id = f"test-stream-fresh-id-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=AssertionError("must not retrieve"))),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            done = await _post_stream({
+                "message": "How do I access to Cengage? Here's my ID: 774117",
+                "session_id": session_id,
+            })
+
+        assert done.get("source") == "INTAKE:ESCALATION", f"Got {done.get('source')!r}"
+
+    @pytest.mark.parametrize("message", [
+        "Cengage",
+        "Cengage MindTap",
+        "I can't access",
+        "ENGL1301",
+        "BIOL2401",
+    ])
+    async def test_negatives_do_not_escalate_as_personal_info(self, message):
+        """These replies during active intake must not trigger personal-info escalation."""
+        from app.intake.flow import INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE
+        session_id = f"test-neg-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=_planner_asks_platform())),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=self._fake_retrieve)),
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(side_effect=self._fake_llm)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            await process_chat_request(_session_req(session_id, "How do I access to my book?"))
+            r2 = await process_chat_request(_session_req(session_id, message))
+
+        assert r2.reply != INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE, (
+            f"{message!r} must not trigger personal-info escalation"
+        )
+
+    async def test_escalation_message_has_no_personal_info_wording(self):
+        from app.intake.flow import INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE
+        text = INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE.lower()
+        assert "personal information" not in text
+        assert "personal account information" not in text
+        assert "you shared" not in text
+        assert "ImmediateAccess@calbaptist.edu" in INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE
