@@ -28,6 +28,11 @@ INTAKE_ESCALATION_MESSAGE = (
     "you email them."
 )
 
+INTAKE_ACCOUNT_ESCALATION_MESSAGE = (
+    "Please contact ImmediateAccess@calbaptist.edu for help with your account "
+    "or login issue. If possible, include a screenshot of what you are seeing."
+)
+
 _UNKNOWN_ANSWER_PHRASES = (
     "don't know",
     "dont know",

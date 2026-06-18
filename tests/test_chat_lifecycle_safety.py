@@ -2483,3 +2483,210 @@ class TestBookLocationMultiTurn:
         assert "if you can share which platform" not in final.reply.lower(), (
             f"Response must not ask for platform when platform is already known. Got: {final.reply!r}"
         )
+
+
+# -- Intake issue-type routing contract tests ---------------------------------
+
+def _platform_clarification_decision() -> IntakePlannerDecision:
+    """Simulates the planner asking for issue_type after platform is known."""
+    return IntakePlannerDecision(
+        action="ASK_CLARIFICATION",
+        intent="access_issue",
+        confidence=0.80,
+        known_slots={"platform": "VITALSOURCE"},
+        missing_slots=["issue_type"],
+        next_question_key="ask_issue_for_platform",
+        enriched_query=None,
+    )
+
+
+@pytest.mark.asyncio
+class TestIntakeIssueTypeRouting:
+    """
+    After platform is known via intake, the issue_type answer drives three routes:
+    - access/locked  -> platform-specific access instructions
+    - missing/no-content -> KNOWN_ISSUE_LLM cache guide
+    - account/login  -> INTAKE:ACCOUNT_ESCALATION (email, no instruction retrieval)
+    """
+
+    # ---- account / login issue ----
+
+    async def test_account_issue_escalates_to_email(self):
+        """
+        Non-streaming: VitalSource + 'login issue' must return INTAKE:ACCOUNT_ESCALATION
+        with the ImmediateAccess email, not account creation instructions.
+
+        'VitalSource issue' triggers deterministic intake (source=INTAKE), which stores
+        platform=VITALSOURCE and asks for issue_type. 'login issue' completes intake
+        with issue_type='account' and must escalate immediately.
+        """
+        session_id = f"test-acct-esc-{uuid.uuid4()}"
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r1 = await process_chat_request(_session_req(session_id, "VitalSource issue"))
+            # Deterministic intake fires for "VitalSource issue" (platform present, issue missing).
+            assert r1.source in ("INTAKE", "INTAKE:LLM_PLANNER"), f"Got {r1.source!r}"
+
+            r2 = await process_chat_request(_session_req(session_id, "login issue"))
+
+        assert r2.source == "INTAKE:ACCOUNT_ESCALATION", (
+            f"account/login issue must escalate. Got source={r2.source!r}"
+        )
+        assert "ImmediateAccess@calbaptist.edu" in r2.reply
+        assert "account" in r2.reply.lower() or "login" in r2.reply.lower()
+
+    async def test_account_issue_does_not_reach_llm_or_retrieval(self):
+        """Account escalation must return before retrieval and LLM generation."""
+        session_id = f"test-acct-no-llm-{uuid.uuid4()}"
+        retrieve_mock = AsyncMock(side_effect=AssertionError("retrieval must not be called"))
+        llm_mock = AsyncMock(side_effect=AssertionError("LLM must not be called"))
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.retrieve_async", new=retrieve_mock),
+            patch("app.main.call_llm_with_semaphore", new=llm_mock),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            await process_chat_request(_session_req(session_id, "VitalSource issue"))
+            r = await process_chat_request(_session_req(session_id, "account problem"))
+
+        assert r.source == "INTAKE:ACCOUNT_ESCALATION"
+        retrieve_mock.assert_not_called()
+        llm_mock.assert_not_called()
+
+    async def test_password_issue_also_escalates(self):
+        """'forgot my password' is an account/login signal -- must escalate."""
+        session_id = f"test-pwd-esc-{uuid.uuid4()}"
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=AssertionError("must not retrieve"))),
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(side_effect=AssertionError("must not call LLM"))),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            await process_chat_request(_session_req(session_id, "VitalSource issue"))
+            r = await process_chat_request(_session_req(session_id, "I forgot my password"))
+
+        assert r.source == "INTAKE:ACCOUNT_ESCALATION"
+        assert "ImmediateAccess@calbaptist.edu" in r.reply
+
+    # ---- missing / no-content issue ----
+
+    async def test_missing_issue_routes_to_cache_known_issue(self):
+        """
+        Non-streaming: VitalSource + 'missing content' must route to KNOWN_ISSUE_LLM
+        using the browser cache / no-content guide.
+        """
+        session_id = f"test-missing-cache-{uuid.uuid4()}"
+        llm_mock = AsyncMock(return_value=("Clear your browser cache and cookies, then try again.", 0.0))
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.call_llm_with_semaphore", new=llm_mock),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r1 = await process_chat_request(_session_req(session_id, "VitalSource issue"))
+            assert r1.source in ("INTAKE", "INTAKE:LLM_PLANNER"), f"Got {r1.source!r}"
+
+            r2 = await process_chat_request(_session_req(session_id, "missing content"))
+
+        assert r2.route_type == "KNOWN_ISSUE_LLM", (
+            f"missing/no-content issue must route to KNOWN_ISSUE_LLM. Got route_type={r2.route_type!r}"
+        )
+        assert r2.selected_source_file == "immediate_access/ia_zero_courses_zero_materials_cache.txt"
+        assert r2.llm_used is True
+        assert "cache" in r2.reply.lower() or "cookies" in r2.reply.lower()
+
+    async def test_cant_see_materials_routes_to_cache(self):
+        """'can't see my materials' is a missing-content signal -- routes to cache guide."""
+        session_id = f"test-cant-see-{uuid.uuid4()}"
+        llm_mock = AsyncMock(return_value=("Clear your browser cache and cookies.", 0.0))
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.call_llm_with_semaphore", new=llm_mock),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            await process_chat_request(_session_req(session_id, "VitalSource issue"))
+            r = await process_chat_request(_session_req(session_id, "I can't see my materials"))
+
+        assert r.route_type == "KNOWN_ISSUE_LLM"
+        assert r.selected_source_file == "immediate_access/ia_zero_courses_zero_materials_cache.txt"
+
+    # ---- access / locked issue (regression) ----
+
+    async def test_access_issue_still_routes_to_platform_instructions(self):
+        """
+        Regression: 'can't access' after platform known must NOT escalate --
+        it should route to platform-specific access instructions.
+        """
+        session_id = f"test-access-instr-{uuid.uuid4()}"
+        planner_mock = AsyncMock(return_value=_platform_clarification_decision())
+        llm_mock = AsyncMock(return_value=("Here are the VitalSource access steps.", 0.0))
+
+        fake_retrieval = {
+            "context": "STEP 1: Log in to VitalSource. STEP 2: Click your course.",
+            "source_id": "INSTR_VITALSOURCE_001",
+            "score": 0.95,
+            "article_link": None,
+            "metadata": {"source_file": "ia_vitalsource_bookshelf_account_creation.txt"},
+        }
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.retrieve_async", new=AsyncMock(return_value=fake_retrieval)),
+            patch("app.main.call_llm_with_semaphore", new=llm_mock),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            await process_chat_request(_session_req(session_id, "VitalSource issue"))
+            r = await process_chat_request(_session_req(session_id, "I can't access it"))
+
+        assert r.source != "INTAKE:ACCOUNT_ESCALATION", "access issue must not trigger account escalation"
+        assert r.route_type != "KNOWN_ISSUE_LLM", "access issue must not use the cache known-issue route"
+        assert not r.source.startswith("INTAKE:"), f"access issue must complete intake. Got {r.source!r}"
+
+    # ---- streaming account escalation ----
+
+    async def test_streaming_account_issue_escalates(self):
+        """Streaming: account/login issue after platform known must return INTAKE:ACCOUNT_ESCALATION."""
+        session_id = f"test-stream-acct-{uuid.uuid4()}"
+        planner_mock = AsyncMock(return_value=_platform_clarification_decision())
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=AssertionError("must not retrieve"))),
+            patch("app.main.stream_llm_chat_response", new=AsyncMock(side_effect=AssertionError("must not stream LLM"))),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            await _post_stream({"message": "VitalSource issue", "session_id": session_id})
+            done = await _post_stream({"message": "sign-in problem", "session_id": session_id})
+
+        assert done.get("source") == "INTAKE:ACCOUNT_ESCALATION", (
+            f"Streaming account issue must return INTAKE:ACCOUNT_ESCALATION. Got {done.get('source')!r}"
+        )
+
+    # ---- "I don't know" regression ----
+
+    async def test_unknown_answer_still_escalates_normally(self):
+        """
+        Regression: 'I don't know' during intake must still return INTAKE:ESCALATION
+        (not INTAKE:ACCOUNT_ESCALATION).
+        """
+        session_id = f"test-idk-esc-{uuid.uuid4()}"
+        planner_mock = AsyncMock(return_value=_platform_clarification_decision())
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            await process_chat_request(_session_req(session_id, "VitalSource issue"))
+            r = await process_chat_request(_session_req(session_id, "I don't know"))
+
+        assert r.source == "INTAKE:ESCALATION"
+        assert "ImmediateAccess@calbaptist.edu" in r.reply

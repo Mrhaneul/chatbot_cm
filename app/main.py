@@ -72,6 +72,7 @@ from app.intake.flow import (
     intake_fallback_message,
     is_unknown_answer,
     INTAKE_ESCALATION_MESSAGE,
+    INTAKE_ACCOUNT_ESCALATION_MESSAGE,
 )
 from app.intake.question_templates import QUESTION_KEY_TO_SLOT, QUESTION_TEMPLATES, FALLBACK_QUESTION
 from app.intake.llm_planner import run_intake_planner, should_run_planner, get_question_for_decision
@@ -2608,21 +2609,61 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             profile = IntakeProfile.from_dict(_raw_profile)
             profile = update_profile(profile, message)
             if intake_is_complete(profile):
-                # Slots filled -- enrich query and fall through to normal RAG.
                 print(
                     f"[INTAKE] Complete: platform={profile.platform} "
                     f"issue={profile.issue_type} after {profile.turns_spent} turn(s)"
                 )
                 session["intake_profile"] = None
-                # Seed session flags so existing RAG path picks up correctly.
-                session["stored_platform"] = profile.platform
-                session["stored_intent"] = "IA_ACCESS_ISSUE"
-                # Continue below with enriched retrieval query.
-                _enriched_query = profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
-                _intake_completed = True
-                _completed_intake_platform = profile.platform
-                _completed_intake_issue_type = profile.issue_type
-                _completed_intake_material_type = profile.material_type
+
+                # --- Issue-type-specific routing after intake completes ---
+
+                # Account / login: escalate directly to email. Do not route to
+                # account creation instructions — those are for explicit "how do I
+                # create an account" questions, not login/account trouble.
+                if profile.issue_type == "account":
+                    print("[INTAKE] account/login issue -- escalating to ImmediateAccess email")
+                    session["history"].append({"role": "user", "content": message})
+                    session["history"].append({"role": "assistant", "content": INTAKE_ACCOUNT_ESCALATION_MESSAGE})
+                    session["last_activity"] = datetime.now()
+                    total_time_ms = (time.time() - request_start) * 1000
+                    return ChatResponse(
+                        reply=INTAKE_ACCOUNT_ESCALATION_MESSAGE,
+                        source="INTAKE:ACCOUNT_ESCALATION",
+                        article_link=None,
+                        confidence=1.0,
+                        retrieval_time_ms=0,
+                        llm_time_ms=0,
+                        total_time_ms=round(total_time_ms, 2),
+                        recommended_pdfs=[],
+                        debug_mode=debug_mode,
+                    )
+
+                # Missing / no-content: route to the browser cache / no-content guide.
+                # This covers responses like "missing content", "can't see anything",
+                # "0 courses 0 materials", etc. The guide gives cache/cookies steps.
+                if profile.issue_type == "missing":
+                    print("[INTAKE] missing/no-content issue -- routing to cache known-issue guide")
+                    _cache_retrieval_start = time.time()
+                    forced_retrieval = await get_browser_cache_faq_retrieval(message)
+                    retrieval_time_ms = (time.time() - _cache_retrieval_start) * 1000
+                    forced_route_type = "KNOWN_ISSUE_LLM"
+                    forced_selected_source_file = (
+                        forced_retrieval.get("metadata", {}).get("source_file")
+                        if forced_retrieval else None
+                    )
+                    force_llm_generation = True
+                    intent = "GENERAL_FAQ"
+                    # Fall through to KNOWN_ISSUE_LLM rendering below.
+                    # (Do not set _intake_completed -- forced_retrieval drives the route.)
+                else:
+                    # Access / location issue: route to platform-specific instructions.
+                    session["stored_platform"] = profile.platform
+                    session["stored_intent"] = "IA_ACCESS_ISSUE"
+                    _enriched_query = profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
+                    _intake_completed = True
+                    _completed_intake_platform = profile.platform
+                    _completed_intake_issue_type = profile.issue_type
+                    _completed_intake_material_type = profile.material_type
             elif is_unknown_answer(message) and profile.last_requested_slot:
                 print(
                     f"[INTAKE] Unknown answer for slot={profile.last_requested_slot!r} "
@@ -4850,17 +4891,48 @@ async def chat_stream(payload: ChatRequest):
                 profile = update_profile(profile, message)
                 if intake_is_complete(profile):
                     session["intake_profile"] = None
-                    session["stored_platform"] = profile.platform
-                    session["stored_intent"] = "IA_ACCESS_ISSUE"
-                    platform = profile.platform
-                    intent = "IA_ACCESS_ISSUE"
-                    retrieval_query = profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
-                    _stream_intake_completed = True
-                    _stream_enriched_query = retrieval_query
-                    _stream_completed_platform = profile.platform
-                    _stream_completed_issue_type = profile.issue_type
-                    _stream_completed_material_type = profile.material_type
-                    # fall through to retrieval
+                    print(
+                        f"[STREAM INTAKE] Complete: platform={profile.platform} "
+                        f"issue={profile.issue_type} after {profile.turns_spent} turn(s)"
+                    )
+
+                    # Account / login: escalate directly to email.
+                    if profile.issue_type == "account":
+                        print("[STREAM INTAKE] account/login issue -- escalating to ImmediateAccess email")
+                        session["history"].append({"role": "user", "content": message})
+                        session["history"].append({"role": "assistant", "content": INTAKE_ACCOUNT_ESCALATION_MESSAGE})
+                        session["last_activity"] = datetime.now()
+                        async for token in _stream_words(INTAKE_ACCOUNT_ESCALATION_MESSAGE):
+                            yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
+                        yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE:ACCOUNT_ESCALATION', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                        return
+
+                    # Missing / no-content: route to browser cache / no-content guide.
+                    if profile.issue_type == "missing":
+                        print("[STREAM INTAKE] missing/no-content issue -- routing to cache known-issue guide")
+                        _cache_retrieval_start = time.time()
+                        stream_forced_retrieval = await get_browser_cache_faq_retrieval(message)
+                        _stream_forced_retrieval_ms = (time.time() - _cache_retrieval_start) * 1000
+                        stream_forced_route_type = "KNOWN_ISSUE_LLM"
+                        stream_forced_selected_source_file = (
+                            stream_forced_retrieval.get("metadata", {}).get("source_file")
+                            if stream_forced_retrieval else None
+                        )
+                        intent = "GENERAL_FAQ"
+                        # Fall through to KNOWN_ISSUE_LLM rendering.
+                    else:
+                        # Access / location issue: platform-specific instructions.
+                        session["stored_platform"] = profile.platform
+                        session["stored_intent"] = "IA_ACCESS_ISSUE"
+                        platform = profile.platform
+                        intent = "IA_ACCESS_ISSUE"
+                        retrieval_query = profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
+                        _stream_intake_completed = True
+                        _stream_enriched_query = retrieval_query
+                        _stream_completed_platform = profile.platform
+                        _stream_completed_issue_type = profile.issue_type
+                        _stream_completed_material_type = profile.material_type
+                        # fall through to retrieval
                 elif is_unknown_answer(message) and profile.last_requested_slot:
                     print(
                         f"[STREAM INTAKE] Unknown answer for slot={profile.last_requested_slot!r} "
