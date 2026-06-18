@@ -1600,6 +1600,120 @@ class TestIntakeUnknownAnswerLifecycle:
         )
 
 
+# ── Personal-info (student ID / email) escalation during intake ──────────────
+
+@pytest.mark.asyncio
+class TestIntakePersonalInfoEscalation:
+    """
+    When a student provides a student ID number or email address during active
+    intake (instead of answering the platform/issue question), Lance must escalate
+    to ImmediateAccess@calbaptist.edu instead of collecting the personal info.
+    """
+
+    _PLANNER_CLARIFICATION = IntakePlannerDecision(
+        action="ASK_CLARIFICATION",
+        intent="vague_book_access",
+        confidence=0.85,
+        known_slots={},
+        missing_slots=["platform"],
+        next_question_key="ask_platform_for_book_access",
+    )
+
+    @pytest.mark.parametrize("reply", [
+        "1234567",
+        "My ID is 1234567",
+        "student@calbaptist.edu",
+        "john.doe@calbaptist.edu",
+        "here is my email jane.smith@students.calbaptist.edu",
+    ])
+    async def test_personal_info_reply_escalates(self, reply):
+        """ID number or email during intake -> INTAKE:ESCALATION with support email."""
+        from app.intake.flow import INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE
+        session_id = f"test-pii-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._PLANNER_CLARIFICATION)),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=AssertionError("must not retrieve"))),
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(side_effect=AssertionError("must not call LLM"))),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r1 = await process_chat_request(_session_req(session_id, "My book is locked"))
+            r2 = await process_chat_request(_session_req(session_id, reply))
+
+        assert r1.source.startswith("INTAKE"), f"Turn 1 must be INTAKE, got {r1.source!r}"
+        assert r2.source == "INTAKE:ESCALATION", (
+            f"Personal info reply must escalate. Got source={r2.source!r}"
+        )
+        assert r2.reply == INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE
+        assert "ImmediateAccess@calbaptist.edu" in r2.reply
+
+    async def test_personal_info_does_not_reach_llm_or_retrieval(self):
+        """Personal-info escalation must return before retrieval and LLM generation."""
+        session_id = f"test-pii-no-llm-{uuid.uuid4()}"
+        retrieve_mock = AsyncMock(side_effect=AssertionError("retrieval must not be called"))
+        llm_mock = AsyncMock(side_effect=AssertionError("LLM must not be called"))
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._PLANNER_CLARIFICATION)),
+            patch("app.main.retrieve_async", new=retrieve_mock),
+            patch("app.main.call_llm_with_semaphore", new=llm_mock),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            await process_chat_request(_session_req(session_id, "My book is locked"))
+            r2 = await process_chat_request(_session_req(session_id, "My student ID is 8123456"))
+
+        assert r2.source == "INTAKE:ESCALATION"
+        retrieve_mock.assert_not_called()
+        llm_mock.assert_not_called()
+
+    async def test_intake_profile_cleared_after_personal_info_escalation(self):
+        """Session intake_profile must be None after personal-info escalation."""
+        import app.main as main
+        session_id = f"test-pii-clear-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._PLANNER_CLARIFICATION)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            await process_chat_request(_session_req(session_id, "My book is locked"))
+            await process_chat_request(_session_req(session_id, "1234567"))
+
+        assert main.sessions[session_id].get("intake_profile") is None
+
+    async def test_streaming_personal_info_escalates(self):
+        """Streaming: ID/email during intake returns INTAKE:ESCALATION."""
+        session_id = f"test-pii-stream-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._PLANNER_CLARIFICATION)),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=AssertionError("must not retrieve"))),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            await _post_stream({"message": "My book is locked", "session_id": session_id})
+            done = await _post_stream({"message": "my email is test@calbaptist.edu", "session_id": session_id})
+
+        assert done.get("source") == "INTAKE:ESCALATION", (
+            f"Streaming personal-info reply must escalate. Got {done.get('source')!r}"
+        )
+
+    async def test_normal_platform_answer_not_treated_as_personal_info(self):
+        """Regression: a normal platform answer ('Cengage') must not trigger PII escalation."""
+        session_id = f"test-pii-neg-{uuid.uuid4()}"
+        llm_mock = AsyncMock(return_value=("Here are your Cengage steps.", 0.0))
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._PLANNER_CLARIFICATION)),
+            patch("app.main.call_llm_with_semaphore", new=llm_mock),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            await process_chat_request(_session_req(session_id, "My book is locked"))
+            r2 = await process_chat_request(_session_req(session_id, "Cengage"))
+            r3 = await process_chat_request(_session_req(session_id, "I can't access"))
+
+        assert r2.source != "INTAKE:ESCALATION", "Platform answer must not escalate as PII"
+        assert not r3.source.startswith("INTAKE:ESCALATION"), "Normal flow must complete"
+
+
 # ── Active-intake safety classifier bypass ───────────────────────────────────
 
 @pytest.mark.asyncio

@@ -71,8 +71,10 @@ from app.intake.flow import (
     intake_is_complete,
     intake_fallback_message,
     is_unknown_answer,
+    is_personal_info_reply,
     INTAKE_ESCALATION_MESSAGE,
     INTAKE_ACCOUNT_ESCALATION_MESSAGE,
+    INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE,
 )
 from app.intake.question_templates import QUESTION_KEY_TO_SLOT, QUESTION_TEMPLATES, FALLBACK_QUESTION
 from app.intake.llm_planner import run_intake_planner, should_run_planner, get_question_for_decision
@@ -2702,6 +2704,24 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     _completed_intake_platform = profile.platform
                     _completed_intake_issue_type = profile.issue_type
                     _completed_intake_material_type = profile.material_type
+            elif is_personal_info_reply(message):
+                print("[INTAKE] Student provided personal info (ID/email) -> escalating")
+                session["intake_profile"] = None
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE})
+                session["last_activity"] = datetime.now()
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE,
+                    source="INTAKE:ESCALATION",
+                    article_link=None,
+                    confidence=1.0,
+                    retrieval_time_ms=0,
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[],
+                    debug_mode=debug_mode,
+                )
             elif is_unknown_answer(message) and profile.last_requested_slot:
                 print(
                     f"[INTAKE] Unknown answer for slot={profile.last_requested_slot!r} "
@@ -5012,6 +5032,16 @@ async def chat_stream(payload: ChatRequest):
                         _stream_completed_issue_type = profile.issue_type
                         _stream_completed_material_type = profile.material_type
                         # fall through to retrieval
+                elif is_personal_info_reply(message):
+                    print("[STREAM INTAKE] Student provided personal info (ID/email) -> escalating")
+                    session["intake_profile"] = None
+                    session["history"].append({"role": "user", "content": message})
+                    session["history"].append({"role": "assistant", "content": INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE})
+                    session["last_activity"] = datetime.now()
+                    async for token in _stream_words(INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE):
+                        yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE:ESCALATION', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                    return
                 elif is_unknown_answer(message) and profile.last_requested_slot:
                     print(
                         f"[STREAM INTAKE] Unknown answer for slot={profile.last_requested_slot!r} "

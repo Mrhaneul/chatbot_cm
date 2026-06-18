@@ -28,7 +28,9 @@ from app.intake.flow import (
     intake_is_complete,
     intake_fallback_message,
     is_unknown_answer,
+    is_personal_info_reply,
     INTAKE_ESCALATION_MESSAGE,
+    INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE,
     MAX_UNKNOWN_ATTEMPTS,
 )
 from app.intake.planner_models import IntakePlannerDecision
@@ -736,6 +738,50 @@ class TestIsUnknownAnswer:
 
     def test_partial_match_still_detected(self):
         assert is_unknown_answer("I really don't know which publisher")
+
+    def test_idk_is_unknown(self):
+        assert is_unknown_answer("idk")
+
+    def test_idk_with_punctuation_is_unknown(self):
+        assert is_unknown_answer("idk.")
+
+
+# ── is_personal_info_reply ────────────────────────────────────────────────────
+
+class TestIsPersonalInfoReply:
+    """Student ID numbers and email addresses must be detected for escalation."""
+
+    def test_seven_digit_id(self):
+        assert is_personal_info_reply("1234567")
+
+    def test_id_in_sentence(self):
+        assert is_personal_info_reply("My ID is 8123456")
+
+    def test_email_address(self):
+        assert is_personal_info_reply("student@calbaptist.edu")
+
+    def test_email_in_sentence(self):
+        assert is_personal_info_reply("you can reach me at jane.doe@students.calbaptist.edu")
+
+    def test_generic_email(self):
+        assert is_personal_info_reply("john@gmail.com")
+
+    def test_platform_name_is_not_personal_info(self):
+        assert not is_personal_info_reply("Cengage MindTap")
+
+    def test_issue_description_is_not_personal_info(self):
+        assert not is_personal_info_reply("I can't access my textbook")
+
+    def test_course_code_is_not_personal_info(self):
+        # Course codes (CS101) are not 7-digit IDs and have no email
+        assert not is_personal_info_reply("CS101")
+
+    def test_short_number_is_not_personal_info(self):
+        # A 4-digit number is not a 7-digit student ID
+        assert not is_personal_info_reply("week 5 has 1200 pages")
+
+    def test_dont_know_is_not_personal_info(self):
+        assert not is_personal_info_reply("I don't know")
 
 
 # ── IntakeProfile new fields ──────────────────────────────────────────────────
