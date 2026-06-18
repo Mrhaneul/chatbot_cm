@@ -1,0 +1,29 @@
+[META:{"source_file": "ia_cengage_mindtap_access.txt", "source_id": "ia_cengage_mindtap_access", "source_type": "instruction", "platform": ["cengage"], "section_title": "FULL_DOCUMENT"}]
+PROBLEM:
+Student is opted into Immediate Access but cannot access Cengage MindTap textbook or assignments.
+
+APPLIES TO:
+Courses using Cengage MindTap.
+
+BLACKBOARD LOCATION:
+Course Materials tab
+
+STEP-BY-STEP RESOLUTION:
+1. Log in to Canvas.
+2. Open the correct course.
+3. Click on the “Course Materials” tab in the left menu.
+4. Click the MindTap registration or access link.
+5. Open the appropriate week folder.
+6. Select the MindTap chapter or assignment link.
+7. Log in or create a Cengage account using your CBU email address.
+
+LOGIN REQUIREMENTS:
+- Use your full CBU email address (firstname.lastname@calbaptist.edu).
+- Do NOT use your ID#@calbaptist.edu email.
+
+EXPECTED RESULT:
+After logging in, the MindTap eText and assignments should be accessible.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+<<<CHUNK_SEPARATOR>>>

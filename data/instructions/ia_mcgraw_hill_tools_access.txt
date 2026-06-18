@@ -17,7 +17,7 @@ BLACKBOARD LOCATION:
 Tools tab (left side pane)
 
 STEP-BY-STEP RESOLUTION:
-1. Log onto Blackboard.
+1. Log onto Canvas.
 2. Select your course that uses McGraw Hill from your list of courses.
 3. Click "Tools" from the left-hand side menu.
 4. Select "McGraw Hill Connect LTIA Basic Link" from the Tools menu.

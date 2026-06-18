@@ -1,0 +1,46 @@
+PROBLEM:
+Student cannot access their McGraw Hill Connect eTextbook or courseware through the Immediate Access tab or Learning Activities in Canvas.
+
+APPLIES TO:
+Courses using McGraw Hill Connect digital content accessed via Immediate Access tab or Learning Activities (commonly used in Business courses such as BUS 463 Business and Organizational Management).
+
+BLACKBOARD LOCATION:
+Immediate Access tab OR Learning Activities tab (left side pane)
+
+METHOD 1 - VIA IMMEDIATE ACCESS TAB:
+1. Log into Canvas and go to your course page.
+2. Click "Immediate Access" on the left-hand side menu.
+3. Click the "Immediate Access" link in the center of the page.
+4. Click the "McGraw Hill Connect LTIA Basic Link."
+5. You will be taken to the McGraw Hill Connect course page with access to the eTextbook and assignments.
+
+METHOD 2 - VIA LEARNING ACTIVITIES TAB:
+1. Log into Canvas and go to your course page.
+2. Click "Learning Activities" on the left-hand side menu.
+3. IMPORTANT: Complete the Student Responsibility Agreement (SRA) first before accessing other content.
+4. Click on the weekly folder to view that week's assignments (e.g., "Week 1: Overview of Organizational Behavior").
+5. Find the "McGraw Hill Connect" folder within the week.
+6. Click on individual assignment links (SmartBook, Quiz, Connect Orientation Videos, etc.).
+
+LOGIN REQUIREMENTS:
+- If prompted to log in on the McGraw Hill website, use an existing McGraw Hill account OR create a new account.
+- Use your CBU email: firstname.lastname@calbaptist.edu
+- Do NOT use your CBUID#@calbaptist.edu email address.
+
+ACCESSING THE EBOOK WITHIN AN ASSIGNMENT:
+1. In the assignment, click "Continue" on the bottom right-hand side.
+2. Click "eBook" on the left-hand side of the page.
+3. A pop-up will appear on the right-hand side showing the "Browse eBook" option.
+4. Click on the eBook cover to open and read.
+
+NAVIGATION INSIDE MCGRAW HILL CONNECT:
+- Course materials section shows the textbook and loose leaf options.
+- Read section displays your eTextbook.
+- Assignments are organized by weekly folders.
+- You can download the mobile app to read offline.
+
+EXPECTED RESULT:
+After following these steps, you should have access to both the McGraw Hill Connect eTextbook and weekly assignments.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.

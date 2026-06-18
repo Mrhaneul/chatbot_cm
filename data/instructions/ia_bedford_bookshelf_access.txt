@@ -1,0 +1,32 @@
+PROBLEM:
+Student is opted into Immediate Access but cannot access the Bedford Bookshelf or included titles.
+
+APPLIES TO:
+Courses using Bedford Bookshelf titles through Immediate Access.
+
+BLACKBOARD LOCATION:
+Immediate Access tab
+
+STEP-BY-STEP RESOLUTION:
+1. Log in to Canvas and select your course.
+2. Click the "Immediate Access" option from the left sidebar.
+3. Click the Immediate Access link on the right-hand side.
+4. The Bedford Bookshelf page will appear.
+5. Click "Read Now".
+6. Sign in to your Bookshelf account.
+   a. If you do not have a Bookshelf account, create one using your CBU credentials.
+   b. Use your NAME@calbaptist.edu email address.
+   c. Do NOT use your ID@calbaptist.edu email address.
+7. Enter the title of the material your course will be using in the search field at the top (Ex. Hello, Writer).
+   a. Click → Open Book on the right-hand side to begin reading your material.
+
+LOGIN REQUIREMENTS:
+- Use your NAME@calbaptist.edu email address.
+- Do NOT use your ID@calbaptist.edu email address.
+- Using an ID email may prevent receipt of external emails such as VitalSource verification messages.
+
+EXPECTED RESULT:
+The Bedford Bookshelf library will load and allow access to the assigned course materials.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.

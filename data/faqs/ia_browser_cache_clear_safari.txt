@@ -1,0 +1,33 @@
+QUESTION:
+I am trying to access my Immediate Access materials through Canvas but I see "0 Courses, 0 Materials" or get an error that says "You currently have no content available." I am using Safari on a Mac. How do I fix this?
+
+ANSWER:
+This is usually caused by stale browser cookies or cached data interfering with your Immediate Access session. You will need to clear your cookies, cache, and history in Safari, then try again.
+
+Note: After clearing your browsing data, you will be signed out of most websites and will need to sign back in.
+
+STEP-BY-STEP RESOLUTION:
+
+CLEARING COOKIES:
+1. In the Safari app, click Safari in the top-left corner of your screen.
+2. Click Settings from the menu.
+3. Click Privacy from the menu bar inside Settings.
+4. Click Manage Website Data.
+5. Click Remove All in the bottom-left corner.
+
+CLEARING CACHE:
+1. Click Safari in the top-left corner, then click Settings.
+2. Click Advanced from the menu bar inside Settings.
+3. At the bottom of the page, click Show Features for Web Developers.
+4. From the top menu bar, click Develop, then select Empty Caches.
+
+CLEARING HISTORY:
+1. Click Safari in the top-left corner of your screen.
+2. Click Clear History from the menu.
+3. Select All History from the dropdown.
+4. Click Clear History in the bottom-right corner to confirm.
+
+EXPECTED RESULT:
+After completing all three sections above, return to Canvas, navigate to your course, and click the Immediate Access link again. Your materials should now load correctly.
+
+If you continue to experience issues, please contact the CBU Campus Store at ImmediateAccess@calbaptist.edu for further assistance.

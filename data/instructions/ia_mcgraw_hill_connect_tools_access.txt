@@ -1,0 +1,31 @@
+PROBLEM:
+Student cannot access their McGraw Hill Connect eTextbook or courseware through the Tools menu in Canvas.
+
+APPLIES TO:
+Courses using McGraw Hill Connect digital content accessed via the Tools tab (commonly used in Business courses such as BUS 212 Economics, Life and Society).
+
+BLACKBOARD LOCATION:
+Tools tab (left side pane)
+
+STEP-BY-STEP RESOLUTION:
+1. Log into Canvas.
+2. Go to your course page.
+3. Click "Tools" on the left-hand side menu.
+4. Click the link titled "McGraw Hill Connect LTIA Basic Link."
+5. You will be taken to the McGraw Hill Connect course page.
+6. Access your materials:
+   - For eTextbook: Click on the book image under "Read" in the Course materials section.
+   - For Assignments: Click on the weekly folders (Week 1, Week 2, etc.) to view assignments.
+
+NAVIGATION INSIDE MCGRAW HILL CONNECT:
+- Instructor information and messaging options are at the top left.
+- Course materials section shows the textbook and loose leaf purchase options.
+- Read section displays your eTextbook - click to open.
+- Assignments section shows weekly folders with your coursework.
+- You can download the mobile app to read offline.
+
+EXPECTED RESULT:
+After clicking the McGraw Hill Connect LTIA Basic Link, you should have access to both the eTextbook and weekly assignments.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.

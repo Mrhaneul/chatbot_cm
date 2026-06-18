@@ -17,7 +17,7 @@ BLACKBOARD LOCATION:
 Learning Activities tab
 
 STEP-BY-STEP RESOLUTION:
-1. Log in to Blackboard.
+1. Log in to Canvas.
 2. Open the correct course.
 3. Click on the “Learning Activities” tab in the left menu.
 4. Open the appropriate week folder (e.g., Week 1).
