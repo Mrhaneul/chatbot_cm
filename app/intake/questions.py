@@ -53,9 +53,9 @@ VAGUE_PATTERN_RE: re.Pattern = re.compile(
 # add friction without improving current retrieval quality.
 PLATFORM_QUESTION = (
     "Which platform or publisher is your textbook on? "
-    "For example: VitalSource, Cengage MindTap, Pearson MyLab, "
+    "For example: Cengage MindTap, Pearson MyLab, "
     "McGraw Hill Connect, Bedford, Sage, or WileyPlus. "
-    "If you're not sure, you can check the Immediate Access tab in Blackboard."
+    "If you're not sure, you can check the Immediate Access tab in Canvas."
 )
 
 ISSUE_TYPE_QUESTION = (

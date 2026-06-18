@@ -11,9 +11,9 @@ from __future__ import annotations
 QUESTION_TEMPLATES: dict[str, str] = {
     "ask_platform_for_book_access": (
         "Which platform or publisher is your textbook on? "
-        "For example: VitalSource, Cengage MindTap, Pearson MyLab, "
+        "For example: Cengage MindTap, Pearson MyLab, "
         "McGraw Hill Connect, Bedford, Sage, or WileyPlus. "
-        "If you're not sure, you can check the Immediate Access tab in Blackboard."
+        "If you're not sure, you can check the Immediate Access tab in Canvas."
     ),
     "ask_issue_for_platform": (
         "What kind of issue are you running into? "

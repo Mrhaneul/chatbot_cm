@@ -2400,6 +2400,7 @@ _LOW_RISK_CLARIFICATION_RE = re.compile(
       | (i\s+have\s+)?no\s+(idea|clue)
       | no\s+clue
       | unsure
+      | idk
       | yes | no | maybe | okay | ok
       | cengage | mindtap | mcgraw(\s+hill)? | pearson | vitalsource
       | wiley(plus)? | bedford | stukent | simucase | zybooks | sage

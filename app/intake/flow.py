@@ -43,6 +43,7 @@ _UNKNOWN_ANSWER_PHRASES = (
     "unsure",
     "no clue",
     "have no clue",
+    "idk",
     "can't find",
     "cant find",
     "cannot find",
