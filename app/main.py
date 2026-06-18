@@ -2836,7 +2836,12 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 # If the planner asks for a slot already present in the profile
                 # (e.g. material_type was already extracted from the original message),
                 # redirect to the next genuinely missing slot.
+                # ask_course_code is always redirected — Lance must never ask students
+                # for their course code, section, or enrollment details.
                 _next_key = planner_decision.next_question_key or "ask_platform_for_book_access"
+                if _next_key == "ask_course_code":
+                    _next_key = "ask_issue_for_platform" if _planner_profile.platform else "ask_platform_for_book_access"
+                    print(f"[PLANNER] ask_course_code suppressed -> {_next_key}")
                 _requested_slot = QUESTION_KEY_TO_SLOT.get(_next_key, "platform")
                 if _requested_slot == "material_type" and _planner_profile.material_type is not None:
                     if _planner_profile.platform is None:
@@ -5102,7 +5107,12 @@ async def chat_stream(payload: ChatRequest):
                             _planner_profile.issue_type = "access"
                         # If the planner asks for a slot already present in the profile,
                         # redirect to the next genuinely missing slot.
+                        # ask_course_code is always suppressed — Lance never asks students
+                        # for their course code or enrollment details.
                         _next_key = planner_decision.next_question_key or "ask_platform_for_book_access"
+                        if _next_key == "ask_course_code":
+                            _next_key = "ask_issue_for_platform" if _planner_profile.platform else "ask_platform_for_book_access"
+                            print(f"[STREAM PLANNER] ask_course_code suppressed -> {_next_key}")
                         _requested_slot = QUESTION_KEY_TO_SLOT.get(_next_key, "platform")
                         if _requested_slot == "material_type" and _planner_profile.material_type is not None:
                             if _planner_profile.platform is None:
