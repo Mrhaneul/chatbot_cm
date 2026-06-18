@@ -1,0 +1,24 @@
+PROBLEM:
+Student is opted into Immediate Access but cannot access their Zybooks textbook or needs help finding their access code.
+
+APPLIES TO:
+Courses using Zybooks digital textbooks (commonly used in EGR courses such as Intro to Computer Programming in Python).
+
+BLACKBOARD LOCATION:
+Immediate Access tab (left side pane)
+
+STEP-BY-STEP RESOLUTION:
+1. Log onto Canvas.
+2. Select the course in which you are enrolled that uses Zybooks.
+3. Click "Immediate Access" from the left side pane.
+4. Click "Immediate Access" once more from the center of the page.
+5. Click the "Reveal Access Code" button.
+6. Click "Copy" to copy the access code displayed in the field.
+7. Navigate to the Zybooks URL provided on the page (example: https://learn.zybooks.com/zybook/CALBAPTISTEGR120CorsoSpring2026).
+8. Paste your unique access code on the Zybooks website to activate your content.
+
+EXPECTED RESULT:
+After entering the access code on the Zybooks website, you will have full access to the Zybooks content for your course.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.

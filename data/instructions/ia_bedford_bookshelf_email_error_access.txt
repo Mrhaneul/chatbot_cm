@@ -30,7 +30,7 @@ STEP-BY-STEP RESOLUTION:
 4. Direct the student to contact VitalSource Support.
 5. Ask the student to request a live agent through the support chat.
 6. Have the student request that all VitalSource accounts be merged under their correct CBU email.
-7. After the merge is complete, have the student return to Blackboard.
+7. After the merge is complete, have the student return to Canvas.
 8. Navigate to the course.
 9. Click the “Immediate Access” link.
 10. Click “Read Now.”
@@ -41,7 +41,7 @@ IMPORTANT NOTES:
 - The Bedford Bookshelf is a library containing multiple titles. Students may need to search within the library to locate their assigned reading.
 
 IF ISSUE PERSISTS:
-- Confirm the student is accessing the material through Blackboard, not directly through VitalSource.
+- Confirm the student is accessing the material through Canvas, not directly through VitalSource.
 - Verify the account merge has fully completed.
 - Refer the student back to VitalSource Support if content still does not appear.
 - Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.

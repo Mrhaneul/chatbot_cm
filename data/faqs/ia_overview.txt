@@ -15,14 +15,14 @@ Immediate Access is California Baptist University's program that provides day-on
 
 **How It Works:**
 - Get instant access to digital textbooks and courseware on the first day of class
-- Materials are automatically available through Blackboard
+- Materials are automatically available through Canvas
 - Charges are billed directly to your student account
 - You have 14 days to opt out if you prefer to purchase materials separately
 
 **Key Benefits:**
 - No waiting for materials to arrive
 - No upfront payment needed
-- Convenient access through Blackboard
+- Convenient access through Canvas
 - Often more affordable than traditional textbooks
 
 **Supported Platforms:**
@@ -39,7 +39,7 @@ Immediate Access works with major publishers including:
 
 **Opting Out:**
 - 14-day opt-out period from the start of the semester
-- Opt out through the Immediate Access page in Blackboard
+- Opt out through the Immediate Access page in Canvas
 - After opting out, you must purchase materials separately
 
 **Getting Help:**

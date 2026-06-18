@@ -6,6 +6,7 @@ All mutable state lives in the caller (session["intake_profile"]).
 """
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 from app.intake.models import IntakeProfile
@@ -19,6 +20,12 @@ from app.intake.slot_extractor import (
 
 _MAX_INTAKE_TURNS = 3
 
+# Detects student ID numbers (7-digit CBU IDs) and email addresses.
+# When a student provides this kind of personal info during intake instead of
+# answering the platform/issue question, escalate to ImmediateAccess immediately.
+_STUDENT_ID_RE = re.compile(r"\b\d{7}\b")
+_EMAIL_RE = re.compile(r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b")
+
 MAX_UNKNOWN_ATTEMPTS = 1  # kept for import compatibility; escalation now fires on the first unknown
 
 INTAKE_ESCALATION_MESSAGE = (
@@ -26,6 +33,17 @@ INTAKE_ESCALATION_MESSAGE = (
     "textbook access issue. They can help identify the correct platform and material "
     "for your course. If possible, include a screenshot of what you are seeing when "
     "you email them."
+)
+
+INTAKE_ACCOUNT_ESCALATION_MESSAGE = (
+    "Please contact ImmediateAccess@calbaptist.edu for help with your account "
+    "or login issue. If possible, include a screenshot of what you are seeing."
+)
+
+INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE = (
+    "It looks like you've shared personal account information. "
+    "Please contact ImmediateAccess@calbaptist.edu directly for assistance. "
+    "If possible, include a screenshot of what you are seeing when you email them."
 )
 
 _UNKNOWN_ANSWER_PHRASES = (
@@ -38,6 +56,7 @@ _UNKNOWN_ANSWER_PHRASES = (
     "unsure",
     "no clue",
     "have no clue",
+    "idk",
     "can't find",
     "cant find",
     "cannot find",
@@ -66,6 +85,15 @@ def is_unknown_answer(message: str) -> bool:
     """True when the user signals they cannot supply the requested slot value."""
     msg_lower = message.lower()
     return any(phrase in msg_lower for phrase in _UNKNOWN_ANSWER_PHRASES)
+
+
+def is_personal_info_reply(message: str) -> bool:
+    """
+    True when the student provides a student ID number (7-digit CBU ID) or an
+    email address instead of answering the platform/issue clarification question.
+    These should not be collected by Lance; escalate to ImmediateAccess instead.
+    """
+    return bool(_STUDENT_ID_RE.search(message)) or bool(_EMAIL_RE.search(message))
 
 
 def is_vague_message(message: str) -> bool:

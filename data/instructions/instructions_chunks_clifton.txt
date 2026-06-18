@@ -1,0 +1,33 @@
+[META:{"source_file": "ia_cliftonstrengths_assessment_access.txt", "source_id": "ia_cliftonstrengths_assessment_access", "source_type": "instruction", "platform": ["clifton"], "section_title": "FULL_DOCUMENT"}]
+PROBLEM:
+Student is opted into Immediate Access but cannot access their CliftonStrengths Assessment or needs help redeeming their access code.
+
+APPLIES TO:
+Courses using the CliftonStrengths for Students assessment by Gallup.
+
+BLACKBOARD LOCATION:
+Immediate Access tab
+
+STEP-BY-STEP RESOLUTION:
+1. Navigate to your course's Immediate Access page in Canvas.
+2. Click "Reveal Access Code" to display your unique CliftonStrengths access code.
+3. Copy your access code.
+4. Click "Read Now" on the textbook tile to open the CliftonStrengths for Students e-book.
+5. In the e-book, click the tab titled "IMPORTANT Information About Taking the CliftonStrengths Assessment."
+6. Locate the link to redeem your code: press.gallup.com/students
+7. On the Gallup website, under the "For Students" section, click "Redeem Code."
+8. Paste your access code into the Access Code field.
+9. Click "Continue" to proceed.
+10. If prompted, create a Gallup account to complete the redemption process.
+
+IMPORTANT NOTES:
+- Your access code is unique and one-time-use only.
+- The access code is valid for one use only, so do not share it.
+- Make sure to enter the code exactly as it appears.
+
+EXPECTED RESULT:
+After redeeming your access code, you will have access to take the CliftonStrengths Assessment and view your results.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+<<<CHUNK_SEPARATOR>>>

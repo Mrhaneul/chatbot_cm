@@ -1,0 +1,23 @@
+[META:{"source_file": "ia_inquizitive_access.txt", "source_id": "ia_inquizitive_access", "source_type": "instruction", "platform": ["inquizitive"], "section_title": "SCENARIO_1"}]
+Platform: InQuizitive
+Issue Type: Access
+Program: Immediate Access
+Last Updated: 2026-02-26
+<<<CHUNK_SEPARATOR>>>
+[META:{"source_file": "ia_inquizitive_access.txt", "source_id": "ia_inquizitive_access", "source_type": "instruction", "platform": ["inquizitive"], "section_title": "SCENARIO_2"}]
+How To Access the Little Seagull & InQuizitive
+1. On your Canvas course page, click -> Immediate Access on the left-hand side
+panel.
+a. Then click -> Immediate Access on the right-hand side.
+
+2. Click -> Launch Courseware.
+a. A new pop-up tab should appear. If no new tab appears, ensure that you
+have enabled Third-Party cookies and disabled Pop-up blockers.
+
+In the new tab, you will be pathed to the Norton platform.
+3. Read/Accept the Terms of use and Privacy Policy and click -> Continue.
+
+Following the How to Use InQuizitive tutorial, you should be pathed to the Little Seagull
+Handbook home page, where you'll be able to access your eTextbook and InQuizitive
+assignments.
+<<<CHUNK_SEPARATOR>>>

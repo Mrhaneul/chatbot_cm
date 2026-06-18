@@ -11,7 +11,7 @@ QUESTION:
 Why does Immediate Access show an “opt out” option but not allow me to access my textbook?
 
 ANSWER:
-Some courses use external publisher platforms. In these cases, textbook access is provided through links inside the Blackboard course rather than directly through the Immediate Access page.
+Some courses use external publisher platforms. In these cases, textbook access is provided through links inside the Canvas course rather than directly through the Immediate Access page.
 
 If you are opted in but cannot access your textbook, additional course-specific information may be required to guide you correctly.
 

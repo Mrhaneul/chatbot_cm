@@ -1,0 +1,28 @@
+---
+source_id: ia_opt_out_canvas
+source_type: faq
+category: immediate_access
+platform: canvas
+issue_type: opt_out
+priority: canonical
+---
+
+QUESTION:
+How do I opt out of Immediate Access?
+
+ANSWER:
+To opt out of Immediate Access in Canvas:
+
+1. Log in to your CBU Canvas account using your student email and password.
+2. Click Courses on the global navigation menu.
+3. Open the homepage of the course using Immediate Access.
+4. Click Immediate Access from the course menu on the left-hand side.
+5. Locate the Immediate Access title or titles you wish to opt out of.
+6. Click the "Want to Opt-Out" button.
+7. Select the reason for opting out in the confirmation box.
+8. Click Opt Out.
+9. Verify that you have opted out of the materials. In the IA content block, confirm that the red caution symbol and "Opted Out" are visible.
+
+Repeat these steps for every Immediate Access course you wish to opt out of.
+
+If you are still having issues opting out, email optout@calbaptist.edu.

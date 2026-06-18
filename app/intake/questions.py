@@ -28,6 +28,17 @@ _VAGUE_PATTERNS: list[str] = [
     r"(having|i have) (an? )?(issue|problem|trouble) (with )?(my )?(book|text ?book|access|materials?)",
     # "don't have access" — covers "I don't have access" and "It says I don't have access".
     r"(i )?(don'?t|do not|can'?t) have access",
+    # "course material" vague patterns — catch before the LLM planner so the
+    # deterministic flow (platform -> issue) runs instead of ask_course_code.
+    # Structure A: "I have a course material issue" (noun-issue order)
+    r"i (have|had) (a |an? )?(course|class) (material|textbook|book|content)s? (issue|problem|trouble)",
+    # Structure B: "I'm having an issue with my course material" (issue-with-noun order)
+    r"(i )?(am having|having|need help with) (an? )?(issue|problem|trouble) with (my |the )?(course|class) (material|textbook|book|content)",
+    # Structure C: "I need help with my course material"
+    r"(i )?(need help|need assistance) with (my )?(course|class) (material|textbook|book|content)",
+    # Structure D: "something is wrong" / "X is not working"
+    r"something is wrong with (my )?(course|class) (material|textbook|book|content)",
+    r"(my )?(course|class) (material|textbook|book|content) (is|are)? ?(not working|missing|gone|broken|unavailable)",
 ]
 
 VAGUE_PATTERN_RE: re.Pattern = re.compile(
@@ -42,9 +53,9 @@ VAGUE_PATTERN_RE: re.Pattern = re.compile(
 # add friction without improving current retrieval quality.
 PLATFORM_QUESTION = (
     "Which platform or publisher is your textbook on? "
-    "For example: VitalSource, Cengage MindTap, Pearson MyLab, "
+    "For example: Cengage MindTap, Pearson MyLab, "
     "McGraw Hill Connect, Bedford, Sage, or WileyPlus. "
-    "If you're not sure, you can check the Immediate Access tab in Blackboard."
+    "If you're not sure, you can check the Immediate Access tab in Canvas."
 )
 
 ISSUE_TYPE_QUESTION = (

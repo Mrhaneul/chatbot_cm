@@ -1,0 +1,74 @@
+---
+source_id: ia_zero_courses_zero_materials_cache
+source_type: faq
+category: immediate_access
+platform: null
+issue_type: browser_cache
+priority: canonical
+---
+
+QUESTION:
+I see "0 Courses, 0 Materials" or "You currently have no content available" or "You currently have no content available, please contact your faculty or digital program manager for assistance." What should I do?
+
+ANSWER:
+CBU IMMEDIATE ACCESS SUPPORT NOTE: VitalSource may also display "please contact your faculty or digital program manager for assistance" on this screen. For CBU Immediate Access troubleshooting, treat this screen as the known 0 Courses / 0 Materials issue. First clear your browser cache, cookies, and history using the documented steps below. If the issue continues, contact ImmediateAccess@calbaptist.edu with a screenshot.
+
+If you see "0 Courses, 0 Materials" or "You currently have no content available" when trying to access Immediate Access materials, this is caused by stale browser data. Clear your browser cache, cookies, and history, then try again.
+
+Note: After clearing your browsing data, you will be signed out of most websites and will need to sign back in.
+
+--- GOOGLE CHROME (Mac or PC) ---
+
+1. Click the three dots in the top-right corner of your Chrome window and select Settings.
+2. Choose Privacy and security, then select Clear browsing data.
+3. Under Time range, select All time.
+4. Check the boxes for Browsing history, Cookies and other site data, and Cached images and files.
+5. Click Clear data.
+
+Shortcut: Press Command + Shift + Delete (Mac) to open the Clear browsing data menu directly.
+
+--- MOZILLA FIREFOX (Mac) ---
+
+1. From the top menu bar, click History and select Clear Recent History.
+2. Under Time range to clear, select Everything.
+3. Check the box for Cache (and any other items you wish to clear).
+4. Click OK.
+
+Shortcut: Press Command + Shift + Delete (Mac) to open the Clear All History menu directly.
+
+--- SAFARI (Mac) ---
+
+CLEARING COOKIES:
+1. In the Safari app, click Safari in the top-left corner of your screen.
+2. Click Settings from the menu.
+3. Click Privacy from the menu bar inside Settings.
+4. Click Manage Website Data.
+5. Click Remove All in the bottom-left corner.
+
+CLEARING CACHE:
+1. Click Safari in the top-left corner, then click Settings.
+2. Click Advanced from the menu bar inside Settings.
+3. At the bottom of the page, click Show Features for Web Developers.
+4. From the top menu bar, click Develop, then select Empty Caches.
+
+CLEARING HISTORY:
+1. Click Safari in the top-left corner of your screen.
+2. Click Clear History from the menu.
+3. Select All History from the dropdown.
+4. Click Clear History in the bottom-right corner to confirm.
+
+--- GOOGLE CHROME ON IPAD ---
+
+1. Open Chrome on your iPad and tap the three dots (ellipsis) in the upper-right corner.
+2. Swipe left on the top menu bar until you see History, then tap it.
+3. At the bottom of the History screen, tap Clear Browsing Data.
+4. Make sure Browsing History, Cookies, Site Data, and Cached Images and Files are all checked.
+5. Tap Clear Browsing Data to confirm.
+
+Note: If you see a VitalSource error message that says "Uh oh, your launch was unsuccessful!" and offers a Support Site button, skip that button — it will not resolve the issue. Proceed directly with clearing your browser data as described above.
+
+---
+
+After clearing cache and cookies for your browser, close and reopen your browser, then return to Canvas and click the Immediate Access link again. Your materials should now load correctly.
+
+If the issue continues, contact Immediate Access support at ImmediateAccess@calbaptist.edu. Include a screenshot of what you are seeing.

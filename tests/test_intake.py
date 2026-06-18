@@ -28,7 +28,9 @@ from app.intake.flow import (
     intake_is_complete,
     intake_fallback_message,
     is_unknown_answer,
+    is_personal_info_reply,
     INTAKE_ESCALATION_MESSAGE,
+    INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE,
     MAX_UNKNOWN_ATTEMPTS,
 )
 from app.intake.planner_models import IntakePlannerDecision
@@ -737,6 +739,50 @@ class TestIsUnknownAnswer:
     def test_partial_match_still_detected(self):
         assert is_unknown_answer("I really don't know which publisher")
 
+    def test_idk_is_unknown(self):
+        assert is_unknown_answer("idk")
+
+    def test_idk_with_punctuation_is_unknown(self):
+        assert is_unknown_answer("idk.")
+
+
+# ── is_personal_info_reply ────────────────────────────────────────────────────
+
+class TestIsPersonalInfoReply:
+    """Student ID numbers and email addresses must be detected for escalation."""
+
+    def test_seven_digit_id(self):
+        assert is_personal_info_reply("1234567")
+
+    def test_id_in_sentence(self):
+        assert is_personal_info_reply("My ID is 8123456")
+
+    def test_email_address(self):
+        assert is_personal_info_reply("student@calbaptist.edu")
+
+    def test_email_in_sentence(self):
+        assert is_personal_info_reply("you can reach me at jane.doe@students.calbaptist.edu")
+
+    def test_generic_email(self):
+        assert is_personal_info_reply("john@gmail.com")
+
+    def test_platform_name_is_not_personal_info(self):
+        assert not is_personal_info_reply("Cengage MindTap")
+
+    def test_issue_description_is_not_personal_info(self):
+        assert not is_personal_info_reply("I can't access my textbook")
+
+    def test_course_code_is_not_personal_info(self):
+        # Course codes (CS101) are not 7-digit IDs and have no email
+        assert not is_personal_info_reply("CS101")
+
+    def test_short_number_is_not_personal_info(self):
+        # A 4-digit number is not a 7-digit student ID
+        assert not is_personal_info_reply("week 5 has 1200 pages")
+
+    def test_dont_know_is_not_personal_info(self):
+        assert not is_personal_info_reply("I don't know")
+
 
 # ── IntakeProfile new fields ──────────────────────────────────────────────────
 
@@ -911,3 +957,199 @@ class TestPlannerModelConfig:
             result = asyncio.run(run_intake_planner("my book is locked"))
 
         assert result.action == "ASK_CLARIFICATION"
+
+
+# -- Book-location intent / issue_type extraction ----------------------------
+
+class TestBookLocationIssueTypeExtraction:
+    """'Where can I see/find/access my book?' patterns must extract issue_type='access'."""
+
+    @pytest.mark.parametrize("message", [
+        "Where can I see my book?",
+        "Where do I find my digital textbook?",
+        "Where can I access my textbook?",
+        "Where is my ebook?",
+        "Where can I find my book?",
+        "Where can I see my textbook?",
+        "Where do I get my textbook?",
+    ])
+    def test_book_location_extracts_access(self, message: str) -> None:
+        assert extract_issue_type(message) == "access", (
+            f"Expected issue_type='access' for {message!r}"
+        )
+
+    def test_book_location_with_cengage_extracts_platform(self) -> None:
+        """'Where can I see my Cengage book?' extracts platform=CENGAGE even without issue signal."""
+        assert extract_platform("Where can I see my Cengage book?") == "CENGAGE"
+        # issue_type=None for this message: 'cengage' sits between 'my' and 'book'
+        # so the pattern 'where can i see my book' doesn't match. The planner's
+        # intent mapping (book_location -> access) covers this case.
+
+    def test_where_can_i_access_my_textbook_extracts_issue(self) -> None:
+        """'Where can I access my textbook?' extracts issue_type=access (no platform word between)."""
+        assert extract_issue_type("Where can I access my textbook?") == "access"
+
+    def test_plain_where_without_book_does_not_match(self) -> None:
+        """Bare 'where can i see my' without a book/material keyword must not false-positive."""
+        assert extract_issue_type("where can i see my schedule") is None
+
+    def test_vitalsource_issue_still_none(self) -> None:
+        """'VitalSource issue' has no issue_type signal (no access/missing/account word)."""
+        assert extract_issue_type("VitalSource issue") is None
+
+    @pytest.mark.parametrize("alias", ["cengage", "Cengage Mindtap", "MindTap", "cnow"])
+    def test_cengage_aliases_normalize_to_cengage(self, alias: str) -> None:
+        """All Cengage aliases must resolve to the CENGAGE platform key."""
+        assert extract_platform(alias) == "CENGAGE", (
+            f"Expected CENGAGE for alias {alias!r}"
+        )
+
+
+class TestPlannerBookLocationIntentMapping:
+    """
+    When the planner returns intent='book_location' and asks for a slot
+    already extracted, main.py must pre-set issue_type and redirect to the
+    next missing slot.
+    """
+
+    def _make_book_location_decision(self, next_q: str = "ask_material_type") -> IntakePlannerDecision:
+        return IntakePlannerDecision(
+            action="ASK_CLARIFICATION",
+            intent="book_location",
+            confidence=0.70,
+            known_slots={},
+            missing_slots=["platform"],
+            next_question_key=next_q,
+            enriched_query=None,
+        )
+
+    def test_book_location_profile_has_access_and_textbook(self) -> None:
+        """
+        update_profile on 'Where can I see my book?' should produce
+        issue_type='access' and material_type='textbook' from slot extraction.
+        These slots are available before the planner-intent mapping fires.
+        """
+        profile = update_profile(
+            IntakeProfile(original_message="Where can I see my book?"),
+            "Where can I see my book?",
+        )
+        assert profile.issue_type == "access"
+        assert profile.material_type == "textbook"
+        assert profile.platform is None
+
+    def test_intake_completes_after_platform_supplied(self) -> None:
+        """
+        After planner pre-sets issue_type='access', intake should complete
+        as soon as platform is supplied — without needing an issue_type turn.
+        """
+        profile = update_profile(
+            IntakeProfile(original_message="Where can I see my book?"),
+            "Where can I see my book?",
+        )
+        # Simulate planner intent mapping: issue_type pre-set to 'access'
+        # (either from slot extraction above or from intent mapping in main.py)
+        assert profile.issue_type == "access"
+        # Now the user supplies the platform
+        profile = update_profile(profile, "Cengage MindTap")
+        assert profile.platform == "CENGAGE"
+        assert intake_is_complete(profile) is True
+
+    def test_three_turn_flow_also_completes(self) -> None:
+        """
+        Original 3-turn flow: issue_type already set from extraction, so
+        after material + platform turns the profile is complete.
+        """
+        profile = update_profile(
+            IntakeProfile(original_message="Where can I see my book?"),
+            "Where can I see my book?",
+        )
+        assert profile.issue_type == "access"
+        # Turn 2: material_type answer (no new info since already extracted)
+        profile = update_profile(profile, "digital textbook")
+        # Turn 3: platform
+        profile = update_profile(profile, "Cengage MindTap")
+        assert profile.platform == "CENGAGE"
+        assert intake_is_complete(profile) is True
+        assert profile.turns_spent == 3
+
+
+# -- Course-code guardrail tests ----------------------------------------------
+
+class TestNoCourseCodeCollection:
+    """
+    Lance must never ask students for their course code, section number, or
+    other personal/enrollment-specific details. These tests verify every layer
+    of the guardrail.
+    """
+
+    # ---- Template safety net ----
+
+    def test_ask_course_code_template_no_longer_asks_for_course_code(self) -> None:
+        """The template text must not contain course-code examples."""
+        template = QUESTION_TEMPLATES["ask_course_code"]
+        assert "ENGL1301" not in template
+        assert "BIOL2401" not in template
+        assert "course code" not in template.lower()
+
+    def test_ask_course_code_template_is_safe_issue_triage(self) -> None:
+        """If ask_course_code slips through, the student sees an issue-type question."""
+        template = QUESTION_TEMPLATES["ask_course_code"]
+        assert "issue" in template.lower() or "problem" in template.lower() or "trouble" in template.lower()
+
+    def test_ask_course_code_slot_maps_to_issue_type(self) -> None:
+        """The slot mapping for ask_course_code must be 'issue_type', not 'course_code'."""
+        assert QUESTION_KEY_TO_SLOT["ask_course_code"] == "issue_type"
+
+    # ---- Planner valid-key exclusion ----
+
+    def test_ask_course_code_not_in_valid_planner_keys(self) -> None:
+        """The planner must reject ask_course_code and fall back to a safe key."""
+        from app.intake.llm_planner import _VALID_QUESTION_KEYS
+        assert "ask_course_code" not in _VALID_QUESTION_KEYS, (
+            "ask_course_code must be excluded from _VALID_QUESTION_KEYS so "
+            "_validate_decision remaps it to ask_platform_for_book_access."
+        )
+
+    def test_planner_validate_decision_remaps_ask_course_code(self) -> None:
+        """_validate_decision must remap ask_course_code to a safe key."""
+        from app.intake.llm_planner import _validate_decision
+        raw = {
+            "action": "ASK_CLARIFICATION",
+            "intent": "course_material_help",
+            "confidence": 0.8,
+            "known_slots": {},
+            "missing_slots": ["issue_type"],
+            "next_question_key": "ask_course_code",
+            "enriched_query": None,
+        }
+        decision = _validate_decision(raw)
+        assert decision is not None
+        assert decision.next_question_key != "ask_course_code", (
+            f"ask_course_code must be remapped. Got {decision.next_question_key!r}"
+        )
+        assert decision.next_question_key == "ask_platform_for_book_access"
+
+    # ---- Vague pattern coverage ----
+
+    @pytest.mark.parametrize("message", [
+        "I have a course material issue",
+        "I need help with my course material",
+        "something is wrong with my course material",
+        "I'm having an issue with my course materials",
+        "I need assistance with my class content",
+    ])
+    def test_course_material_messages_match_vague_pattern(self, message: str) -> None:
+        """'course material' vague messages must be caught by VAGUE_PATTERN_RE."""
+        assert VAGUE_PATTERN_RE.search(message) is not None, (
+            f"Expected {message!r} to match VAGUE_PATTERN_RE so deterministic "
+            "intake runs (platform -> issue) instead of the planner."
+        )
+
+    # ---- question_templates.py escalation test (imported from test_chat_lifecycle) ----
+
+    def test_escalation_template_no_course_code(self) -> None:
+        """ask_course_or_material_when_platform_unknown must not ask for course code."""
+        q = QUESTION_TEMPLATES["ask_course_or_material_when_platform_unknown"]
+        assert "course code" not in q.lower()
+        assert "ENGL" not in q
+        assert "BIOL" not in q

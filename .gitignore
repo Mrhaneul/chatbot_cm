@@ -33,9 +33,6 @@ desktop.ini
 # PDFs / exports (optional – decide if you want these tracked)
 *.pdf
 
-# Local data / embeddings / indexes
-data/
-
 # IDE
 .vscode/
 .idea/

@@ -1,0 +1,27 @@
+PROBLEM:
+Immediate Access content does not load correctly due to blocked cookies or pop-ups in Chrome.
+
+APPLIES TO:
+Students using Google Chrome.
+
+STEP-BY-STEP RESOLUTION:
+1. Open the Chrome browser.
+2. Click the three-dot icon in the upper right corner.
+3. Click "Settings".
+4. Click "Privacy and Security".
+5. Click "Third-Party Cookies".
+6. Ensure the following settings:
+   a. Allow Third-Party Cookies is enabled.
+   b. Block Third-Party Cookies is disabled.
+   c. Block Third-Party Cookies in Incognito Mode is disabled.
+   d. Send a "Do Not Track" request is disabled.
+7. Return to Privacy and Security.
+8. Scroll down and click "Site Settings".
+9. Click "Pop-ups and redirects".
+10. Under Default Behavior, ensure "Sites can send pop-ups and use redirects" is enabled.
+
+EXPECTED RESULT:
+Immediate Access links should open correctly without errors.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.

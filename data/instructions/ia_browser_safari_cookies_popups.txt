@@ -1,0 +1,20 @@
+PROBLEM:
+Immediate Access content does not load due to blocked pop-ups in Safari on macOS.
+
+APPLIES TO:
+Students using Safari on macOS.
+
+STEP-BY-STEP RESOLUTION:
+1. Open Safari.
+2. Click "Safari" in the top-left menu.
+3. Click "Settings".
+4. Click "Websites".
+5. Select "Pop-Up Windows" from the left panel.
+6. Set all listed websites to Allow.
+7. At the bottom, set "When visiting other websites" to Allow.
+
+EXPECTED RESULT:
+Pop-ups required for Immediate Access platforms will function correctly.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.

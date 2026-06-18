@@ -1,0 +1,39 @@
+PROBLEM:
+Student cannot access their WileyPlus courseware, e-textbook, or assignments.
+
+APPLIES TO:
+Courses using WileyPlus digital courseware (commonly used in Math courses such as MAT 342).
+
+BLACKBOARD LOCATION:
+Tools tab (left side pane)
+
+STEP-BY-STEP RESOLUTION:
+1. Log onto Canvas.
+2. Select your course that uses WileyPlus.
+3. Click "Tools" from the left side menu.
+4. Find and click on "Wiley Course Resources" from the Tools list.
+5. You will be presented with two options:
+   - Option 1: Click "Login to an Existing Account" if you already have a WileyPlus account.
+   - Option 2: Create a new account by filling in the registration form.
+6. If creating a new account, enter:
+   - First Name
+   - Last Name
+   - Email Address (use your CBU email)
+   - Confirm Email Address
+   - Department (select your department)
+7. Check the consent boxes for Terms of Use and Privacy Policy.
+8. Click "Submit" to create your account.
+9. A 4-digit verification code will be emailed to you.
+10. Enter the 4-digit code when prompted to verify your account.
+
+NAVIGATION INSIDE WILEYPLUS:
+After logging in, you will see the Course Resources page with:
+- Key Resources: Click "Launch" on the WileyPLUS eTextbook tile to access your textbook.
+- Course-Wide Resources: General course materials.
+- Chapter folders: Access content organized by chapter (e.g., Ch 1: First-Order ODEs, Ch 2: Second-Order Linear ODEs, etc.).
+
+EXPECTED RESULT:
+After entering the verification code, you will have access to your WileyPlus e-textbook and course resources organized by chapter.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.

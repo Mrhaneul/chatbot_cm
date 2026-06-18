@@ -37,7 +37,10 @@ INTAKE_PLANNER_FALLBACK_MODEL = os.getenv("INTAKE_PLANNER_FALLBACK_MODEL", "mini
 _PLANNER_TIMEOUT = float(os.getenv("INTAKE_PLANNER_TIMEOUT", "20.0"))
 _PLANNER_MAX_TOKENS = int(os.getenv("INTAKE_PLANNER_MAX_TOKENS", "160"))
 
-_VALID_QUESTION_KEYS = frozenset(QUESTION_TEMPLATES.keys())
+# ask_course_code is excluded: the planner must never ask students for their
+# course code. If a model returns it anyway, _validate_decision maps it to
+# ask_platform_for_book_access. Slot collection for course details is disabled.
+_VALID_QUESTION_KEYS = frozenset(QUESTION_TEMPLATES.keys()) - {"ask_course_code"}
 
 _TOPIC_KEYWORDS = frozenset({
     "book", "textbook", "ebook", "e-book", "etext", "material", "materials",
@@ -75,7 +78,7 @@ _SYSTEM_PROMPT = (
     "You are an intake classifier for a university campus store chatbot.\n"
     "ONLY output valid JSON — no explanation, no prose, no markdown fences.\n\n"
     "VALID next_question_key values (one of these exact strings, or null):\n"
-    "ask_platform_for_book_access | ask_issue_for_platform | ask_course_code | "
+    "ask_platform_for_book_access | ask_issue_for_platform | "
     "ask_error_message | ask_material_type | ask_blackboard_or_publisher_location\n\n"
     "RULES:\n"
     "1. Platform named AND issue described → action=ALLOW_RAG, next_question_key=null.\n"

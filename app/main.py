@@ -71,9 +71,12 @@ from app.intake.flow import (
     intake_is_complete,
     intake_fallback_message,
     is_unknown_answer,
+    is_personal_info_reply,
     INTAKE_ESCALATION_MESSAGE,
+    INTAKE_ACCOUNT_ESCALATION_MESSAGE,
+    INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE,
 )
-from app.intake.question_templates import QUESTION_KEY_TO_SLOT
+from app.intake.question_templates import QUESTION_KEY_TO_SLOT, QUESTION_TEMPLATES, FALLBACK_QUESTION
 from app.intake.llm_planner import run_intake_planner, should_run_planner, get_question_for_decision
 
 from app.admin import admin_router
@@ -397,7 +400,7 @@ def _is_specific_query(query: str) -> bool:
         "return policy", "return window",
         "access code", "code",
         "opt out option",
-        # Access problem language — student describing a specific error state
+        # Access problem language -- student describing a specific error state
         "opted in",
         "already opted in",
         "got back",
@@ -470,7 +473,7 @@ def rerank_faq_candidates(candidates: list[dict], query: str) -> list[dict]:
             if not is_overview:
                 rerank_score += 0.10  # specificity bonus
             else:
-                rerank_score -= 0.20  # broadness penalty — increased from 0.10
+                rerank_score -= 0.20  # broadness penalty -- increased from 0.10
         else:
             # Even for non-specific queries, apply a small penalty to overview docs
             # to prevent them winning on shared vocabulary alone (e.g. "immediate access"
@@ -1132,7 +1135,7 @@ def is_blackboard_location_query(message: str) -> bool:
     """
     Detect queries asking for the physical location/address of a web-based platform
     (Blackboard, InsideCBU, Canvas, etc.). These should never return the campus store
-    address — they need a safe redirect response instead.
+    address -- they need a safe redirect response instead.
     """
     m = (message or "").lower()
     web_platforms = ["blackboard", "insidecbu", "inside cbu", "canvas", "lms"]
@@ -1243,7 +1246,7 @@ def is_merchandise_query(message: str) -> bool:
     """
     m = (message or "").lower()
 
-    # Long/safe signals — substring match is fine
+    # Long/safe signals -- substring match is fine
     phrase_signals = [
         "merch", "merchandise", "apparel", "clothing",
         "hoodie", "hoodies", "shirt", "shirts", "jacket",
@@ -1254,7 +1257,7 @@ def is_merchandise_query(message: str) -> bool:
         "can i buy", "where can i buy", "where do i buy",
     ]
 
-    # Short words — must match as whole words to avoid substring false positives
+    # Short words -- must match as whole words to avoid substring false positives
     # e.g. "hat" inside "what", "cup" inside "occupy", "gear" inside "appear"
     word_signals = [
         "mug", "mugs", "cup", "cups", "bottle",
@@ -1512,7 +1515,7 @@ def is_browser_cache_issue(message: str) -> bool:
         "ipad",
         "tablet",
     ]
-    # These are verbatim IA/VitalSource error strings — IA context is inherent,
+    # These are verbatim IA/VitalSource error strings -- IA context is inherent,
     # no second signal needed.
     strong_ia_symptoms = [
         "0 courses",
@@ -1918,7 +1921,7 @@ def is_confirmed_materials_issue(message: str) -> bool:
         return False
 
     # Policy/FAQ questions about opting out, physical availability, or bundle
-    # admin are not access troubleshooting issues — exclude them.
+    # admin are not access troubleshooting issues -- exclude them.
     if (
         is_opt_out_policy_question(message)
         or is_bundle_admin_question(message)
@@ -2045,7 +2048,7 @@ def browser_cache_fallback_reply() -> str:
 def extract_likely_platform_name(message: str) -> str:
     """
     Best-effort extraction of what looks like a platform name from a message.
-    Used only for display in the 'I don't recognize X' response — does not need
+    Used only for display in the 'I don't recognize X' response -- does not need
     to be perfect.
     """
     _stop = {
@@ -2300,7 +2303,7 @@ def is_ambiguous_platform_query(message: str) -> tuple[str | None, bool]:
     if corrected:
         return corrected, False
     
-    # ✨ NEW: Check for informational questions FIRST
+    #  NEW: Check for informational questions FIRST
     informational_patterns = [
         "what is",
         "what's",
@@ -2366,7 +2369,7 @@ def is_ambiguous_platform_query(message: str) -> tuple[str | None, bool]:
             return "INQUIZITIVE", False
         return "INQUIZITIVE", True
     
-    # ✨ UPDATED: Immediate Access without platform
+    #  UPDATED: Immediate Access without platform
     if "immediate access" in msg_lower:
         # Check for troubleshooting keywords
         troubleshooting_keywords = [
@@ -2399,6 +2402,7 @@ _LOW_RISK_CLARIFICATION_RE = re.compile(
       | (i\s+have\s+)?no\s+(idea|clue)
       | no\s+clue
       | unsure
+      | idk
       | yes | no | maybe | okay | ok
       | cengage | mindtap | mcgraw(\s+hill)? | pearson | vitalsource
       | wiley(plus)? | bedford | stukent | simucase | zybooks | sage
@@ -2410,7 +2414,7 @@ _LOW_RISK_CLARIFICATION_RE = re.compile(
 
 # Explicit allowlist for "I don't know / not sure" clarification replies.
 # Only a bare statement or a safe trailing noun phrase (platform, publisher,
-# one, textbook …) is accepted. fullmatch prevents arbitrary trailing content
+# one, textbook ...) is accepted. fullmatch prevents arbitrary trailing content
 # such as "I don't know how to jailbreak courseware" from matching.
 _DONT_KNOW_SAFE_RE = re.compile(
     r"""(?ix)
@@ -2451,7 +2455,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
     """
     Main chat endpoint with session management and performance tracking.
     """
-    # ✨ START TIMER
+    #  START TIMER
     request_start = time.time()
     retrieval_time_ms = 0
     llm_time_ms = 0
@@ -2482,30 +2486,84 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         forced_route_type = None
         forced_selected_source_file = None
         force_llm_generation = False
+
+        # --- Vision pre-analysis (before safety gate) ---
+        # Run image analysis early so the augmented query (which includes
+        # visible_error from the screenshot) can be used for safety scope
+        # evaluation. Without this, a vague user text like "I'm running into
+        # this problem" with a known-issue screenshot is blocked as
+        # OUT_OF_SCOPE before the image is ever examined.
+        # Hard safety still runs on the augmented text -- this only widens
+        # the scope signal, not the harm check.
+        image_context: dict = {}
+        if has_image:
+            try:
+                from app.llm.llama_client import analyze_image_for_retrieval, build_augmented_query
+                image_context = await analyze_image_for_retrieval(
+                    payload.image_base64,
+                    payload.image_media_type or "image/jpeg",
+                ) or {}
+                if image_context:
+                    retrieval_query = build_augmented_query(message, image_context)
+                    print(f"[VISION] image_context={image_context}")
+                    print(f"[VISION] augmented retrieval_query={retrieval_query!r}")
+            except Exception as _img_exc:
+                print(f"[VISION WARN] pre-safety image analysis failed: {_img_exc}")
+                image_context = {}
+
         is_cache_issue = is_browser_cache_issue(message) or is_browser_cache_issue(retrieval_query)
 
-        # ── Safety gate ───────────────────────────────────────────────────────
+        # -- Safety gate -------------------------------------------------------
         # Runs before Quick Help, retrieval, and LLM generation.
-        # The text portion is always checked, even for image+text messages —
-        # image content itself is not inspected (known limitation: vision-only
-        # harmful content could bypass this gate).
-        #
-        # Skip the fuzzy LLM classifier only for short, clearly safe follow-up
-        # replies within an active clarification session (e.g. "I don't know",
-        # "Cengage", "CS101"). Longer replies or replies containing suspicious
-        # terms are always classified. The deterministic rules always run.
+        # When image context is available, use the augmented query so screenshot
+        # visible_error can satisfy Campus Store scope checks.
+        # When an active intake profile exists, build an effective eval message
+        # from the original problem + collected slots + current reply so short
+        # issue-type answers like "I can't access" or "login issue" are not
+        # classified as out-of-scope without their intake context.
+        # Hard safety patterns (HARMFUL, ABUSE) in deterministic_rules always
+        # run because the raw reply is the last segment of every effective message.
+        _safety_eval_message = retrieval_query if (image_context and retrieval_query != message) else message
+        _active_intake_profile = session.get("intake_profile")
+        _active_intake = _active_intake_profile is not None
+        if _active_intake and _safety_eval_message == message:
+            # Build: "original_problem. Platform: X. Material: Y. current_reply"
+            _s_intake = IntakeProfile.from_dict(_active_intake_profile)
+            _s_ctx: list[str] = []
+            if _s_intake.original_message:
+                _s_ctx.append(_s_intake.original_message)
+            if _s_intake.platform:
+                _s_ctx.append(
+                    f"Platform: {PLATFORM_DISPLAY_NAMES.get(_s_intake.platform, _s_intake.platform)}"
+                )
+            if _s_intake.material_type:
+                _s_ctx.append(f"Material: {_s_intake.material_type}")
+            if _s_intake.issue_type:
+                _s_ctx.append(f"Issue: {_s_intake.issue_type}")
+            _s_ctx.append(message)
+            if len(_s_ctx) > 1:
+                _safety_eval_message = ". ".join(_s_ctx)
+                print(
+                    f"[INTAKE][SAFETY] session={session_id!r} active_intake=True "
+                    f"raw={message!r} effective={_safety_eval_message!r}"
+                )
+
         _session_in_clarification = (
             session.get("awaiting_platform_type", False)
             or session.get("awaiting_publisher_list_response", False)
             or session.get("awaiting_class_access_clarification", False)
             or session.get("awaiting_vitalsource_screen_confirm", False)
-            or session.get("intake_profile") is not None
+            or _active_intake
         )
         _skip_classifier = (
             _session_in_clarification and _is_low_risk_clarification_reply(message)
         )
+        print(
+            f"[INTAKE][SAFETY] session={session_id!r} active_intake={_active_intake} "
+            f"skip_classifier={_skip_classifier} eval_msg={_safety_eval_message!r}"
+        )
         safety_decision = await run_safety_gate(
-            message,
+            _safety_eval_message,
             enable_filter=ENABLE_SAFETY_FILTER,
             enable_classifier=ENABLE_SAFETY_CLASSIFIER and not _skip_classifier,
             llm_client=llm,
@@ -2536,7 +2594,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 recommended_pdfs=[],
                 debug_mode=debug_mode,
             )
-        # ─────────────────────────────────────────────────────────────────────
+        # ---------------------------------------------------------------------
 
         quick_help_match = build_quick_help_match(message)
         if quick_help_match:
@@ -2555,11 +2613,13 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             force_llm_generation = True
             intent = "GENERAL_FAQ"
 
-        # ── Intake: mid-flow turn (existing intake_profile in session) ───────────
+        # -- Intake: mid-flow turn (existing intake_profile in session) -----------
         # Known zero-content signatures outrank platform routing and active
         # intake. "0 Courses, 0 Materials" is a browser cache/cookies issue,
         # not a VitalSource account-creation problem.
-        if forced_retrieval is None and is_browser_cache_issue(message):
+        if forced_retrieval is None and (
+            is_browser_cache_issue(message) or is_browser_cache_issue(retrieval_query)
+        ):
             retrieval_start = time.time()
             forced_retrieval = await get_browser_cache_faq_retrieval(message)
             retrieval_time_ms = (time.time() - retrieval_start) * 1000
@@ -2577,23 +2637,91 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         _raw_profile = session.get("intake_profile")
         if forced_retrieval is None and _raw_profile is not None:
             profile = IntakeProfile.from_dict(_raw_profile)
+            print(
+                f"[INTAKE][MID-FLOW] session={session_id!r} raw={message!r} "
+                f"profile_before=platform={profile.platform} issue={profile.issue_type} "
+                f"material={profile.material_type} turns={profile.turns_spent}"
+            )
             profile = update_profile(profile, message)
+            print(
+                f"[INTAKE][MID-FLOW] profile_after=platform={profile.platform} "
+                f"issue={profile.issue_type} material={profile.material_type} "
+                f"complete={intake_is_complete(profile)}"
+            )
             if intake_is_complete(profile):
-                # Slots filled — enrich query and fall through to normal RAG.
                 print(
                     f"[INTAKE] Complete: platform={profile.platform} "
                     f"issue={profile.issue_type} after {profile.turns_spent} turn(s)"
                 )
                 session["intake_profile"] = None
-                # Seed session flags so existing RAG path picks up correctly.
-                session["stored_platform"] = profile.platform
-                session["stored_intent"] = "IA_ACCESS_ISSUE"
-                # Continue below with enriched retrieval query.
-                _enriched_query = profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
-                _intake_completed = True
-                _completed_intake_platform = profile.platform
-                _completed_intake_issue_type = profile.issue_type
-                _completed_intake_material_type = profile.material_type
+
+                # --- Issue-type-specific routing after intake completes ---
+
+                # Account / login: escalate directly to email. Do not route to
+                # account creation instructions — those are for explicit "how do I
+                # create an account" questions, not login/account trouble.
+                if profile.issue_type == "account":
+                    print("[INTAKE] account/login issue -- escalating to ImmediateAccess email")
+                    session["history"].append({"role": "user", "content": message})
+                    session["history"].append({"role": "assistant", "content": INTAKE_ACCOUNT_ESCALATION_MESSAGE})
+                    session["last_activity"] = datetime.now()
+                    total_time_ms = (time.time() - request_start) * 1000
+                    return ChatResponse(
+                        reply=INTAKE_ACCOUNT_ESCALATION_MESSAGE,
+                        source="INTAKE:ACCOUNT_ESCALATION",
+                        article_link=None,
+                        confidence=1.0,
+                        retrieval_time_ms=0,
+                        llm_time_ms=0,
+                        total_time_ms=round(total_time_ms, 2),
+                        recommended_pdfs=[],
+                        debug_mode=debug_mode,
+                    )
+
+                # Missing / no-content: route to the browser cache / no-content guide.
+                # This covers responses like "missing content", "can't see anything",
+                # "0 courses 0 materials", etc. The guide gives cache/cookies steps.
+                if profile.issue_type == "missing":
+                    print("[INTAKE] missing/no-content issue -- routing to cache known-issue guide")
+                    _cache_retrieval_start = time.time()
+                    forced_retrieval = await get_browser_cache_faq_retrieval(message)
+                    retrieval_time_ms = (time.time() - _cache_retrieval_start) * 1000
+                    forced_route_type = "KNOWN_ISSUE_LLM"
+                    forced_selected_source_file = (
+                        forced_retrieval.get("metadata", {}).get("source_file")
+                        if forced_retrieval else None
+                    )
+                    force_llm_generation = True
+                    intent = "GENERAL_FAQ"
+                    # Fall through to KNOWN_ISSUE_LLM rendering below.
+                    # (Do not set _intake_completed -- forced_retrieval drives the route.)
+                else:
+                    # Access / location issue: route to platform-specific instructions.
+                    session["stored_platform"] = profile.platform
+                    session["stored_intent"] = "IA_ACCESS_ISSUE"
+                    _enriched_query = profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
+                    _intake_completed = True
+                    _completed_intake_platform = profile.platform
+                    _completed_intake_issue_type = profile.issue_type
+                    _completed_intake_material_type = profile.material_type
+            elif is_personal_info_reply(message):
+                print("[INTAKE] Student provided personal info (ID/email) -> escalating")
+                session["intake_profile"] = None
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE})
+                session["last_activity"] = datetime.now()
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE,
+                    source="INTAKE:ESCALATION",
+                    article_link=None,
+                    confidence=1.0,
+                    retrieval_time_ms=0,
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[],
+                    debug_mode=debug_mode,
+                )
             elif is_unknown_answer(message) and profile.last_requested_slot:
                 print(
                     f"[INTAKE] Unknown answer for slot={profile.last_requested_slot!r} "
@@ -2617,7 +2745,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     debug_mode=debug_mode,
                 )
             elif profile.is_expired():
-                print(f"[INTAKE] Expired after {profile.turns_spent} turn(s) — using fallback")
+                print(f"[INTAKE] Expired after {profile.turns_spent} turn(s) -- using fallback")
                 session["intake_profile"] = None
                 fallback = intake_fallback_message()
                 session["history"].append({"role": "user", "content": message})
@@ -2657,7 +2785,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     recommended_pdfs=[],
                     debug_mode=debug_mode,
                 )
-        # ── Intake: first vague message — start intake if appropriate ─────────
+        # -- Intake: first vague message -- start intake if appropriate ---------
         # Guard: skip if mid-flow intake already completed this turn.
         # Without this guard, a vague completion message (e.g. "I can't access
         # the textbook") re-triggers first-turn intake after slots are filled.
@@ -2698,7 +2826,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     debug_mode=debug_mode,
                 )
 
-        # ── LLM intake planner (catches vague cases deterministic missed) ──────
+        # -- LLM intake planner (catches vague cases deterministic missed) ------
         # Only runs when neither mid-flow intake nor deterministic first-turn
         # intake handled this message, the message is topic-relevant, and there
         # is no image (image+text requests use the vision flow, not text-only planning).
@@ -2714,15 +2842,41 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         ):
             planner_decision = await run_intake_planner(message, semaphore=llm_semaphore, known_slots=_session_known_slots)
             if planner_decision.action == "ASK_CLARIFICATION":
-                question = get_question_for_decision(planner_decision)
                 _planner_profile = update_profile(IntakeProfile(original_message=message), message)
                 # Pre-fill profile from session state so the next turn's mid-flow
                 # handler doesn't re-ask for slots already collected.
                 if not _planner_profile.platform and _session_known_slots.get("platform"):
                     _planner_profile.platform = _session_known_slots["platform"]
-                _planner_profile.last_requested_slot = QUESTION_KEY_TO_SLOT.get(
-                    planner_decision.next_question_key or "", "platform"
-                )
+                # Map location/finding planner intent to issue_type='access'.
+                # "book_location" and similar intents mean the student wants to find
+                # or access their material — issue_type is inherently 'access'.
+                _LOCATION_INTENTS = {"book_location", "finding_materials", "where_to_access",
+                                     "material_location", "access_material", "book_access"}
+                if _planner_profile.issue_type is None and planner_decision.intent in _LOCATION_INTENTS:
+                    _planner_profile.issue_type = "access"
+                # If the planner asks for a slot already present in the profile
+                # (e.g. material_type was already extracted from the original message),
+                # redirect to the next genuinely missing slot.
+                # ask_course_code is always redirected — Lance must never ask students
+                # for their course code, section, or enrollment details.
+                _next_key = planner_decision.next_question_key or "ask_platform_for_book_access"
+                if _next_key == "ask_course_code":
+                    _next_key = "ask_issue_for_platform" if _planner_profile.platform else "ask_platform_for_book_access"
+                    print(f"[PLANNER] ask_course_code suppressed -> {_next_key}")
+                _requested_slot = QUESTION_KEY_TO_SLOT.get(_next_key, "platform")
+                if _requested_slot == "material_type" and _planner_profile.material_type is not None:
+                    if _planner_profile.platform is None:
+                        _next_key = "ask_platform_for_book_access"
+                        _requested_slot = "platform"
+                    elif _planner_profile.issue_type is None:
+                        _next_key = "ask_issue_for_platform"
+                        _requested_slot = "issue_type"
+                elif _requested_slot == "issue_type" and _planner_profile.issue_type is not None:
+                    if _planner_profile.platform is None:
+                        _next_key = "ask_platform_for_book_access"
+                        _requested_slot = "platform"
+                question = QUESTION_TEMPLATES.get(_next_key, FALLBACK_QUESTION)
+                _planner_profile.last_requested_slot = _requested_slot
                 session["intake_profile"] = _planner_profile.to_dict()
                 session["history"].append({"role": "user", "content": message})
                 session["history"].append({"role": "assistant", "content": question})
@@ -2741,7 +2895,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 )
             if planner_decision.enriched_query:
                 retrieval_query = planner_decision.enriched_query
-        # ─────────────────────────────────────────────────────────────────────
+        # ---------------------------------------------------------------------
 
         # Initialize variables
         platform = None
@@ -2920,10 +3074,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         if forced_retrieval is None and (precheck_intent == "GENERAL_FAQ" or is_bundle_faq) and not session.get("awaiting_platform_type", False):
             faq_precheck_result = await faq_precheck(retrieval_query)
             if faq_precheck_result:
-                print(f"[FAQ PRECHECK] High-confidence match found — suppressing clarification")
+                print(f"[FAQ PRECHECK] High-confidence match found -- suppressing clarification")
         if faq_precheck_result and is_bundle_faq:
             intent = "GENERAL_FAQ"
-            print(f"[FAQ PRECHECK] Bundle admin question — overriding intent to GENERAL_FAQ")
+            print(f"[FAQ PRECHECK] Bundle admin question -- overriding intent to GENERAL_FAQ")
 
         if (
             forced_retrieval is None
@@ -2958,7 +3112,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 "could you let me know which platform or publisher your textbook uses?\n\n"
                 "For example: VitalSource, Cengage MindTap, Pearson MyLab, McGraw Hill Connect, "
                 "Bedford, Sage, WileyPlus, etc.\n\n"
-                "If you're not sure, check the Immediate Access tab in Blackboard — "
+                "If you're not sure, check the Immediate Access tab in Blackboard -- "
                 "it should show the name of the publisher."
             )
             session["history"].append({"role": "user", "content": message})
@@ -3188,21 +3342,21 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     debug_mode=debug_mode
                 )
 
-        # ── Publisher list response handler ───────────────────────────────────────
+        # -- Publisher list response handler ---------------------------------------
         # Fires when the student is responding to the numbered publisher list.
         if session.get("awaiting_publisher_list_response", False):
             print("[STATE DEBUG] Processing publisher list response")
             msg_lower = message.lower().strip()
             unrecognized_name = session.get("unrecognized_platform_name", "your platform")
 
-            # 3a — Student picked a number
+            # 3a -- Student picked a number
             numeric_answer = msg_lower.strip(".,!? ")
             platform_from_number = PUBLISHER_LIST_MAP.get(numeric_answer)
 
-            # 3b — Student named a publisher (detect via existing aliases)
+            # 3b -- Student named a publisher (detect via existing aliases)
             platform_from_text = detect_platform_from_text(msg_lower)
 
-            # 3c — Student doesn't know / not on the list
+            # 3c -- Student doesn't know / not on the list
             not_on_list_phrases = [
                 "not on the list", "not on list", "don't know", "dont know",
                 "not sure", "none of these", "none of them", "not listed",
@@ -3214,7 +3368,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             resolved_platform = platform_from_number or platform_from_text
 
             if resolved_platform and not is_not_on_list:
-                # Routes 3a / 3b — valid platform identified, fall through to normal IA flow
+                # Routes 3a / 3b -- valid platform identified, fall through to normal IA flow
                 platform = resolved_platform
                 intent = "IA_ACCESS_ISSUE"
                 session["awaiting_publisher_list_response"] = False
@@ -3224,10 +3378,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 session["stored_intent"] = "IA_ACCESS_ISSUE"
                 session["stored_platform"] = platform
                 print(f"[PUBLISHER LIST] Resolved platform: {platform}")
-                # Fall through — let the normal retrieval path handle it below.
+                # Fall through -- let the normal retrieval path handle it below.
 
             else:
-                # Route 3c — general IA fallback with contact prompt
+                # Route 3c -- general IA fallback with contact prompt
                 retrieval_start = time.time()
                 general_retrieval = await retrieve_async(
                     "general Immediate Access etextbook access steps Blackboard opted in cannot access",
@@ -3292,7 +3446,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
             msg_lower = message.lower()
             publisher = session.get("stored_publisher")
-            original_query = session.get("stored_original_query", "")  # ✨ Get original query
+            original_query = session.get("stored_original_query", "")  #  Get original query
             platform_type_reply = classify_platform_type_reply(message)
             book_format_reply = classify_book_format_reply(message)
 
@@ -3524,10 +3678,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 intent = "IA_ACCESS_ISSUE"
                 platform = detect_platform_from_text(msg_lower)
                 
-                # ✨ Use original query + platform for better retrieval
+                #  Use original query + platform for better retrieval
                 if platform and original_query:
                     enhanced_query = f"{original_query} {platform} access instructions"
-                    print(f"🔍 [QUERY DEBUG] Enhanced query: {enhanced_query}")
+                    print(f" [QUERY DEBUG] Enhanced query: {enhanced_query}")
 
             elif platform_type_reply == "TEXTBOOK_EBOOK":
                 intent = "IA_ACCESS_ISSUE"
@@ -3549,10 +3703,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 # If this was a textbook/ebook selection, skip platform requirement and
                 # continue with general instructions retrieval.
                 if platform_type_reply == "TEXTBOOK_EBOOK":
-                    print("🔍 [STATE DEBUG] Textbook/Ebook clarification detected; using general instructions")
+                    print(" [STATE DEBUG] Textbook/Ebook clarification detected; using general instructions")
                 elif session.get("platform_clarification_count", 0) >= 1 and not is_low_info_response:
                     # Student gave a response that didn't match any known platform after
-                    # we already asked once — show the numbered publisher list.
+                    # we already asked once -- show the numbered publisher list.
                     unrecognized_name = extract_likely_platform_name(message)
                     session["unrecognized_platform_name"] = unrecognized_name
                     print(f"[PUBLISHER LIST] Unrecognized platform: {unrecognized_name!r}")
@@ -3614,7 +3768,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             if platform is not None or platform_type_reply == "TEXTBOOK_EBOOK":
                 session["awaiting_platform_type"] = False
                 session["stored_publisher"] = None
-                session["stored_original_query"] = None  # ✨ Clear stored query
+                session["stored_original_query"] = None  #  Clear stored query
                 session.pop("platform_clarification_count", None)
                 session.pop("unrecognized_platform_name", None)
             course_code = extract_course_code(message)
@@ -3630,7 +3784,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             
             print(f"[PLATFORM DEBUG] Detected platform: {platform}")
 
-            # ✨ ADD THIS ELIF BLOCK FOR COURSE CODE HANDLING
+            #  ADD THIS ELIF BLOCK FOR COURSE CODE HANDLING
         elif session.get("awaiting_course_code", False):
             if detect_topic_switch(message, session["stored_intent"], session.get("stored_platform")):
                 session["awaiting_course_code"] = False
@@ -3647,7 +3801,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 session["stored_intent"] = None
                 session["stored_platform"] = None
         
-        # ✨ ADD THIS ELSE BLOCK FOR NEW QUERIES
+        #  ADD THIS ELSE BLOCK FOR NEW QUERIES
         else:
             # This handles NEW conversations
             is_platform_clarification = False
@@ -3669,7 +3823,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     "norton textbook or norton inquizitive",
                     "which platform do you see in blackboard",
                     "platform name on your blackboard course page under the immediate access tab",
-                    # Publisher list — numeric/short answers must not reset intent to GENERAL_FAQ
+                    # Publisher list -- numeric/short answers must not reset intent to GENERAL_FAQ
                     "is your textbook from one of these publishers",
                     "you can reply with the number or the name",
                 ]
@@ -3683,7 +3837,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 intent = "IA_ACCESS_ISSUE"
                 print("[INTENT DEBUG] Intake completed - preserving IA_ACCESS_ISSUE intent")
             elif not is_platform_clarification:
-                intent = detect_intent(message)  # ✨ THIS IS THE CRITICAL LINE!
+                intent = detect_intent(message)  #  THIS IS THE CRITICAL LINE!
                 print(f"[INTENT DEBUG] Called detect_intent(), result: {intent}")
             
             course_code = extract_course_code(message)
@@ -3691,7 +3845,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             if platform is None:
                 platform = detect_platform_from_text(message)
             
-            print(f"🔍 [PLATFORM DEBUG] Detected platform: {platform}")
+            print(f" [PLATFORM DEBUG] Detected platform: {platform}")
 
         # Check for ambiguous class access queries (need clarification)
         if forced_retrieval is None and is_ambiguous_class_access_query(message):
@@ -3746,7 +3900,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             )
 
         # Force IA_ACCESS_ISSUE when a Read Now button is clearly missing and
-        # a platform has already been identified — detect_intent() can misclassify
+        # a platform has already been identified -- detect_intent() can misclassify
         # these as GENERAL_FAQ when the phrasing lacks other IA signals.
         if is_missing_read_now_button(message) and platform is not None and intent != "IA_ACCESS_ISSUE":
             intent = "IA_ACCESS_ISSUE"
@@ -3828,7 +3982,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             and session.get("stored_intent") == "IA_ACCESS_ISSUE"
         ):
             intent = "IA_ACCESS_ISSUE"
-            print(f"🔍 [INTENT DEBUG] IA platform follow-up applied: platform={platform}")
+            print(f" [INTENT DEBUG] IA platform follow-up applied: platform={platform}")
 
         # Deterministic handoff: if user provides only a platform name while we are
         # already in IA flow, return platform instructions directly.
@@ -4009,7 +4163,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
         if forced_retrieval is None and intent == "GENERAL_FAQ" and is_blackboard_location_query(message) and not is_blank_page_query(message):
             blackboard_reply = (
-                "Blackboard is a web-based learning platform — it doesn't have a physical location. "
+                "Blackboard is a web-based learning platform -- it doesn't have a physical location. "
                 "You can access it through your web browser by searching for \"CBU Blackboard\" or "
                 "through the InsideCBU portal.\n\n"
                 "If you're having trouble logging in, please contact the CBU IT Help Desk for assistance."
@@ -4171,18 +4325,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
         try:
             # --- Vision retrieval augmentation ---
-            image_context = {}
-
-            if payload.image_base64:
-                from app.llm.llama_client import analyze_image_for_retrieval, build_augmented_query
-                image_context = await analyze_image_for_retrieval(
-                    payload.image_base64,
-                    payload.image_media_type or "image/jpeg",
-                )
-                retrieval_query = build_augmented_query(message, image_context)
-                print(f"[VISION] image_context={image_context}")
-                print(f"[VISION] augmented retrieval_query={retrieval_query!r}")
-
+            # image_context and retrieval_query were computed before the safety
+            # gate so screenshot visible_error can satisfy scope checks.
+            # Apply platform override and intent correction here.
+            if payload.image_base64 and image_context:
                 if not platform and image_context.get("detected_platform"):
                     print(f"[VISION] detected_platform from image: {image_context['detected_platform']!r}")
                 is_cache_issue = is_browser_cache_issue(message) or is_browser_cache_issue(retrieval_query)
@@ -4190,10 +4336,10 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     intent = "GENERAL_FAQ"
                     print(f"[INTENT DEBUG] Browser cache issue override -> GENERAL_FAQ (cache detected in query or image)")
 
-            # ✨ START RETRIEVAL TIMER
+            #  START RETRIEVAL TIMER
             retrieval_start = time.time()
 
-            # ✨ NEW: Skip retrieval for vague queries
+            #  NEW: Skip retrieval for vague queries
             if forced_retrieval is not None:
                 retrieval = forced_retrieval
                 context = strip_article_link_lines(strip_meta_prefix(retrieval["context"])) if retrieval.get("context") else ""
@@ -4210,7 +4356,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 retrieval = None
                 context = ""
             elif intent == "IA_ACCESS_ISSUE":
-                # Preserve query set in awaiting_platform_type TEXTBOOK_EBOOK handler —
+                # Preserve query set in awaiting_platform_type TEXTBOOK_EBOOK handler --
                 # do not let conversation context pollute it (causes MacMillan false-match).
                 if _intake_completed:
                     enhanced_query = retrieval_query
@@ -4218,7 +4364,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     enhanced_query = enhance_query_with_conversation_context(message, session["history"])
 
                 # Deterministic override: "Read Now button missing" is a general
-                # Immediate Access concept — not platform-specific. Retrieve from the
+                # Immediate Access concept -- not platform-specific. Retrieve from the
                 # general instructions index so any platform finds the same guidance.
                 # Without this override, platform-specific general-access chunks win
                 # in FAISS because they contain "Read section" language.
@@ -4228,7 +4374,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     platform, _plat_raw
                 ) if platform else None
                 # "Launch Courseware" (VitalSource-specific button) needs the bedford
-                # index, not the general Read Now index — keep platform as-is.
+                # index, not the general Read Now index -- keep platform as-is.
                 is_launch_courseware = "launch courseware" in message.lower()
                 if (is_missing_read_now_button(message) or session.get("read_now_missing_active")) and not is_launch_courseware:
                     if platform == "MCGRAW_HILL":
@@ -4236,17 +4382,17 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                         # Route to mcgraw-specific index with a targeted query.
                         enhanced_query = "McGraw Hill Connect no Read Now button Immediate Access tab Connect link eTextbook"
                         read_now_retrieval_platform = "mcgraw"
-                        print(f"[RAG DEBUG] Read Now override — McGraw Hill specific path")
+                        print(f"[RAG DEBUG] Read Now override -- McGraw Hill specific path")
                     else:
                         enhanced_query = (
                             "Read Now button missing Immediate Access not available processing"
                         )
                         read_now_retrieval_platform = None  # use general index, not platform-specific
-                        print(f"[RAG DEBUG] Read Now button override applied — using general index")
+                        print(f"[RAG DEBUG] Read Now button override applied -- using general index")
                     session["read_now_missing_active"] = True
                 elif is_launch_courseware:
                     enhanced_query = "launch courseware button VitalSource instead of Read Now access eTextbook"
-                    print(f"[RAG DEBUG] Launch Courseware override applied — platform={read_now_retrieval_platform}")
+                    print(f"[RAG DEBUG] Launch Courseware override applied -- platform={read_now_retrieval_platform}")
 
                 print(f"[RAG DEBUG] Original query: '{message}'")
                 print(f"[RAG DEBUG] Enhanced query: '{enhanced_query}'")
@@ -4268,7 +4414,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             elif intent == "GENERAL_FAQ":
                 faq_retrieval_query = build_browser_cache_faq_query(retrieval_query) if is_cache_issue else retrieval_query
                 if faq_precheck_result and not is_cache_issue:
-                    # Already retrieved and reranked — reuse the result
+                    # Already retrieved and reranked -- reuse the result
                     retrieval = faq_precheck_result
                     print(f"[FAQ PRECHECK] Reusing precheck result: {retrieval.get('source_id')}")
                 else:
@@ -4285,7 +4431,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             if retrieval and "context" in retrieval:
                 context = strip_article_link_lines(strip_meta_prefix(retrieval["context"]))
             
-            # ✨ END RETRIEVAL TIMER
+            #  END RETRIEVAL TIMER
             retrieval_time_ms = (time.time() - retrieval_start) * 1000
 
         except AttributeError as e:
@@ -4394,7 +4540,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 "Tell the user you do not have current verified hours in your knowledge base "
                 "and direct them to check the Campus Store website or call 951-343-4259."
             )
-        # ✨ UPDATED: Add hint for vague queries with textbook/IA detection
+        #  UPDATED: Add hint for vague queries with textbook/IA detection
         elif is_vague_query:
             # Check what type of vague query it is
             msg_lower = message.lower()
@@ -4445,11 +4591,11 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
         elif intent == "IA_ACCESS_ISSUE":
             if platform is not None:
-                # Platform is confirmed — build a resolved context block so the LLM
+                # Platform is confirmed -- build a resolved context block so the LLM
                 # never asks the student to specify the platform again.
                 _platform_display = PLATFORM_DISPLAY_NAMES.get(platform, platform)
                 _resolved_lines = [
-                    f"Platform: {_platform_display} (confirmed — do not ask again)",
+                    f"Platform: {_platform_display} (confirmed -- do not ask again)",
                 ]
                 if _intake_completed:
                     if _completed_intake_issue_type:
@@ -4462,7 +4608,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 system_hint = (
                     f"RESOLVED SESSION CONTEXT:\n{_resolved_block}\n\n"
                     f"The student is using {_platform_display}. "
-                    "DO NOT ask the student which platform or publisher they use — it is confirmed above. "
+                    "DO NOT ask the student which platform or publisher they use -- it is confirmed above. "
                     "Use the retrieved instructions to provide specific access steps for this platform. "
                     "Do NOT suggest physical textbooks. "
                     "Do NOT ask for course code unless a specific documented step requires it. "
@@ -4497,7 +4643,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
         # For known-issue cache routes with an image: inject an explicit guard so the
         # LLM does not relay the generic VitalSource "contact your faculty or digital
-        # program manager" text as the primary advice — that message appears on the
+        # program manager" text as the primary advice -- that message appears on the
         # same VitalSource screen but is not the CBU Immediate Access resolution.
         if (
             forced_route_type == "KNOWN_ISSUE_LLM"
@@ -4518,7 +4664,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             )
             system_hint = f"{system_hint}\n\n{_cache_vision_guard}".strip() if system_hint else _cache_vision_guard
 
-        # ✨ START LLM TIMER
+        #  START LLM TIMER
         llm_start = time.time()
 
         # When intake just completed, use the enriched query (which includes platform,
@@ -4567,12 +4713,12 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             if not _gv_result.passed:
                 print(
                     f"[GROUNDING VERIFIER] {len(_gv_result.unsupported_claims)} unsupported "
-                    f"claim(s) detected — triggering safe fallback. "
+                    f"claim(s) detected -- triggering safe fallback. "
                     f"Claims: {[(c.claim_type, c.claim_text) for c in _gv_result.unsupported_claims]}"
                 )
                 reply = GROUNDING_SAFE_FALLBACK
 
-        # ✨ END LLM TIMER
+        #  END LLM TIMER
         llm_time_ms = (time.time() - llm_start) * 1000
 
         session["history"].append({
@@ -4583,7 +4729,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         if len(session["history"]) > MAX_HISTORY_TURNS * 2:
             session["history"] = session["history"][-MAX_HISTORY_TURNS * 2:]
 
-        # ✨ CALCULATE TOTAL TIME
+        #  CALCULATE TOTAL TIME
         total_time_ms = (time.time() - request_start) * 1000
 
         confidence = retrieval["score"] if retrieval else 0.0
@@ -4608,7 +4754,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             print(f"[WARN] PDF recommendation failed: {e}")
             recommended_pdfs = []
 
-        # ✨ PRINT PERFORMANCE METRICS
+        #  PRINT PERFORMANCE METRICS
         print("\n[PERF] PERFORMANCE METRICS:")
         print(f"   LLM Queue Wait: {llm_queue_wait_ms:.2f}ms")
         print(f"   Retrieval: {retrieval_time_ms:.2f}ms")
@@ -4674,19 +4820,66 @@ async def chat_stream(payload: ChatRequest):
             # Preserve the response field for the frontend LLM badge.
             debug_mode = True
 
-            # ── Safety gate (same order as /chat: runs before everything) ────────
+            # --- Vision pre-analysis (before safety gate) ---
+            # Mirror the non-streaming path: analyze image early so visible_error
+            # from the screenshot can satisfy Campus Store scope checks.
+            retrieval_query = message
+            image_context: dict = {}
+            if payload.image_base64:
+                try:
+                    from app.llm.llama_client import analyze_image_for_retrieval, build_augmented_query
+                    image_context = await analyze_image_for_retrieval(
+                        payload.image_base64,
+                        payload.image_media_type or "image/jpeg",
+                    ) or {}
+                    if image_context:
+                        retrieval_query = build_augmented_query(message, image_context)
+                        print(f"[VISION] image_context={image_context}")
+                        print(f"[VISION] augmented retrieval_query={retrieval_query!r}")
+                except Exception as _img_exc:
+                    print(f"[VISION WARN] pre-safety image analysis failed: {_img_exc}")
+                    image_context = {}
+
+            # -- Safety gate (same order as /chat: runs before everything) --------
+            _safety_eval_message = retrieval_query if (image_context and retrieval_query != message) else message
+            _active_intake_profile = session.get("intake_profile")
+            _active_intake = _active_intake_profile is not None
+            if _active_intake and _safety_eval_message == message:
+                _s_intake = IntakeProfile.from_dict(_active_intake_profile)
+                _s_ctx: list[str] = []
+                if _s_intake.original_message:
+                    _s_ctx.append(_s_intake.original_message)
+                if _s_intake.platform:
+                    _s_ctx.append(
+                        f"Platform: {PLATFORM_DISPLAY_NAMES.get(_s_intake.platform, _s_intake.platform)}"
+                    )
+                if _s_intake.material_type:
+                    _s_ctx.append(f"Material: {_s_intake.material_type}")
+                if _s_intake.issue_type:
+                    _s_ctx.append(f"Issue: {_s_intake.issue_type}")
+                _s_ctx.append(message)
+                if len(_s_ctx) > 1:
+                    _safety_eval_message = ". ".join(_s_ctx)
+                    print(
+                        f"[INTAKE][SAFETY] session={session_id!r} active_intake=True "
+                        f"raw={message!r} effective={_safety_eval_message!r}"
+                    )
             _session_in_clarification = (
                 session.get("awaiting_platform_type", False)
                 or session.get("awaiting_publisher_list_response", False)
                 or session.get("awaiting_class_access_clarification", False)
                 or session.get("awaiting_vitalsource_screen_confirm", False)
-                or session.get("intake_profile") is not None
+                or _active_intake
             )
             _skip_classifier = (
                 _session_in_clarification and _is_low_risk_clarification_reply(message)
             )
+            print(
+                f"[INTAKE][SAFETY] session={session_id!r} active_intake={_active_intake} "
+                f"skip_classifier={_skip_classifier} eval_msg={_safety_eval_message!r}"
+            )
             safety_decision = await run_safety_gate(
-                message,
+                _safety_eval_message,
                 enable_filter=ENABLE_SAFETY_FILTER,
                 enable_classifier=ENABLE_SAFETY_CLASSIFIER and not _skip_classifier,
                 llm_client=llm,
@@ -4747,7 +4940,9 @@ async def chat_stream(payload: ChatRequest):
                 stream_forced_selected_source_file = stream_forced_retrieval.get("metadata", {}).get("source_file")
                 intent = "GENERAL_FAQ"
 
-            if stream_forced_retrieval is None and is_browser_cache_issue(message):
+            if stream_forced_retrieval is None and (
+                is_browser_cache_issue(message) or is_browser_cache_issue(retrieval_query)
+            ):
                 retrieval_start = time.time()
                 stream_forced_retrieval = await get_browser_cache_faq_retrieval(message)
                 _stream_forced_retrieval_ms = (time.time() - retrieval_start) * 1000
@@ -4762,19 +4957,9 @@ async def chat_stream(payload: ChatRequest):
                 session["awaiting_platform_type"] = False
 
             # --- Vision retrieval augmentation ---
-            image_context = {}
-            retrieval_query = message
-
-            if payload.image_base64:
-                from app.llm.llama_client import analyze_image_for_retrieval, build_augmented_query
-                image_context = await analyze_image_for_retrieval(
-                    payload.image_base64,
-                    payload.image_media_type or "image/jpeg",
-                )
-                retrieval_query = build_augmented_query(message, image_context)
-                print(f"[VISION] image_context={image_context}")
-                print(f"[VISION] augmented retrieval_query={retrieval_query!r}")
-
+            # image_context and retrieval_query already computed before safety gate.
+            # Apply platform override and intent correction here.
+            if payload.image_base64 and image_context:
                 if not platform and image_context.get("detected_platform"):
                     print(f"[VISION] detected_platform from image: {image_context['detected_platform']!r}")
 
@@ -4783,7 +4968,7 @@ async def chat_stream(payload: ChatRequest):
                 intent = "GENERAL_FAQ"
                 print("[STREAM INTENT] Browser cache override -> GENERAL_FAQ (cache detected in query or image)")
 
-            # ── Intake: mid-flow turn (user replied to an intake question) ────────
+            # -- Intake: mid-flow turn (user replied to an intake question) --------
             _stream_intake_completed = False
             _stream_enriched_query: str | None = None
             _stream_completed_platform: str | None = None
@@ -4792,20 +4977,71 @@ async def chat_stream(payload: ChatRequest):
             _raw_profile = session.get("intake_profile")
             if stream_forced_retrieval is None and _raw_profile is not None:
                 profile = IntakeProfile.from_dict(_raw_profile)
+                print(
+                    f"[INTAKE][MID-FLOW] session={session_id!r} raw={message!r} "
+                    f"profile_before=platform={profile.platform} issue={profile.issue_type} "
+                    f"material={profile.material_type} turns={profile.turns_spent}"
+                )
                 profile = update_profile(profile, message)
+                print(
+                    f"[INTAKE][MID-FLOW] profile_after=platform={profile.platform} "
+                    f"issue={profile.issue_type} material={profile.material_type} "
+                    f"complete={intake_is_complete(profile)}"
+                )
                 if intake_is_complete(profile):
                     session["intake_profile"] = None
-                    session["stored_platform"] = profile.platform
-                    session["stored_intent"] = "IA_ACCESS_ISSUE"
-                    platform = profile.platform
-                    intent = "IA_ACCESS_ISSUE"
-                    retrieval_query = profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
-                    _stream_intake_completed = True
-                    _stream_enriched_query = retrieval_query
-                    _stream_completed_platform = profile.platform
-                    _stream_completed_issue_type = profile.issue_type
-                    _stream_completed_material_type = profile.material_type
-                    # fall through to retrieval
+                    print(
+                        f"[STREAM INTAKE] Complete: platform={profile.platform} "
+                        f"issue={profile.issue_type} after {profile.turns_spent} turn(s)"
+                    )
+
+                    # Account / login: escalate directly to email.
+                    if profile.issue_type == "account":
+                        print("[STREAM INTAKE] account/login issue -- escalating to ImmediateAccess email")
+                        session["history"].append({"role": "user", "content": message})
+                        session["history"].append({"role": "assistant", "content": INTAKE_ACCOUNT_ESCALATION_MESSAGE})
+                        session["last_activity"] = datetime.now()
+                        async for token in _stream_words(INTAKE_ACCOUNT_ESCALATION_MESSAGE):
+                            yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
+                        yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE:ACCOUNT_ESCALATION', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                        return
+
+                    # Missing / no-content: route to browser cache / no-content guide.
+                    if profile.issue_type == "missing":
+                        print("[STREAM INTAKE] missing/no-content issue -- routing to cache known-issue guide")
+                        _cache_retrieval_start = time.time()
+                        stream_forced_retrieval = await get_browser_cache_faq_retrieval(message)
+                        _stream_forced_retrieval_ms = (time.time() - _cache_retrieval_start) * 1000
+                        stream_forced_route_type = "KNOWN_ISSUE_LLM"
+                        stream_forced_selected_source_file = (
+                            stream_forced_retrieval.get("metadata", {}).get("source_file")
+                            if stream_forced_retrieval else None
+                        )
+                        intent = "GENERAL_FAQ"
+                        # Fall through to KNOWN_ISSUE_LLM rendering.
+                    else:
+                        # Access / location issue: platform-specific instructions.
+                        session["stored_platform"] = profile.platform
+                        session["stored_intent"] = "IA_ACCESS_ISSUE"
+                        platform = profile.platform
+                        intent = "IA_ACCESS_ISSUE"
+                        retrieval_query = profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
+                        _stream_intake_completed = True
+                        _stream_enriched_query = retrieval_query
+                        _stream_completed_platform = profile.platform
+                        _stream_completed_issue_type = profile.issue_type
+                        _stream_completed_material_type = profile.material_type
+                        # fall through to retrieval
+                elif is_personal_info_reply(message):
+                    print("[STREAM INTAKE] Student provided personal info (ID/email) -> escalating")
+                    session["intake_profile"] = None
+                    session["history"].append({"role": "user", "content": message})
+                    session["history"].append({"role": "assistant", "content": INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE})
+                    session["last_activity"] = datetime.now()
+                    async for token in _stream_words(INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE):
+                        yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE:ESCALATION', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                    return
                 elif is_unknown_answer(message) and profile.last_requested_slot:
                     print(
                         f"[STREAM INTAKE] Unknown answer for slot={profile.last_requested_slot!r} "
@@ -4845,7 +5081,7 @@ async def chat_stream(payload: ChatRequest):
                     yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
                     return
 
-            # ── Intake: first vague message ──────────────────────────────────────
+            # -- Intake: first vague message --------------------------------------
             elif stream_forced_retrieval is None and not is_clear_faq_policy_query(message) and should_enter_intake(message, session):
                 new_profile = IntakeProfile(original_message=message)
                 new_profile = update_profile(new_profile, message)
@@ -4873,7 +5109,7 @@ async def chat_stream(payload: ChatRequest):
                     return
 
             else:
-                # ── LLM intake planner (catches vague cases deterministic missed) ──
+                # -- LLM intake planner (catches vague cases deterministic missed) --
                 # Skip for image+text requests: vision analysis runs separately and
                 # may identify the platform from the screenshot. Text-only planning
                 # before vision would risk asking "which platform?" unnecessarily.
@@ -4890,15 +5126,38 @@ async def chat_stream(payload: ChatRequest):
                 ):
                     planner_decision = await run_intake_planner(message, semaphore=llm_semaphore, known_slots=_stream_known_slots)
                     if planner_decision.action == "ASK_CLARIFICATION":
-                        question = get_question_for_decision(planner_decision)
                         _planner_profile = update_profile(IntakeProfile(original_message=message), message)
                         # Pre-fill profile from session state so the next mid-flow
                         # turn doesn't re-ask for slots already collected.
                         if not _planner_profile.platform and _stream_known_slots.get("platform"):
                             _planner_profile.platform = _stream_known_slots["platform"]
-                        _planner_profile.last_requested_slot = QUESTION_KEY_TO_SLOT.get(
-                            planner_decision.next_question_key or "", "platform"
-                        )
+                        # Map location/finding planner intent to issue_type='access'.
+                        _LOCATION_INTENTS = {"book_location", "finding_materials", "where_to_access",
+                                             "material_location", "access_material", "book_access"}
+                        if _planner_profile.issue_type is None and planner_decision.intent in _LOCATION_INTENTS:
+                            _planner_profile.issue_type = "access"
+                        # If the planner asks for a slot already present in the profile,
+                        # redirect to the next genuinely missing slot.
+                        # ask_course_code is always suppressed — Lance never asks students
+                        # for their course code or enrollment details.
+                        _next_key = planner_decision.next_question_key or "ask_platform_for_book_access"
+                        if _next_key == "ask_course_code":
+                            _next_key = "ask_issue_for_platform" if _planner_profile.platform else "ask_platform_for_book_access"
+                            print(f"[STREAM PLANNER] ask_course_code suppressed -> {_next_key}")
+                        _requested_slot = QUESTION_KEY_TO_SLOT.get(_next_key, "platform")
+                        if _requested_slot == "material_type" and _planner_profile.material_type is not None:
+                            if _planner_profile.platform is None:
+                                _next_key = "ask_platform_for_book_access"
+                                _requested_slot = "platform"
+                            elif _planner_profile.issue_type is None:
+                                _next_key = "ask_issue_for_platform"
+                                _requested_slot = "issue_type"
+                        elif _requested_slot == "issue_type" and _planner_profile.issue_type is not None:
+                            if _planner_profile.platform is None:
+                                _next_key = "ask_platform_for_book_access"
+                                _requested_slot = "platform"
+                        question = QUESTION_TEMPLATES.get(_next_key, FALLBACK_QUESTION)
+                        _planner_profile.last_requested_slot = _requested_slot
                         session["intake_profile"] = _planner_profile.to_dict()
                         session["history"].append({"role": "user", "content": message})
                         session["history"].append({"role": "assistant", "content": question})
@@ -4910,7 +5169,7 @@ async def chat_stream(payload: ChatRequest):
                     if planner_decision.enriched_query:
                         retrieval_query = planner_decision.enriched_query
 
-            # Ask for platform before retrieval — prevents wrong-platform hallucination.
+            # Ask for platform before retrieval -- prevents wrong-platform hallucination.
             # Skip when already overridden to GENERAL_FAQ (e.g. browser cache issue).
             if stream_forced_retrieval is None and intent == "IA_ACCESS_ISSUE" and platform is None:
                 session["history"].append({"role": "user", "content": message})
@@ -5012,7 +5271,7 @@ async def chat_stream(payload: ChatRequest):
                 if platform is not None:
                     _s_platform_display = PLATFORM_DISPLAY_NAMES.get(platform, platform)
                     _s_resolved_lines = [
-                        f"Platform: {_s_platform_display} (confirmed — do not ask again)",
+                        f"Platform: {_s_platform_display} (confirmed -- do not ask again)",
                     ]
                     if _stream_intake_completed:
                         if _stream_completed_issue_type:
@@ -5025,7 +5284,7 @@ async def chat_stream(payload: ChatRequest):
                     system_hint = (
                         f"RESOLVED SESSION CONTEXT:\n{_s_resolved_block}\n\n"
                         f"The student is using {_s_platform_display}. "
-                        "DO NOT ask the student which platform or publisher they use — it is confirmed above. "
+                        "DO NOT ask the student which platform or publisher they use -- it is confirmed above. "
                         "Use the retrieved instructions to provide specific access steps for this platform. "
                         "Do NOT suggest physical textbooks. "
                         "Only provide steps that appear in the retrieved context."
@@ -5057,7 +5316,7 @@ async def chat_stream(payload: ChatRequest):
             if has_image and intent == "GENERAL_FAQ" and context:
                 # FAQ with image: use grounded FAQ prompt but append vision awareness section
                 # so the LLM can still reference screenshot details for context.
-                # Do NOT use build_vision_system_prompt here — it is designed for instruction
+                # Do NOT use build_vision_system_prompt here -- it is designed for instruction
                 # retrieval and causes the LLM to misidentify FAQ content as irrelevant.
                 base = build_grounded_prompt(message, context)
                 _is_cache_known_issue = (
@@ -5388,7 +5647,7 @@ def debug_llm(payload: ChatRequest):
     }
 
 
-# ✨ NEW: Model comparison endpoint
+#  NEW: Model comparison endpoint
 @app.post("/debug/compare-models")
 def compare_models(payload: ChatRequest):
     """
