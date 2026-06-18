@@ -2339,3 +2339,147 @@ class TestVitalSourceZeroCoursesRouting:
         assert r.route_type != "KNOWN_ISSUE_LLM", (
             f"Image with no cache signal must not route to KNOWN_ISSUE_LLM. Got route_type={r.route_type!r}"
         )
+
+
+# -- Book-location multi-turn lifecycle tests ---------------------------------
+
+def _book_location_planner_decision() -> IntakePlannerDecision:
+    """Simulates the planner returning intent=book_location, ask_material_type."""
+    return IntakePlannerDecision(
+        action="ASK_CLARIFICATION",
+        intent="book_location",
+        confidence=0.70,
+        known_slots={},
+        missing_slots=["platform"],
+        next_question_key="ask_material_type",
+        enriched_query=None,
+    )
+
+
+@pytest.mark.asyncio
+class TestBookLocationMultiTurn:
+    """
+    'Where can I see my book?' -> 'Cengage MindTap' must complete intake
+    and route to Cengage access instructions without asking for platform again.
+
+    Root cause being tested: planner intent 'book_location' was not mapped to
+    issue_type='access', so intake never completed and expired with fallback.
+    """
+
+    @staticmethod
+    async def _fake_cengage_llm(*args, **kwargs):
+        context = kwargs.get("context") or (args[1] if len(args) > 1 else "")
+        if "cengage" in context.lower() or "mindtap" in context.lower():
+            return ("Here is how to access your Cengage MindTap textbook: log in at cengage.com.", 0.0)
+        return ("Stubbed.", 0.0)
+
+    async def _fake_retrieve(self, query, collection="auto", platform=None, top_k=1):
+        if platform == "CENGAGE" or "cengage" in (query or "").lower():
+            return {
+                "context": "STEP 1: Log in to Cengage MindTap. STEP 2: Click your course.",
+                "source_id": "INSTR_CENGAGE_001",
+                "score": 0.95,
+                "article_link": None,
+                "metadata": {"source_file": "ia_cengage_mindtap_access.txt"},
+            }
+        return {
+            "context": "General Immediate Access information.",
+            "source_id": "FAQ_SOURCE_IA_OVERVIEW",
+            "score": 0.70,
+            "article_link": None,
+            "metadata": {"source_file": "ia_overview.txt"},
+        }
+
+    async def test_book_location_two_turn_reaches_cengage(self):
+        """
+        Non-streaming: 'Where can I see my book?' -> 'Cengage MindTap'
+        completes intake and routes to Cengage source (not generic IA fallback).
+        """
+        session_id = f"test-book-loc-2t-{uuid.uuid4()}"
+        planner_mock = AsyncMock(return_value=_book_location_planner_decision())
+        llm_mock = AsyncMock(side_effect=self._fake_cengage_llm)
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=self._fake_retrieve)),
+            patch("app.main.call_llm_with_semaphore", new=llm_mock),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r1 = await process_chat_request(_session_req(session_id, "Where can I see my book?"))
+            # After fix: material_type and issue_type already extracted, so planner
+            # redirects to ask_platform_for_book_access instead of ask_material_type.
+            assert r1.source == "INTAKE:LLM_PLANNER"
+            assert "platform" in r1.reply.lower() or "publisher" in r1.reply.lower(), (
+                f"First reply should ask for platform. Got: {r1.reply!r}"
+            )
+            assert "if you can share which platform" not in r1.reply.lower()
+
+            r2 = await process_chat_request(_session_req(session_id, "Cengage MindTap"))
+
+        assert not r2.source.startswith("INTAKE"), (
+            f"Intake must complete after platform supplied. Got source={r2.source!r}"
+        )
+        assert r2.reply.lower() != "", "Final reply must not be empty"
+        assert "if you can share which platform" not in r2.reply.lower(), (
+            "Final reply must not ask for platform again. Got: {r2.reply!r}"
+        )
+        assert "cengage" in r2.reply.lower() or "mindtap" in r2.reply.lower(), (
+            f"Final reply should reference Cengage/MindTap. Got: {r2.reply!r}"
+        )
+
+    async def test_book_location_three_turn_also_completes(self):
+        """
+        Non-streaming: original 3-turn flow ('Where can I see my book?' ->
+        'digital textbook' -> 'Cengage MindTap') must complete intake on turn 3.
+        Ensures the fix doesn't break the case where a user answers the
+        material_type question before platform.
+        """
+        session_id = f"test-book-loc-3t-{uuid.uuid4()}"
+        # The planner asks ask_material_type. With issue_type already extracted,
+        # the profile has issue_type='access' from the start. So when material_type
+        # is confirmed and platform is supplied, intake_is_complete() fires.
+        planner_mock = AsyncMock(return_value=_book_location_planner_decision())
+        llm_mock = AsyncMock(side_effect=self._fake_cengage_llm)
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=self._fake_retrieve)),
+            patch("app.main.call_llm_with_semaphore", new=llm_mock),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r1 = await process_chat_request(_session_req(session_id, "Where can I see my book?"))
+            assert r1.source == "INTAKE:LLM_PLANNER"
+            # Turn 2: user answers platform question directly
+            r2 = await process_chat_request(_session_req(session_id, "digital textbook"))
+            # Turn 3: user supplies platform
+            r3 = await process_chat_request(_session_req(session_id, "Cengage MindTap"))
+
+        assert not r3.source.startswith("INTAKE"), (
+            f"Intake must complete by turn 3. Got source={r3.source!r}"
+        )
+        assert "if you can share which platform" not in r3.reply.lower()
+
+    async def test_platform_known_after_completion_not_asked_again(self):
+        """
+        Guardrail: once platform is confirmed in session, the final LLM response
+        must not say 'If you can share which platform'.
+        """
+        session_id = f"test-book-loc-guard-{uuid.uuid4()}"
+        planner_mock = AsyncMock(return_value=_book_location_planner_decision())
+        llm_mock = AsyncMock(side_effect=self._fake_cengage_llm)
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=self._fake_retrieve)),
+            patch("app.main.call_llm_with_semaphore", new=llm_mock),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            await process_chat_request(_session_req(session_id, "Where can I see my book?"))
+            final = await process_chat_request(_session_req(session_id, "Cengage MindTap"))
+
+        assert "if you can share which platform" not in final.reply.lower(), (
+            f"Response must not ask for platform when platform is already known. Got: {final.reply!r}"
+        )

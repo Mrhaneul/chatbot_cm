@@ -911,3 +911,117 @@ class TestPlannerModelConfig:
             result = asyncio.run(run_intake_planner("my book is locked"))
 
         assert result.action == "ASK_CLARIFICATION"
+
+
+# -- Book-location intent / issue_type extraction ----------------------------
+
+class TestBookLocationIssueTypeExtraction:
+    """'Where can I see/find/access my book?' patterns must extract issue_type='access'."""
+
+    @pytest.mark.parametrize("message", [
+        "Where can I see my book?",
+        "Where do I find my digital textbook?",
+        "Where can I access my textbook?",
+        "Where is my ebook?",
+        "Where can I find my book?",
+        "Where can I see my textbook?",
+        "Where do I get my textbook?",
+    ])
+    def test_book_location_extracts_access(self, message: str) -> None:
+        assert extract_issue_type(message) == "access", (
+            f"Expected issue_type='access' for {message!r}"
+        )
+
+    def test_book_location_with_cengage_extracts_platform(self) -> None:
+        """'Where can I see my Cengage book?' extracts platform=CENGAGE even without issue signal."""
+        assert extract_platform("Where can I see my Cengage book?") == "CENGAGE"
+        # issue_type=None for this message: 'cengage' sits between 'my' and 'book'
+        # so the pattern 'where can i see my book' doesn't match. The planner's
+        # intent mapping (book_location -> access) covers this case.
+
+    def test_where_can_i_access_my_textbook_extracts_issue(self) -> None:
+        """'Where can I access my textbook?' extracts issue_type=access (no platform word between)."""
+        assert extract_issue_type("Where can I access my textbook?") == "access"
+
+    def test_plain_where_without_book_does_not_match(self) -> None:
+        """Bare 'where can i see my' without a book/material keyword must not false-positive."""
+        assert extract_issue_type("where can i see my schedule") is None
+
+    def test_vitalsource_issue_still_none(self) -> None:
+        """'VitalSource issue' has no issue_type signal (no access/missing/account word)."""
+        assert extract_issue_type("VitalSource issue") is None
+
+    @pytest.mark.parametrize("alias", ["cengage", "Cengage Mindtap", "MindTap", "cnow"])
+    def test_cengage_aliases_normalize_to_cengage(self, alias: str) -> None:
+        """All Cengage aliases must resolve to the CENGAGE platform key."""
+        assert extract_platform(alias) == "CENGAGE", (
+            f"Expected CENGAGE for alias {alias!r}"
+        )
+
+
+class TestPlannerBookLocationIntentMapping:
+    """
+    When the planner returns intent='book_location' and asks for a slot
+    already extracted, main.py must pre-set issue_type and redirect to the
+    next missing slot.
+    """
+
+    def _make_book_location_decision(self, next_q: str = "ask_material_type") -> IntakePlannerDecision:
+        return IntakePlannerDecision(
+            action="ASK_CLARIFICATION",
+            intent="book_location",
+            confidence=0.70,
+            known_slots={},
+            missing_slots=["platform"],
+            next_question_key=next_q,
+            enriched_query=None,
+        )
+
+    def test_book_location_profile_has_access_and_textbook(self) -> None:
+        """
+        update_profile on 'Where can I see my book?' should produce
+        issue_type='access' and material_type='textbook' from slot extraction.
+        These slots are available before the planner-intent mapping fires.
+        """
+        profile = update_profile(
+            IntakeProfile(original_message="Where can I see my book?"),
+            "Where can I see my book?",
+        )
+        assert profile.issue_type == "access"
+        assert profile.material_type == "textbook"
+        assert profile.platform is None
+
+    def test_intake_completes_after_platform_supplied(self) -> None:
+        """
+        After planner pre-sets issue_type='access', intake should complete
+        as soon as platform is supplied — without needing an issue_type turn.
+        """
+        profile = update_profile(
+            IntakeProfile(original_message="Where can I see my book?"),
+            "Where can I see my book?",
+        )
+        # Simulate planner intent mapping: issue_type pre-set to 'access'
+        # (either from slot extraction above or from intent mapping in main.py)
+        assert profile.issue_type == "access"
+        # Now the user supplies the platform
+        profile = update_profile(profile, "Cengage MindTap")
+        assert profile.platform == "CENGAGE"
+        assert intake_is_complete(profile) is True
+
+    def test_three_turn_flow_also_completes(self) -> None:
+        """
+        Original 3-turn flow: issue_type already set from extraction, so
+        after material + platform turns the profile is complete.
+        """
+        profile = update_profile(
+            IntakeProfile(original_message="Where can I see my book?"),
+            "Where can I see my book?",
+        )
+        assert profile.issue_type == "access"
+        # Turn 2: material_type answer (no new info since already extracted)
+        profile = update_profile(profile, "digital textbook")
+        # Turn 3: platform
+        profile = update_profile(profile, "Cengage MindTap")
+        assert profile.platform == "CENGAGE"
+        assert intake_is_complete(profile) is True
+        assert profile.turns_spent == 3

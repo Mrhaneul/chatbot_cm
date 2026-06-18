@@ -73,7 +73,7 @@ from app.intake.flow import (
     is_unknown_answer,
     INTAKE_ESCALATION_MESSAGE,
 )
-from app.intake.question_templates import QUESTION_KEY_TO_SLOT
+from app.intake.question_templates import QUESTION_KEY_TO_SLOT, QUESTION_TEMPLATES, FALLBACK_QUESTION
 from app.intake.llm_planner import run_intake_planner, should_run_planner, get_question_for_decision
 
 from app.admin import admin_router
@@ -2743,15 +2743,36 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         ):
             planner_decision = await run_intake_planner(message, semaphore=llm_semaphore, known_slots=_session_known_slots)
             if planner_decision.action == "ASK_CLARIFICATION":
-                question = get_question_for_decision(planner_decision)
                 _planner_profile = update_profile(IntakeProfile(original_message=message), message)
                 # Pre-fill profile from session state so the next turn's mid-flow
                 # handler doesn't re-ask for slots already collected.
                 if not _planner_profile.platform and _session_known_slots.get("platform"):
                     _planner_profile.platform = _session_known_slots["platform"]
-                _planner_profile.last_requested_slot = QUESTION_KEY_TO_SLOT.get(
-                    planner_decision.next_question_key or "", "platform"
-                )
+                # Map location/finding planner intent to issue_type='access'.
+                # "book_location" and similar intents mean the student wants to find
+                # or access their material — issue_type is inherently 'access'.
+                _LOCATION_INTENTS = {"book_location", "finding_materials", "where_to_access",
+                                     "material_location", "access_material", "book_access"}
+                if _planner_profile.issue_type is None and planner_decision.intent in _LOCATION_INTENTS:
+                    _planner_profile.issue_type = "access"
+                # If the planner asks for a slot already present in the profile
+                # (e.g. material_type was already extracted from the original message),
+                # redirect to the next genuinely missing slot.
+                _next_key = planner_decision.next_question_key or "ask_platform_for_book_access"
+                _requested_slot = QUESTION_KEY_TO_SLOT.get(_next_key, "platform")
+                if _requested_slot == "material_type" and _planner_profile.material_type is not None:
+                    if _planner_profile.platform is None:
+                        _next_key = "ask_platform_for_book_access"
+                        _requested_slot = "platform"
+                    elif _planner_profile.issue_type is None:
+                        _next_key = "ask_issue_for_platform"
+                        _requested_slot = "issue_type"
+                elif _requested_slot == "issue_type" and _planner_profile.issue_type is not None:
+                    if _planner_profile.platform is None:
+                        _next_key = "ask_platform_for_book_access"
+                        _requested_slot = "platform"
+                question = QUESTION_TEMPLATES.get(_next_key, FALLBACK_QUESTION)
+                _planner_profile.last_requested_slot = _requested_slot
                 session["intake_profile"] = _planner_profile.to_dict()
                 session["history"].append({"role": "user", "content": message})
                 session["history"].append({"role": "assistant", "content": question})
@@ -4924,15 +4945,33 @@ async def chat_stream(payload: ChatRequest):
                 ):
                     planner_decision = await run_intake_planner(message, semaphore=llm_semaphore, known_slots=_stream_known_slots)
                     if planner_decision.action == "ASK_CLARIFICATION":
-                        question = get_question_for_decision(planner_decision)
                         _planner_profile = update_profile(IntakeProfile(original_message=message), message)
                         # Pre-fill profile from session state so the next mid-flow
                         # turn doesn't re-ask for slots already collected.
                         if not _planner_profile.platform and _stream_known_slots.get("platform"):
                             _planner_profile.platform = _stream_known_slots["platform"]
-                        _planner_profile.last_requested_slot = QUESTION_KEY_TO_SLOT.get(
-                            planner_decision.next_question_key or "", "platform"
-                        )
+                        # Map location/finding planner intent to issue_type='access'.
+                        _LOCATION_INTENTS = {"book_location", "finding_materials", "where_to_access",
+                                             "material_location", "access_material", "book_access"}
+                        if _planner_profile.issue_type is None and planner_decision.intent in _LOCATION_INTENTS:
+                            _planner_profile.issue_type = "access"
+                        # If the planner asks for a slot already present in the profile,
+                        # redirect to the next genuinely missing slot.
+                        _next_key = planner_decision.next_question_key or "ask_platform_for_book_access"
+                        _requested_slot = QUESTION_KEY_TO_SLOT.get(_next_key, "platform")
+                        if _requested_slot == "material_type" and _planner_profile.material_type is not None:
+                            if _planner_profile.platform is None:
+                                _next_key = "ask_platform_for_book_access"
+                                _requested_slot = "platform"
+                            elif _planner_profile.issue_type is None:
+                                _next_key = "ask_issue_for_platform"
+                                _requested_slot = "issue_type"
+                        elif _requested_slot == "issue_type" and _planner_profile.issue_type is not None:
+                            if _planner_profile.platform is None:
+                                _next_key = "ask_platform_for_book_access"
+                                _requested_slot = "platform"
+                        question = QUESTION_TEMPLATES.get(_next_key, FALLBACK_QUESTION)
+                        _planner_profile.last_requested_slot = _requested_slot
                         session["intake_profile"] = _planner_profile.to_dict()
                         session["history"].append({"role": "user", "content": message})
                         session["history"].append({"role": "assistant", "content": question})

@@ -24,6 +24,26 @@ _ACCESS_SIGNALS = [
     "won't load", "not loading", "access issue", "can't get in",
     "cannot get in", "won't let me in", "access denied",
     "don't have access", "do not have access", "can't have access",
+    # Location / finding queries -- "where can I see/find/access my book?"
+    # Patterns require an explicit material keyword to avoid false positives
+    # on unrelated queries (e.g. "where can i see my schedule").
+    "where can i see my book", "where do i see my book",
+    "where can i find my book", "where do i find my book",
+    "where can i see my textbook", "where do i see my textbook",
+    "where can i find my textbook", "where do i find my textbook",
+    "where do i find my digital textbook", "where can i find my digital textbook",
+    "where do i see my digital textbook", "where can i see my digital textbook",
+    "where can i see my ebook", "where can i find my ebook",
+    "where do i find my ebook", "where do i see my ebook",
+    "where is my book", "where are my books",
+    "where is my textbook", "where is my ebook",
+    "where is my digital textbook", "where is my digital book",
+    "where can i access my book", "where do i access my book",
+    "where can i access my textbook", "where do i access my textbook",
+    "where can i access my digital textbook", "where do i access my digital textbook",
+    "where can i access my material", "where do i access my material",
+    "where do i get my book", "where do i get my textbook",
+    "where can i get my book", "where can i get my textbook",
 ]
 _MISSING_SIGNALS = [
     "missing", "not there", "disappeared", "gone", "don't see",
