@@ -1,4 +1,4 @@
----
+﻿---
 source_id: ia_vitalsource_bookshelf_account_creation
 source_type: instruction
 category: platform_access
@@ -14,17 +14,17 @@ APPLIES TO:
 Courses using VitalSource Bookshelf.
 
 STEP-BY-STEP RESOLUTION:
-1. Go to Bookshelf.VitalSource.com.
-2. Click "Create a VitalSource Account".
-3. Select "I’m a Student".
-4. Enter the required information.
-5. Use your NAME@calbaptist.edu email address.
-6. Agree to the Terms of Use and Privacy Policy.
-7. Click "Create Account".
-8. Select "Higher Ed".
-9. Enter "California Baptist University" as the institution.
-10. Click "Submit".
-11. Verify the account using the confirmation email.
+1. Go to Bookshelf.VitalSource.com
+2. Click → Create a VitalSource Account
+3. Select → I’m a Student.
+   a. Fill out the necessary information to create the account.
+   b. Be sure to use your Name@calbaptist.edu email address
+   c. Be sure to agree to the Terms of Use and Privacy Policy.
+4. Click → Create Account
+5. Click → Higher Ed
+   a. Enter the Institution name → California Baptist University
+   b. Click → Submit
+6. Verify the account through the email received.
 
 LOGIN REQUIREMENTS:
 - Use your NAME@calbaptist.edu email address.
@@ -33,4 +33,7 @@ EXPECTED RESULT:
 The VitalSource Bookshelf account is created and ready for use.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+
+
+

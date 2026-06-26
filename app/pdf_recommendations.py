@@ -79,6 +79,10 @@ TXT_TO_PDF_MAP = {
     # General - Overview / eTextbook
     "ia_overview.txt": "immediate_access_overview",
     "ia_etextbook_general_access.txt": "immediate_access_overview",
+
+    # General - Immediate Access opt out
+    "ia_opt_out_canvas.txt": "immediate_access_opt_out",
+    "immediate_access/ia_opt_out_canvas.txt": "immediate_access_opt_out",
 }
 
 # Platform-specific relevance ranking
@@ -190,7 +194,7 @@ def get_pdf_from_firestore(doc_id: str) -> Optional[Dict]:
                 "title": data.get("title") or data.get("display_name", ""),
                 "description": data.get("description", ""),
                 "filename": data.get("filename", ""),
-                "public_url": data.get("public_url") or data.get("pdf_url", ""),
+                "public_url": data.get("url") or data.get("public_url") or data.get("pdf_url", ""),
                 "pages": data.get("pages", 0),
                 "platform": data.get("platform", ""),
                 "issue_type": data.get("issue_type", ""),
@@ -233,7 +237,7 @@ def get_related_pdfs_by_platform(platform: str, limit: int = 3) -> List[Dict]:
                 "title": data.get("title") or data.get("display_name", ""),
                 "description": data.get("description", ""),
                 "filename": data.get("filename", ""),
-                "public_url": data.get("public_url") or data.get("pdf_url", ""),
+                "public_url": data.get("url") or data.get("public_url") or data.get("pdf_url", ""),
                 "pages": data.get("pages", 0),
                 "platform": data.get("platform", ""),
                 "issue_type": data.get("issue_type", ""),
@@ -300,7 +304,13 @@ def get_pdf_recommendations(
                 map_doc = db.collection("txt_to_pdf_map").document(safe_firestore_id).get(timeout=5.0)
                 if map_doc.exists:
                     found_in_firestore = True
-                    pdf_doc_ids = map_doc.to_dict().get("pdf_doc_ids", [])
+                    map_data = map_doc.to_dict() or {}
+                    pdf_doc_ids = map_data.get("pdf_doc_ids", [])
+                    if not isinstance(pdf_doc_ids, list):
+                        pdf_doc_ids = []
+                    pdf_doc_id = map_data.get("pdf_doc_id")
+                    if isinstance(pdf_doc_id, str) and pdf_doc_id.strip():
+                        pdf_doc_ids = [pdf_doc_id.strip(), *pdf_doc_ids]
                     for i, doc_id in enumerate(pdf_doc_ids):
                         if not doc_id or doc_id in seen_doc_ids:
                             continue

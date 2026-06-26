@@ -233,6 +233,9 @@ class TestExtractIssueType:
     def test_no_signal_returns_none(self):
         assert extract_issue_type("general question") is None
 
+    def test_material_type_answer_is_not_issue_type(self):
+        assert extract_issue_type("Digital textbook") is None
+
     # Bug 1: "how do I access/open/get into <platform>" must resolve to access.
     @pytest.mark.parametrize("message", [
         "How do I access to Cengage?",
@@ -268,6 +271,18 @@ class TestExtractIssueType:
     def test_no_courses_is_missing(self):
         assert extract_issue_type("no courses, no materials on VitalSource") == "missing"
 
+    @pytest.mark.parametrize("message", [
+        "I don't know where to find it",
+        "I can't find it",
+        "don't know where it is",
+        "don't know where to look",
+        "where do I find it",
+        "I don't know where to access it",
+        "not sure where to find it",
+    ])
+    def test_navigation_location_replies_are_access(self, message):
+        assert extract_issue_type(message) == "access"
+
 
 class TestExtractCourseCode:
     def test_standard_code(self):
@@ -295,6 +310,9 @@ class TestExtractMaterialType:
 
     def test_ebook(self):
         assert extract_material_type("the ebook won't open") == "textbook"
+
+    def test_digital_textbook(self):
+        assert extract_material_type("Digital textbook") == "textbook"
 
     def test_workbook(self):
         assert extract_material_type("the workbook is not there") == "workbook"
@@ -755,6 +773,18 @@ class TestIsUnknownAnswer:
 
     def test_idk_with_punctuation_is_unknown(self):
         assert is_unknown_answer("idk.")
+
+    @pytest.mark.parametrize("message", [
+        "I don't know where to find it",
+        "I can't find it",
+        "don't know where it is",
+        "don't know where to look",
+        "where do I find it",
+        "I don't know where to access it",
+        "not sure where to find it",
+    ])
+    def test_navigation_location_replies_are_not_unknown(self, message):
+        assert not is_unknown_answer(message)
 
 
 # ── is_personal_info_reply ────────────────────────────────────────────────────

@@ -28,13 +28,15 @@ Security note:
 """
 
 import io
+import asyncio
+import json
 import re
 import shutil
 import subprocess
 import sys
 import os
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from urllib.parse import unquote
 from uuid import uuid4
@@ -48,6 +50,7 @@ from app.feedback import (
     list_feedback_records,
     update_feedback_review,
 )
+from app.config.loader import PLATFORM_DISPLAY_NAMES
 from app.rag.metadata import parse_front_matter_text
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -74,6 +77,17 @@ class ContentSaveRequest(BaseModel):
     content_type: str
     filename: str
     content: str
+
+
+class InstructionCreateRequest(BaseModel):
+    platform: str
+    issue_type: str = "access"
+    subtype: str = "canvas_access"
+    canvas_location: str
+    steps: str
+    expected_result: str
+    if_issue_persists: str
+    pdf_doc_id: Optional[str] = None
 
 # All routes on this router require valid admin credentials
 admin_router = APIRouter(
@@ -201,6 +215,113 @@ def _list_txt_files(root: Path) -> list[str]:
         for path in root.rglob("*.txt")
         if path.is_file()
     )
+
+
+def _parse_content_metadata(path: Path) -> dict:
+    """Best-effort metadata extraction for YAML and [META:{...}] content files."""
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except Exception:
+        return {}
+
+    stripped = text.lstrip()
+    if stripped.startswith("[META:"):
+        first_line = stripped.splitlines()[0]
+        match = re.match(r"^\[META:(\{.*\})\]$", first_line.strip())
+        if match:
+            try:
+                return json.loads(match.group(1))
+            except Exception:
+                return {}
+
+    if stripped.startswith("---"):
+        try:
+            metadata, _body = parse_front_matter_text(text)
+            return metadata
+        except Exception:
+            return {}
+
+    return {}
+
+
+def _safe_instruction_token(value: str, field_name: str) -> str:
+    token = (value or "").strip().lower()
+    token = re.sub(r"[^a-z0-9_]+", "_", token)
+    token = re.sub(r"_+", "_", token).strip("_")
+    if not token:
+        raise ValueError(f"{field_name} is required.")
+    return token
+
+
+def _canonical_platform_name(platform_key: str) -> str:
+    key = (platform_key or "").strip().upper()
+    if key in PLATFORM_DISPLAY_NAMES:
+        return PLATFORM_DISPLAY_NAMES[key]
+    return key.replace("_", " ").title()
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _trigger_ingest_background() -> None:
+    async def _run() -> None:
+        await asyncio.to_thread(
+            subprocess.run,
+            ["python", "-m", "app.rag.ingest"],
+            cwd=os.fspath(_project_root()),
+        )
+
+    asyncio.create_task(_run())
+
+
+def _fetch_txt_pdf_mapping_ids() -> set[str]:
+    """
+    Return Firestore txt_to_pdf_map document IDs that have at least one linked PDF.
+    Firestore failures should not block the admin listing.
+    """
+    try:
+        from app.firebase_config import get_firestore_client
+        db = get_firestore_client()
+        if db is None:
+            return set()
+        docs = db.collection("txt_to_pdf_map").stream()
+    except Exception as exc:
+        print(f"[WARN] txt_to_pdf_map listing failed: {exc}")
+        return set()
+
+    mapped: set[str] = set()
+    for doc in docs:
+        try:
+            data = doc.to_dict() or {}
+        except Exception:
+            data = {}
+        pdf_doc_id = (data.get("pdf_doc_id") or "").strip() if isinstance(data.get("pdf_doc_id"), str) else ""
+        pdf_doc_ids = data.get("pdf_doc_ids") if isinstance(data.get("pdf_doc_ids"), list) else []
+        if pdf_doc_id or any(str(item).strip() for item in pdf_doc_ids):
+            mapped.add(doc.id)
+    return mapped
+
+
+def _write_instruction_pdf_map(filename: str, pdf_doc_id: str) -> None:
+    try:
+        from app.firebase_config import get_firestore_client
+        db = get_firestore_client()
+        if db is None:
+            return
+    except Exception as exc:
+        print(f"[WARN] Firestore unavailable for txt_to_pdf_map write: {exc}")
+        return
+
+    now = datetime.now(timezone.utc).isoformat()
+    payload = {
+        "pdf_doc_id": pdf_doc_id,
+        "pdf_doc_ids": [pdf_doc_id],
+        "updated_at": now,
+    }
+
+    for doc_id in (filename, f"instructions__{filename}", f"data__instructions__{filename}"):
+        db.collection("txt_to_pdf_map").document(doc_id).set(payload, merge=True)
 
 
 def _archive_path_for(source_path: Path, source_root: Path, action: str) -> Path:
@@ -576,6 +697,119 @@ async def list_content():
     faqs         = _list_txt_files(FAQ_DIR)
     instructions = _list_txt_files(INSTRUCTIONS_DIR)
     return JSONResponse(content={"faqs": faqs, "instructions": instructions})
+
+
+@admin_router.get("/instructions")
+async def list_instruction_sources():
+    """
+    List knowledge .txt files and whether they have a PDF guide mapping.
+    Includes files from data/instructions and data/faqs recursively.
+    """
+    mapped_ids = _fetch_txt_pdf_mapping_ids()
+    rows = []
+
+    for content_type, root in (("instruction", INSTRUCTIONS_DIR), ("faq", FAQ_DIR)):
+        for relative in _list_txt_files(root):
+            path = root / relative
+            metadata = _parse_content_metadata(path)
+            filename = Path(relative).name
+            safe_relative = relative.replace("/", "__").replace("\\", "__")
+            candidates = {
+                relative,
+                safe_relative,
+                filename,
+                f"data__{root.name}__{safe_relative}",
+            }
+            rows.append({
+                "filename": filename,
+                "source_file": relative,
+                "content_type": content_type,
+                "platform": metadata.get("platform") or "",
+                "issue_type": metadata.get("issue_type") or "",
+                "pdf_linked": bool(mapped_ids.intersection(candidates)),
+            })
+
+    rows.sort(key=lambda item: (item["content_type"], item["filename"].lower()))
+    return JSONResponse(content={"success": True, "instructions": rows})
+
+
+@admin_router.post("/instructions")
+async def create_instruction(payload: InstructionCreateRequest = Body(...)):
+    """
+    Create or replace a structured instruction file and rebuild the RAG index in
+    the background. Optional PDF guide mapping is written only when provided.
+    """
+    try:
+        platform_token = _safe_instruction_token(payload.platform, "platform")
+        issue_token = _safe_instruction_token(payload.issue_type, "issue_type")
+        subtype = (payload.subtype or "canvas_access").strip()
+        platform_key = platform_token.upper()
+        filename = f"ia_{platform_token}_{issue_token}.txt"
+        stem = Path(filename).stem
+        target = _resolve_content_path(INSTRUCTIONS_DIR, filename)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"success": False, "message": str(exc)})
+
+    required_text = {
+        "canvas_location": payload.canvas_location,
+        "steps": payload.steps,
+        "expected_result": payload.expected_result,
+        "if_issue_persists": payload.if_issue_persists,
+    }
+    missing = [name for name, value in required_text.items() if not (value or "").strip()]
+    if missing:
+        return JSONResponse(status_code=400, content={
+            "success": False,
+            "message": f"Missing required field(s): {', '.join(missing)}.",
+        })
+
+    canonical_name = _canonical_platform_name(platform_key)
+    meta = {
+        "source_id": stem,
+        "platform": platform_key,
+        "issue_type": issue_token,
+        "subtype": subtype,
+    }
+    content = (
+        f"[META:{json.dumps(meta, separators=(',', ':'))}]\n\n"
+        "PROBLEM:\n"
+        f"Student cannot access {canonical_name} through Canvas Immediate Access.\n\n"
+        "APPLIES TO:\n"
+        f"Platform: {canonical_name}\n"
+        "LMS: Canvas\n\n"
+        "CANVAS LOCATION:\n"
+        f"{payload.canvas_location.strip()}\n\n"
+        "STEP-BY-STEP RESOLUTION:\n"
+        f"{payload.steps.strip()}\n\n"
+        "EXPECTED RESULT:\n"
+        f"{payload.expected_result.strip()}\n\n"
+        "IF ISSUE PERSISTS:\n"
+        f"{payload.if_issue_persists.strip()}\n"
+    )
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8", newline="\n")
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={
+            "success": False,
+            "message": f"Instruction could not be saved: {exc}",
+        })
+
+    pdf_doc_id = (payload.pdf_doc_id or "").strip()
+    if pdf_doc_id:
+        try:
+            _write_instruction_pdf_map(filename, pdf_doc_id)
+        except Exception as exc:
+            print(f"[WARN] txt_to_pdf_map write failed: {exc}")
+
+    _trigger_ingest_background()
+    return JSONResponse(content={
+        "success": True,
+        "filename": filename,
+        "status": "created",
+        "ingest": "triggered",
+    })
 
 
 @admin_router.get("/content")

@@ -3,6 +3,7 @@ load_dotenv()
 import json
 from email.mime import message
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.staticfiles import StaticFiles
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.llm.llama_client import (
     LlamaClient,
@@ -117,9 +118,8 @@ def strip_meta_prefix(context: str) -> str:
 
 def extract_step_by_step(content: str) -> str:
     """
-    Extract just the numbered step-by-step resolution from an instruction
-    file chunk, discarding boilerplate sections (PROBLEM, APPLIES TO,
-    BLACKBOARD LOCATION, EXPECTED RESULT, IF ISSUE PERSISTS).
+    Extract the numbered step-by-step resolution from an instruction file chunk
+    and keep the support contact, when present.
 
     Falls back to returning the full content if no STEP-BY-STEP section
     is found (so the response is never empty).
@@ -130,7 +130,17 @@ def extract_step_by_step(content: str) -> str:
         re.DOTALL | re.IGNORECASE,
     )
     if match:
-        return match.group(1).strip()
+        steps = match.group(1).strip()
+        support_match = re.search(
+            r"IF ISSUE PERSISTS:\s*\n(.*?)(?=\n[A-Z][A-Z\s\-]+:|$)",
+            content,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if support_match:
+            support = support_match.group(1).strip()
+            if support:
+                return f"{steps}\n\nIf issue persists:\n{support}"
+        return steps
     return content
 
 
@@ -162,6 +172,10 @@ class NgrokMiddleware(BaseHTTPMiddleware):
 app.add_middleware(NgrokMiddleware)
 
 app.include_router(admin_router)
+import os as _os
+_pdfs_dir = _os.path.join(_os.path.dirname(__file__), "static", "pdfs")
+_os.makedirs(_pdfs_dir, exist_ok=True)
+app.mount("/static/pdfs", StaticFiles(directory=_pdfs_dir), name="pdfs")
 app.include_router(feedback_router)
 
 @app.get("/admin")
@@ -1958,11 +1972,10 @@ def is_confirmed_materials_issue(message: str) -> bool:
 def ia_enrollment_reply() -> str:
     return (
         "Whether a specific textbook is included in Immediate Access depends on your course enrollment. "
-        "If your book is not appearing in your Immediate Access tab in Blackboard, it may not be part of the "
+        "If your book is not appearing in your Immediate Access tab in Canvas, it may not be part of the "
         "program for that course section.\n\n"
-        "For confirmation, please contact us directly at ImmediateAccess@calbaptist.edu. Include your name, "
-        "student ID number, and course information (course code, section, and instructor name) and we will "
-        "check your enrollment."
+        "For confirmation, please contact ImmediateAccess@calbaptist.edu for assistance. "
+        "If possible, include a screenshot of what you are seeing."
     )
 
 
@@ -2886,7 +2899,11 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 # Map location/finding planner intent to issue_type='access'.
                 _LOCATION_INTENTS = {"book_location", "finding_materials", "where_to_access",
                                      "material_location", "access_material", "book_access"}
-                if _planner_profile.issue_type is None and planner_decision.intent in _LOCATION_INTENTS:
+                if (
+                    _planner_profile.issue_type is None
+                    and planner_decision.intent in _LOCATION_INTENTS
+                    and _message_has_access_intent(message)
+                ):
                     _planner_profile.issue_type = "access"
 
                 # ask_course_code is always redirected — Lance never asks students
@@ -2927,6 +2944,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     # fall through to RAG (do not return)
                 else:
                     # Redirect away from slots already filled.
+                    if _requested_slot == "error_message" and _planner_profile.platform is None:
+                        _next_key, _requested_slot = "ask_platform_for_book_access", "platform"
                     if _requested_slot == "material_type" and _planner_profile.material_type is not None:
                         if _planner_profile.platform is None:
                             _next_key, _requested_slot = "ask_platform_for_book_access", "platform"
@@ -3180,7 +3199,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 "could you let me know which platform or publisher your textbook uses?\n\n"
                 "For example: VitalSource, Cengage MindTap, Pearson MyLab, McGraw Hill Connect, "
                 "Bedford, Sage, WileyPlus, etc.\n\n"
-                "If you're not sure, check the Immediate Access tab in Blackboard -- "
+                "If you're not sure, check the Immediate Access tab in Canvas -- "
                 "it should show the name of the publisher."
             )
             session["history"].append({"role": "user", "content": message})
@@ -3350,7 +3369,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 # User confirmed it's about logging in / accessing the class itself
                 access_reply = (
                     "Contact ImmediateAccess@calbaptist.edu for assistance. "
-                    "Please send your email from your LancerMail address and include your name, ID#, and course info."
+                    "If possible, include a screenshot of what you are seeing."
                 )
                 session["history"].append({"role": "user", "content": message})
                 session["history"].append({"role": "assistant", "content": access_reply})
@@ -3683,9 +3702,9 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
             if is_cannot_find_immediate_access:
                 escalate_reply = (
-                    "If you still can't find the Immediate Access tab in Blackboard, please contact "
-                    "ImmediateAccess@calbaptist.edu for assistance. Please send your email from your "
-                    "LancerMail address and include your name, ID#, and course info."
+                    "If you still can't find the Immediate Access tab in Canvas, please contact "
+                    "ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot "
+                    "of what you are seeing."
                 )
                 session["history"].append({
                     "role": "user",
@@ -4011,9 +4030,9 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             and any(t in message.lower() for t in missing_ia_followup_terms)
         ):
             escalate_reply = (
-                "If you still can't find the Immediate Access tab in Blackboard, please contact "
-                "ImmediateAccess@calbaptist.edu for assistance. Please send your email from your "
-                "LancerMail address and include your name, ID#, and course info."
+                "If you still can't find the Immediate Access tab in Canvas, please contact "
+                "ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot "
+                "of what you are seeing."
             )
             session["history"].append({
                 "role": "user",
@@ -5223,7 +5242,11 @@ async def chat_stream(payload: ChatRequest):
                         # Map location/finding planner intent to issue_type='access'.
                         _LOCATION_INTENTS = {"book_location", "finding_materials", "where_to_access",
                                              "material_location", "access_material", "book_access"}
-                        if _planner_profile.issue_type is None and planner_decision.intent in _LOCATION_INTENTS:
+                        if (
+                            _planner_profile.issue_type is None
+                            and planner_decision.intent in _LOCATION_INTENTS
+                            and _message_has_access_intent(message)
+                        ):
                             _planner_profile.issue_type = "access"
 
                         # ask_course_code is always suppressed.
@@ -5263,6 +5286,8 @@ async def chat_stream(payload: ChatRequest):
                             )
                             # fall through to retrieval (no return)
                         else:
+                            if _requested_slot == "error_message" and _planner_profile.platform is None:
+                                _next_key, _requested_slot = "ask_platform_for_book_access", "platform"
                             if _requested_slot == "material_type" and _planner_profile.material_type is not None:
                                 if _planner_profile.platform is None:
                                     _next_key, _requested_slot = "ask_platform_for_book_access", "platform"

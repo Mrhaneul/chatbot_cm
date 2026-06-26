@@ -1,4 +1,4 @@
-PROBLEM:
+﻿PROBLEM:
 Student purchased a digital content (DC) code in-store at the Campus Store and needs to redeem it to access their eBook or courseware.
 
 APPLIES TO:
@@ -8,23 +8,19 @@ ACCESS LOCATION:
 Campus Store Website - Bookstore.Calbaptist.edu
 
 STEP-BY-STEP RESOLUTION:
-1. Go to the Campus Store website at Bookstore.Calbaptist.edu
-2. Click the Profile Icon in the top right-hand corner of the page.
+1. Log onto the Campus Store Website at Bookstore.Calbaptist.edu
+2. Select the Profile Icon in the top right-hand corner.
 3. Log into an existing account OR create a new account:
-   - Use your CBU email: firstname.lastname@calbaptist.edu
-   - Do NOT use your ID#@calbaptist.edu email address.
-4. Once logged in, click "Activate and Access eBooks" from your account menu.
-5. Click "Click here to activate an in-store purchase."
+   a. Use your Name@Calbaptist.edu email address;
+   b. DO NOT USE YOUR ID#@calbaptist.edu ADDRESS.
+4. Once logged in, click → Activate and Access eBooks
+5. Click → Click here to activate an in-store purchase.
 6. Enter the Redemption Code found at the bottom of your receipt.
-7. Click "Activate" to redeem the code.
-8. Once redeemed, your book will appear under "Other Digital Titles."
-9. Click the dropdown "Access Content" next to your book.
-10. Click "Access" to open the content page.
-11. On the book cover page, look for a small pop-up in the top right corner. Click "Instructions."
-12. A pop-up menu will appear. Click "Reveal Access Code."
-13. Copy the access code displayed.
-14. Click "Go to Website" under the access code OR visit the link provided by your instructor.
-15. Paste your access code on the publisher's website to activate your materials.
+7. Once the redemption code has been redeemed, your book will appear under Other Digital Titles.
+8. Click the dropdown → Access Content. Then click → Access.
+9. You’ll be taken to a page with a larger display of the front cover. In the top right corner, you will see a small pop-up. Click → Instructions.
+10. A pop-up menu will appear with an option to → Reveal Access Code
+11. Once the access code is revealed, copy the access code, then click the option → Go to Website under the access code OR visit the link provided by your instructor to access your material.
 
 IMPORTANT NOTES:
 - Some items cannot be returned once the code is revealed. Review the Return Policy before revealing your code.
@@ -36,3 +32,6 @@ After redeeming your code on the publisher's website, you should have full acces
 
 IF ISSUE PERSISTS:
 Contact the Campus Store Support Team at CSContact@calbaptist.edu for assistance.
+
+
+

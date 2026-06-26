@@ -5,26 +5,17 @@ Student is opted into Immediate Access but cannot access their Sage Vantage cour
 APPLIES TO:
 Courses using Sage Vantage digital courseware (commonly used in Behavioral Science courses such as BEH 290 Introduction to Research Methods).
 
-BLACKBOARD LOCATION:
-Weekly Chapters tab (left side menu)
+CANVAS LOCATION:
+Course Navigation > Modules
 
 STEP-BY-STEP RESOLUTION:
-1. Log into Canvas.
-2. Select the course that uses Sage Vantage.
-3. Click "Weekly Chapters" from the left side menu.
-4. Select the chapter you want to access (e.g., "Chapter 1").
-5. Click on the chapter content link (e.g., "Chapter 1: The Purpose of Research").
-6. You will be prompted to register and create a Sage Vantage account as a student.
-7. Fill in your registration information:
-   - First Name
-   - Last Name
-   - Country
-   - Username (use your CBU email)
-   - Email Address (use your CBU email)
-   - Password (must be at least 8 characters with uppercase, lowercase, number, and/or symbol)
-   - Confirm Password
-8. Check the box to agree to the Terms of Use.
-9. Click "Register" to complete your account setup.
+1. Log in to Canvas and select the course using Sage Vantage.
+   - E.g., BEH 290-A
+2. In the Canvas course, click into → Modules.
+3. Under the weekly assignments, click the link to the textbook chapter through Sage Vantage.
+4. After clicking into the link, register and create an account as a student using your CBU credentials.
+   - Use your Name@calbaptist.edu email address.
+   - DO NOT use your ID#@calbaptist.edu email, as you will not receive verification requests from Sage Vantage that may be needed.
 
 LOGIN REQUIREMENTS:
 - Use your official CBU email address for both Username and Email Address fields.
@@ -33,5 +24,5 @@ EXPECTED RESULT:
 After registration, you should gain access to the Sage Vantage chapter materials, including reading content and video activities.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>

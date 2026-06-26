@@ -51,6 +51,29 @@ _ACCESS_SIGNALS = [
     "where do i get my book", "where do i get my textbook",
     "where can i get my book", "where can i get my textbook",
 ]
+_NAVIGATION_ACCESS_SIGNALS = [
+    # Replies to "What kind of issue?" where the student is describing a
+    # Canvas navigation/location problem, not saying they cannot answer.
+    "i don't know where to find it",
+    "i dont know where to find it",
+    "i do not know where to find it",
+    "i can't find it",
+    "i cant find it",
+    "i cannot find it",
+    "don't know where it is",
+    "dont know where it is",
+    "do not know where it is",
+    "don't know where to look",
+    "dont know where to look",
+    "do not know where to look",
+    "where do i find it",
+    "where can i find it",
+    "i don't know where to access it",
+    "i dont know where to access it",
+    "i do not know where to access it",
+    "not sure where to find it",
+    "not sure where to access it",
+]
 _MISSING_SIGNALS = [
     "missing", "not there", "disappeared", "gone", "don't see",
     "do not see", "can't find", "cannot find", "not showing",
@@ -89,6 +112,8 @@ def extract_issue_type(message: str) -> Optional[str]:
     msg_lower = message.lower()
     if any(s in msg_lower for s in _ACCOUNT_SIGNALS):
         return "account"
+    if any(s in msg_lower for s in _NAVIGATION_ACCESS_SIGNALS):
+        return "access"
     if any(s in msg_lower for s in _ACCESS_SIGNALS):
         return "access"
     if any(s in msg_lower for s in _MISSING_SIGNALS):

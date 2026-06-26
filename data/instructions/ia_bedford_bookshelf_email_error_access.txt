@@ -1,4 +1,4 @@
----
+﻿---
 source_id: ia_bedford_bookshelf_email_error_access
 source_type: instruction
 category: platform_access
@@ -44,7 +44,7 @@ IF ISSUE PERSISTS:
 - Confirm the student is accessing the material through Canvas, not directly through VitalSource.
 - Verify the account merge has fully completed.
 - Refer the student back to VitalSource Support if content still does not appear.
-- Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+- Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 
 SUPPORT CONTACT:
 VitalSource Support Team
@@ -52,3 +52,6 @@ https://learnersupport.vitalsource.com/hc/en-us
 
 ADDITIONAL HELP:
 ImmediateAccess@calbaptist.edu
+
+
+

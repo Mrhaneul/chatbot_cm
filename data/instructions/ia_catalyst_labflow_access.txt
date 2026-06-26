@@ -1,0 +1,36 @@
+﻿[META:{"source_id":"ia_catalyst_labflow_access","platform":"CATALYST_LABFLOW","issue_type":"access","subtype":"canvas_access"}]
+
+PROBLEM:
+Student cannot access Catalyst LabFlow through Canvas Immediate Access.
+
+APPLIES TO:
+Platform: Catalyst LabFlow
+LMS: Canvas
+
+CANVAS LOCATION:
+Course Navigation > Immediate Access, then use the textbook tile to reveal the access code and open the provided URL.
+
+STEP-BY-STEP RESOLUTION:
+1. Log onto Canvas and select the course using Labflow.
+2. Click → Immediate Access from the left-hand course menu.
+3. Click → Reveal Access Code
+4. Click → Copy to copy the access code to your clipboard.
+5. Open the provided URL in a new browser.
+6. On the Catalyst/Labflow website, through the provided URL, you will be prompted to either:
+   1) Log into an existing Catalyst/Labflow account
+   OR
+   2) Create a new Catalyst/Labflow account using your CBU credentials.
+      a. (e.g. Jane.Smith@calbaptist.edu)
+      b. DO NOT use your ID#@calbaptist.edu email address
+7. Once you’ve logged into your New/Existing Catalyst account, search California Baptist University under Enroll in a course.
+8. Click → Enroll on the appropriate course using Labflow and enter the code from the Canvas Immediate Access link.
+   - This will grant you access to the Labflow content.
+
+EXPECTED RESULT:
+Student successfully accesses Catalyst LabFlow content through Canvas.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+
+
+

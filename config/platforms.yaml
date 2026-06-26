@@ -180,3 +180,20 @@ platforms:
       - little seagull
       - norton
       - seagull handbook
+
+  - key: JONES_BARTLETT
+    rag_key: jones_bartlett
+    display_name: "Jones & Bartlett Navigate"
+    aliases:
+      - jones bartlett
+      - jones & bartlett
+      - jones and bartlett
+      - navigate
+
+  - key: ELSEVIER
+    rag_key: elsevier
+    display_name: "Elsevier Evolve"
+    aliases:
+      - elsevier
+      - evolve
+      - elsevier evolve

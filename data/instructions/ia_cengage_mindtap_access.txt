@@ -1,20 +1,21 @@
-PROBLEM:
+﻿PROBLEM:
 Student is opted into Immediate Access but cannot access Cengage MindTap textbook or assignments.
 
 APPLIES TO:
 Courses using Cengage MindTap.
 
-BLACKBOARD LOCATION:
-Course Materials tab
+CANVAS LOCATION:
+Course Navigation > Immediate Access
 
 STEP-BY-STEP RESOLUTION:
-1. Log in to Canvas.
-2. Open the correct course.
-3. Click on the “Course Materials” tab in the left menu.
-4. Click the MindTap registration or access link.
-5. Open the appropriate week folder.
-6. Select the MindTap chapter or assignment link.
-7. Log in or create a Cengage account using your CBU email address.
+1. Sign onto Canvas and go to the course using Cengage MindTap/CNowV2.
+2. Click the → Immediate Access link on the left-hand side course menu.
+3. On the right-hand side, the Cengage MindTap/CNowV2 material should appear with an option to ‘Launch Courseware’. Click → Launch Courseware.
+4. You will be pathed to the Cengage site, where you will be prompted to log into a Cengage account.
+   a. If you do not have an existing account, create one with your Name@calbaptist.edu email address.
+   b. DO NOT USE YOUR ID#@calbaptist.edu EMAIL.
+   c. If you have an existing account, log in with those credentials.
+5. Once logged in, you should be directly pathed to your MindTap/CNowV2 course, where you will be able to access your eText and courseware assignments.
 
 LOGIN REQUIREMENTS:
 - Use your full CBU email address (firstname.lastname@calbaptist.edu).
@@ -24,4 +25,7 @@ EXPECTED RESULT:
 After logging in, the MindTap eText and assignments should be accessible.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+
+
+

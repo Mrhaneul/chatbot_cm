@@ -87,3 +87,18 @@ platforms:
     keywords:
       - stukent
       - simternship
+
+  - key: jones_bartlett
+    display_name: Jones & Bartlett Navigate
+    keywords:
+      - jones bartlett
+      - jones & bartlett
+      - jones and bartlett
+      - navigate
+
+  - key: elsevier
+    display_name: Elsevier Evolve
+    keywords:
+      - elsevier
+      - evolve
+      - elsevier evolve

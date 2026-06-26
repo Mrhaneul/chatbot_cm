@@ -112,6 +112,8 @@ _GENERIC_COURSE_MATERIAL_ISSUE_RE = re.compile(
 
 def is_unknown_answer(message: str) -> bool:
     """True when the user signals they cannot supply the requested slot value."""
+    if extract_issue_type(message) is not None:
+        return False
     msg_lower = message.lower()
     return any(phrase in msg_lower for phrase in _UNKNOWN_ANSWER_PHRASES)
 

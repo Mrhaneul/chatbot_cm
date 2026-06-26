@@ -5,22 +5,28 @@ Student is opted into Immediate Access but cannot access their Zybooks textbook 
 APPLIES TO:
 Courses using Zybooks digital textbooks (commonly used in EGR courses such as Intro to Computer Programming in Python).
 
-BLACKBOARD LOCATION:
-Immediate Access tab (left side pane)
+CANVAS LOCATION:
+Course Navigation > Immediate Access
 
 STEP-BY-STEP RESOLUTION:
-1. Log onto Canvas.
-2. Select the course in which you are enrolled that uses Zybooks.
-3. Click "Immediate Access" from the left side pane.
-4. Click "Immediate Access" once more from the center of the page.
-5. Click the "Reveal Access Code" button.
-6. Click "Copy" to copy the access code displayed in the field.
-7. Navigate to the Zybooks URL provided on the page (example: https://learn.zybooks.com/zybook/CALBAPTISTEGR120CorsoSpring2026).
-8. Paste your unique access code on the Zybooks website to activate your content.
+1. Log onto Canvas and select the course using ZyBooks.
+2. Click → Immediate Access from the left-hand course menu.
+3. Click → Reveal Access Code
+4. Click → Copy to copy the access code to your clipboard.
+5. Open the provided URL in a new browser.
+6. On the ZyBooks website, through the provided URL, you will be prompted to either:
+   1) Log into an existing ZyBooks account
+   OR
+   2) Create a new ZyBooks account using your CBU credentials.
+      a. (e.g. Jane.Smith@calbaptist.edu)
+      b. DO NOT use your ID#@calbaptist.edu email address
+7. If you created a new account, be sure to verify your account by clicking on the verification link sent to the registered email address.
+8. Enter the code from the Canvas Immediate Access link.
+   - This will grant you access to the ZyBooks content.
 
 EXPECTED RESULT:
 After entering the access code on the Zybooks website, you will have full access to the Zybooks content for your course.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>

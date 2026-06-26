@@ -1,0 +1,33 @@
+﻿[META:{"source_id":"ia_elsevier_evolve_access","platform":"ELSEVIER","issue_type":"access","subtype":"canvas_access"}]
+
+PROBLEM:
+Student cannot access Elsevier Evolve through Canvas Immediate Access.
+
+APPLIES TO:
+Platform: Elsevier Evolve
+LMS: Canvas
+
+CANVAS LOCATION:
+Course Navigation > Immediate Access, then use the textbook tile to reveal the access code and open the provided URL.
+
+STEP-BY-STEP RESOLUTION:
+1. Sign onto Canvas and go to the course using IA.
+2. Click the → Immediate Access link
+3. Under the textbook tile, click → Reveal Access Code
+4. Open the provided URL in a new tab.
+5. Copy the provided access code.
+6. In the new Elsevier tab, click → I’m a Student
+7. At the bottom of the page, paste the code from Canvas into the Redeem an Access Code field
+   - Continue to follow the prompts to access your materials.
+8. You may need to create an Elsevier Evolve account using your CBU credentials.
+   - Use your Name@calbaptist.edu email address
+   - DO NOT use your ID#@calbaptist.edu address as you may not receive the necessary verification emails from Elsevier.
+
+EXPECTED RESULT:
+Student successfully accesses Elsevier Evolve content through Canvas.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+
+
+

@@ -5,20 +5,21 @@ Student is opted into Immediate Access but cannot access the Bedford Bookshelf o
 APPLIES TO:
 Courses using Bedford Bookshelf titles through Immediate Access.
 
-BLACKBOARD LOCATION:
-Immediate Access tab
+CANVAS LOCATION:
+Course Navigation > Immediate Access
 
 STEP-BY-STEP RESOLUTION:
-1. Log in to Canvas and select your course.
-2. Click the "Immediate Access" option from the left sidebar.
-3. Click the Immediate Access link on the right-hand side.
-4. The Bedford Bookshelf page will appear.
-5. Click "Read Now".
-6. Sign in to your Bookshelf account.
-   a. If you do not have a Bookshelf account, create one using your CBU credentials.
-   b. Use your NAME@calbaptist.edu email address.
-   c. Do NOT use your ID@calbaptist.edu email address.
-7. Enter the title of the material your course will be using in the search field at the top (Ex. Hello, Writer).
+1. Sign onto Canvas and go to the course using IA.
+2. Click the → Immediate Access link
+3. The Bedford Bookshelf will appear on the page.
+   a. Click → Read Now
+4. Sign in to your Bookshelf account.
+   a. If you have not made a Bookshelf account, you can create one using your CBU credentials.
+   b. Create a Bookshelf account using your NAME@calbaptist.edu.
+   c. Do Not Use Your ID@calbaptist.edu. You will NOT receive emails outside of CBU, such as VitalSource Account Verifications, if you use this email address.
+5. Once you have successfully logged in, you will see The Bedford Bookshelf library available to you.
+   a. Click → Search on the left sidebar.
+6. Enter the title of the material your course will be using in the search field at the top (Ex. Hello, Writer or In Conversation).
    a. Click → Open Book on the right-hand side to begin reading your material.
 
 LOGIN REQUIREMENTS:
@@ -30,7 +31,7 @@ EXPECTED RESULT:
 The Bedford Bookshelf library will load and allow access to the assigned course materials.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_bedford_bookshelf_email_error_access.txt", "source_id": "ia_bedford_bookshelf_email_error_access", "source_type": "instruction", "category": "platform_access", "platform": "bedford", "issue_type": "email_error", "priority": "specific_case", "section_title": "FULL_DOCUMENT [part 1/2]"}]
 PROBLEM:
@@ -71,7 +72,7 @@ IF ISSUE PERSISTS:
 - Confirm the student is accessing the material through Canvas, not directly through VitalSource.
 - Verify the account merge has fully completed.
 - Refer the student back to VitalSource Support if content still does not appear.
-- Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+- Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 
 SUPPORT CONTACT:
 VitalSource Support Team
@@ -87,7 +88,7 @@ Student is opted into Immediate Access but cannot access their eTextbook through
 APPLIES TO:
 General Immediate Access eTextbooks delivered through VitalSource or similar platforms (commonly used in English courses such as ENG 113 Composition with Bedford Bookshelf).
 
-BLACKBOARD LOCATION:
+CANVAS LOCATION:
 Immediate Access tab (left side pane)
 
 STEP-BY-STEP RESOLUTION:
@@ -102,7 +103,7 @@ EXPECTED RESULT:
 After clicking "Read Now," you should be taken directly to your eTextbook content in VitalSource Bookshelf or the publisher's reading platform.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_vitalsource_bookshelf_account_creation.txt", "source_id": "ia_vitalsource_bookshelf_account_creation", "source_type": "instruction", "category": "platform_access", "platform": "vitalsource", "issue_type": "account_creation", "priority": "canonical", "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
@@ -112,17 +113,17 @@ APPLIES TO:
 Courses using VitalSource Bookshelf.
 
 STEP-BY-STEP RESOLUTION:
-1. Go to Bookshelf.VitalSource.com.
-2. Click "Create a VitalSource Account".
-3. Select "I’m a Student".
-4. Enter the required information.
-5. Use your NAME@calbaptist.edu email address.
-6. Agree to the Terms of Use and Privacy Policy.
-7. Click "Create Account".
-8. Select "Higher Ed".
-9. Enter "California Baptist University" as the institution.
-10. Click "Submit".
-11. Verify the account using the confirmation email.
+1. Go to Bookshelf.VitalSource.com
+2. Click → Create a VitalSource Account
+3. Select → I’m a Student.
+   a. Fill out the necessary information to create the account.
+   b. Be sure to use your Name@calbaptist.edu email address
+   c. Be sure to agree to the Terms of Use and Privacy Policy.
+4. Click → Create Account
+5. Click → Higher Ed
+   a. Enter the Institution name → California Baptist University
+   b. Click → Submit
+6. Verify the account through the email received.
 
 LOGIN REQUIREMENTS:
 - Use your NAME@calbaptist.edu email address.
@@ -131,5 +132,5 @@ EXPECTED RESULT:
 The VitalSource Bookshelf account is created and ready for use.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>

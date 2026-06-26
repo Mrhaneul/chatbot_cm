@@ -1552,19 +1552,29 @@ class TestIntakeUnknownAnswerLifecycle:
             "intake_profile must be cleared after escalation"
         )
 
-    async def test_dont_know_where_to_find_it_escalates(self):
-        """Extended phrase 'I don't know where to find it' triggers immediate escalation."""
-        from app.intake.flow import INTAKE_ESCALATION_MESSAGE
-        session_id = f"test-unk-ext-{uuid.uuid4()}"
+    async def test_dont_know_where_to_find_it_routes_to_access_instructions(self):
+        """Navigation/location reply is a valid access issue, not an unknown answer."""
+        session_id = f"test-nav-access-{uuid.uuid4()}"
+        fake_retrieval = {
+            "context": "McGraw Hill Connect access steps",
+            "source_id": "INSTR_MCGRAW_001",
+            "score": 0.95,
+            "article_link": None,
+            "metadata": {"source_file": "ia_mcgraw_hill_connect_access.txt"},
+        }
         with (
             patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
             patch("app.main.run_intake_planner", new=AsyncMock(return_value=self._PLANNER_CLARIFICATION)),
+            patch("app.main.retrieve_async", new=AsyncMock(return_value=fake_retrieval)),
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(return_value=("McGraw Hill Connect access steps", 0.0))),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
         ):
-            await process_chat_request(_session_req(session_id, "My book is locked"))
+            await process_chat_request(_session_req(session_id, "McGraw Hill issue"))
             r2 = await process_chat_request(_session_req(session_id, "I don't know where to find it"))
 
-        assert r2.source == "INTAKE:ESCALATION", f"Got source={r2.source!r}"
-        assert r2.reply == INTAKE_ESCALATION_MESSAGE
+        assert r2.source != "INTAKE:ESCALATION", f"Got source={r2.source!r}"
+        assert r2.source == "INSTR_MCGRAW_001"
+        assert "McGraw Hill Connect access steps" in r2.reply
 
     async def test_specific_platform_after_escalation_reaches_rag(self):
         """
@@ -2768,6 +2778,87 @@ class TestIntakeIssueTypeRouting:
         assert r.route_type != "KNOWN_ISSUE_LLM", "access issue must not use the cache known-issue route"
         assert not r.source.startswith("INTAKE:"), f"access issue must complete intake. Got {r.source!r}"
 
+    async def test_mcgraw_navigation_reply_routes_to_connect_instructions(self):
+        """'I don't know where to find it' maps to access/navigation, not escalation."""
+        session_id = f"test-mcgraw-nav-{uuid.uuid4()}"
+        planner_mock = AsyncMock(return_value=IntakePlannerDecision(
+            action="ASK_CLARIFICATION",
+            intent="access_issue",
+            confidence=0.80,
+            known_slots={"platform": "MCGRAW_HILL"},
+            missing_slots=["issue_type"],
+            next_question_key="ask_issue_for_platform",
+            enriched_query=None,
+        ))
+        fake_retrieval = {
+            "context": "McGraw Hill Connect access steps",
+            "source_id": "INSTR_MCGRAW_001",
+            "score": 0.95,
+            "article_link": None,
+            "metadata": {"source_file": "ia_mcgraw_hill_connect_access.txt"},
+        }
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.retrieve_async", new=AsyncMock(return_value=fake_retrieval)),
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(return_value=("McGraw Hill Connect access steps.", 0.0))),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r1 = await process_chat_request(_session_req(session_id, "I need help with McGraw Hill Connect"))
+            assert r1.source in ("INTAKE", "INTAKE:LLM_PLANNER"), f"Got {r1.source!r}"
+
+            r2 = await process_chat_request(_session_req(session_id, "I don't know where to find it"))
+
+        assert r2.source != "INTAKE:ESCALATION"
+        assert r2.route_type != "KNOWN_ISSUE_LLM"
+        assert r2.source == "INSTR_MCGRAW_001"
+        assert "McGraw Hill Connect access steps" in r2.reply
+
+    async def test_material_type_answer_does_not_skip_issue_type_question(self):
+        """
+        If the planner asks material_type first, answering "digital textbook"
+        must not complete intake. Lance still needs the issue_type turn.
+        """
+        session_id = f"test-material-then-issue-{uuid.uuid4()}"
+        planner_mock = AsyncMock(return_value=IntakePlannerDecision(
+            action="ASK_CLARIFICATION",
+            intent="book_location",
+            confidence=0.80,
+            known_slots={"platform": "MCGRAW_HILL"},
+            missing_slots=["material_type", "issue_type"],
+            next_question_key="ask_material_type",
+            enriched_query=None,
+        ))
+        fake_retrieval = {
+            "context": "McGraw Hill Connect access steps",
+            "source_id": "INSTR_MCGRAW_001",
+            "score": 0.95,
+            "article_link": None,
+            "metadata": {"source_file": "ia_mcgraw_hill_connect_access.txt"},
+        }
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.retrieve_async", new=AsyncMock(return_value=fake_retrieval)),
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(return_value=("McGraw Hill Connect access steps.", 0.0))),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r1 = await process_chat_request(_session_req(session_id, "I need help with McGraw Hill Connect"))
+            assert r1.source == "INTAKE:LLM_PLANNER"
+            assert "digital textbook" in r1.reply.lower()
+
+            r2 = await process_chat_request(_session_req(session_id, "Digital textbook"))
+            assert r2.source == "INTAKE"
+            assert "what kind of issue" in r2.reply.lower()
+
+            r3 = await process_chat_request(_session_req(session_id, "I don't know where to find it"))
+
+        assert r3.source == "INSTR_MCGRAW_001"
+        assert "McGraw Hill Connect access steps" in r3.reply
+        assert r3.route_type != "KNOWN_ISSUE_LLM"
+
     # ---- streaming account escalation ----
 
     async def test_streaming_account_issue_escalates(self):
@@ -2788,6 +2879,46 @@ class TestIntakeIssueTypeRouting:
         assert done.get("source") == "INTAKE:ACCOUNT_ESCALATION", (
             f"Streaming account issue must return INTAKE:ACCOUNT_ESCALATION. Got {done.get('source')!r}"
         )
+
+    async def test_streaming_mcgraw_navigation_reply_routes_to_connect_instructions(self):
+        """Streaming: navigation reply after McGraw platform routes to Connect instructions."""
+        session_id = f"test-stream-mcgraw-nav-{uuid.uuid4()}"
+        planner_mock = AsyncMock(return_value=IntakePlannerDecision(
+            action="ASK_CLARIFICATION",
+            intent="access_issue",
+            confidence=0.80,
+            known_slots={"platform": "MCGRAW_HILL"},
+            missing_slots=["issue_type"],
+            next_question_key="ask_issue_for_platform",
+            enriched_query=None,
+        ))
+        fake_retrieval = {
+            "context": "McGraw Hill Connect access steps",
+            "source_id": "INSTR_MCGRAW_001",
+            "score": 0.95,
+            "article_link": None,
+            "metadata": {"source_file": "ia_mcgraw_hill_connect_access.txt"},
+        }
+
+        async def fake_stream_chat(*args, **kwargs):
+            yield {"type": "response", "token": "McGraw Hill Connect access steps."}
+
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=planner_mock),
+            patch("app.main.retrieve_async", new=AsyncMock(return_value=fake_retrieval)),
+            patch("app.main.stream_llm_chat_response", new=fake_stream_chat),
+            patch("app.main.stream_llm_response", new=fake_stream_chat),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            first = await _post_stream({"message": "I need help with McGraw Hill Connect", "session_id": session_id})
+            assert first.get("source") in ("INTAKE", "INTAKE:LLM_PLANNER"), f"Got {first.get('source')!r}"
+
+            done = await _post_stream({"message": "I don't know where to find it", "session_id": session_id})
+
+        assert done.get("source") != "INTAKE:ESCALATION"
+        assert done.get("route_type") != "KNOWN_ISSUE_LLM"
+        assert done.get("selected_source_file") == "ia_mcgraw_hill_connect_access.txt"
 
     # ---- "I don't know" regression ----
 

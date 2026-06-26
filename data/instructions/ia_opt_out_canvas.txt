@@ -1,0 +1,28 @@
+﻿[META:{"source_id":"ia_opt_out_canvas","platform":"GENERAL","issue_type":"access","subtype":"canvas_access"}]
+
+PROBLEM:
+Student cannot access Immediate Access opt out through Canvas Immediate Access.
+
+APPLIES TO:
+Platform: Immediate Access opt out
+LMS: Canvas
+
+CANVAS LOCATION:
+Canvas > Courses > course using Immediate Access > Immediate Access.
+
+STEP-BY-STEP RESOLUTION:
+1. Log onto Canvas and click → Courses
+2. Click into the course using Immediate Access
+3. Click → Immediate Access on the left-hand side.
+4. Identify the IA title you’d like to opt out of, then click → Want to Opt Out?
+5. Follow the prompts and confirm your Opt-Out.
+6. After successfully opting out, you should receive an automated email to your Lancer Mail confirming Your Preference to Opt-Out Has Been Recorded.
+
+EXPECTED RESULT:
+Student successfully accesses Immediate Access opt out content through Canvas.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+
+
+

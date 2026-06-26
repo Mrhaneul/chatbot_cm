@@ -1,48 +1,31 @@
-[META:{"source_file": "ia_simucase_access.txt", "source_id": "ia_simucase_access", "source_type": "instruction", "platform": ["simucase"], "section_title": "FULL_DOCUMENT [part 1/2]"}]
+[META:{"source_file": "ia_simucase_access.txt", "source_id": "ia_simucase_access", "source_type": "instruction", "platform": ["simucase"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
 Student is opted into Immediate Access but cannot access their SimuCase simulation platform or needs help redeeming their access code.
 
 APPLIES TO:
 Courses using the SimuCase simulation platform (commonly used in Social Work courses such as SWK 335 Substance Use Disorders, Treatment, Recovery).
 
-BLACKBOARD LOCATION:
-Immediate Access tab (left side pane)
+CANVAS LOCATION:
+Course Navigation > Immediate Access
 
 STEP-BY-STEP RESOLUTION:
-1. Log into Canvas.
-2. Select the course that uses SimuCase.
-3. Click "Immediate Access" from the left-hand side pane.
-4. Click "Immediate Access" again from the center of the page.
-5. Click "Reveal Access Code" to display your unique SimuCase code.
-6. Copy the access code that appears.
-7. Copy the publisher's URL appearing under "More Info" (https://www.simucase.com/members/register/simucase).
-8. Open a new browser tab and paste the URL to navigate to the SimuCase registration page.
-9. On the SimuCase website, click "Accept All" on the Privacy Choices popup.
-10. Fill in your account information:
-    - First Name and Last Name
-    - Primary Email Address (use your CBU email)
-    - Secondary Email Address (optional personal email)
-    - Create Password
-    - Area of Focus (e.g., Social Work)
-    - Select "Yes" for educational institution affiliation
-    - University: California Baptist University
-    - Role: Undergraduate Student
-    - Graduation Date
-11. Click "Continue" to proceed to the Payment page.
-12. On the Payment page, navigate back to your Canvas page.
-13. Click "Copy" to copy the unique access code from Canvas.
-14. Return to the SimuCase page and paste your code in the "Promo Code" field.
-15. Click "Apply" to redeem your access code.
+1. Login to Canvas and select the course that is using the SimuCase platform.
+   - This example uses SWK 335, but the same steps apply to any course using SimuCase.
+2. Click → Immediate Access from the left-hand side pane.
+3. Click → Reveal Access Code
+4. Open a new browser and Copy the publisher’s URL appearing under → More Info. Then, paste the URL in the new browser to create your SimuCase account.
+5. Click → Accept All, then proceed to create your account by filling in the questions that appear on the screen, then click → Continue.
+6. Next, enter the code from Canvas into the field → Promo Code, then click → Apply.
+   - You should then be able to access your SimuCase material.
 
 IMPORTANT NOTES:
 - Your access code functions as a Promo Code on the SimuCase payment page.
 - The code covers your membership cost through Immediate Access.
 - Do not select a paid membership option - use your Promo Code instead.
-<<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "ia_simucase_access.txt", "source_id": "ia_simucase_access", "source_type": "instruction", "platform": ["simucase"], "section_title": "FULL_DOCUMENT [part 2/2]"}]
+
 EXPECTED RESULT:
 After applying your promo code, you should have full access to the SimuCase simulation materials for your course.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>

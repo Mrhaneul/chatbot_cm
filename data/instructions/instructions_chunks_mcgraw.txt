@@ -5,16 +5,16 @@ Student is opted into Immediate Access but cannot access McGraw Hill Connect tex
 APPLIES TO:
 Courses using McGraw Hill Connect.
 
-BLACKBOARD LOCATION:
-Learning Activities tab
+CANVAS LOCATION:
+Course Navigation > McGraw Hill
 
 STEP-BY-STEP RESOLUTION:
-1. Log in to Canvas.
-2. Open the correct course.
-3. Click on the “Learning Activities” tab in the left menu.
-4. Open the appropriate week folder (e.g., Week 1).
-5. Click the McGraw Hill Connect link for the eText or assignment.
-6. If prompted, log in or create a McGraw Hill account using your CBU email address.
+1. Sign onto Canvas and go to the course using McGraw Hill Connect courseware.
+2. On the left-hand course menu, click → McGraw Hill to be pathed to your McGraw Hill Connect course.
+3. On the right-hand side, you will be pathed to the McGraw Hill site, where you will be prompted to log into a McGraw Hill Connect account.
+   a. If you do not have an existing account, create one with your Name@calbaptist.edu email address. DO NOT USE YOUR ID#@calbaptist.edu EMAIL.
+   b. If you have an existing account, log in with those credentials.
+4. Once logged in, you should be pathed to the McGraw Hill Connect course, where you can access both the eTextbook and the assignments below.
 
 LOGIN REQUIREMENTS:
 - Use your full CBU email address (firstname.lastname@calbaptist.edu).
@@ -24,127 +24,92 @@ EXPECTED RESULT:
 Once logged in, the eText and assignments should open successfully within McGraw Hill Connect.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "ia_mcgraw_hill_connect_learning_activities_access.txt", "source_id": "ia_mcgraw_hill_connect_learning_activities_access", "source_type": "instruction", "platform": ["mcgraw"], "section_title": "FULL_DOCUMENT [part 1/2]"}]
+[META:{"source_file": "ia_mcgraw_hill_connect_learning_activities_access.txt", "source_id": "ia_mcgraw_hill_connect_learning_activities_access", "source_type": "instruction", "platform": ["mcgraw"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
-Student cannot access their McGraw Hill Connect eTextbook or courseware through the Immediate Access tab or Learning Activities in Canvas.
+Student cannot access their McGraw Hill Connect eTextbook or courseware through Canvas.
 
 APPLIES TO:
-Courses using McGraw Hill Connect digital content accessed via Immediate Access tab or Learning Activities (commonly used in Business courses such as BUS 463 Business and Organizational Management).
+Courses using McGraw Hill Connect digital content.
 
-BLACKBOARD LOCATION:
-Immediate Access tab OR Learning Activities tab (left side pane)
+CANVAS LOCATION:
+Course Navigation > McGraw Hill
 
-METHOD 1 - VIA IMMEDIATE ACCESS TAB:
-1. Log into Canvas and go to your course page.
-2. Click "Immediate Access" on the left-hand side menu.
-3. Click the "Immediate Access" link in the center of the page.
-4. Click the "McGraw Hill Connect LTIA Basic Link."
-5. You will be taken to the McGraw Hill Connect course page with access to the eTextbook and assignments.
-
-METHOD 2 - VIA LEARNING ACTIVITIES TAB:
-1. Log into Canvas and go to your course page.
-2. Click "Learning Activities" on the left-hand side menu.
-3. IMPORTANT: Complete the Student Responsibility Agreement (SRA) first before accessing other content.
-4. Click on the weekly folder to view that week's assignments (e.g., "Week 1: Overview of Organizational Behavior").
-5. Find the "McGraw Hill Connect" folder within the week.
-6. Click on individual assignment links (SmartBook, Quiz, Connect Orientation Videos, etc.).
+STEP-BY-STEP RESOLUTION:
+1. Sign onto Canvas and go to the course using McGraw Hill Connect courseware.
+2. On the left-hand course menu, click → McGraw Hill to be pathed to your McGraw Hill Connect course.
+3. On the right-hand side, you will be pathed to the McGraw Hill site, where you will be prompted to log into a McGraw Hill Connect account.
+   a. If you do not have an existing account, create one with your Name@calbaptist.edu email address. DO NOT USE YOUR ID#@calbaptist.edu EMAIL.
+   b. If you have an existing account, log in with those credentials.
+4. Once logged in, you should be pathed to the McGraw Hill Connect course, where you can access both the eTextbook and the assignments below.
 
 LOGIN REQUIREMENTS:
 - If prompted to log in on the McGraw Hill website, use an existing McGraw Hill account OR create a new account.
 - Use your CBU email: firstname.lastname@calbaptist.edu
 - Do NOT use your CBUID#@calbaptist.edu email address.
 
-ACCESSING THE EBOOK WITHIN AN ASSIGNMENT:
-1. In the assignment, click "Continue" on the bottom right-hand side.
-2. Click "eBook" on the left-hand side of the page.
-3. A pop-up will appear on the right-hand side showing the "Browse eBook" option.
-4. Click on the eBook cover to open and read.
-<<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "ia_mcgraw_hill_connect_learning_activities_access.txt", "source_id": "ia_mcgraw_hill_connect_learning_activities_access", "source_type": "instruction", "platform": ["mcgraw"], "section_title": "FULL_DOCUMENT [part 2/2]"}]
-NAVIGATION INSIDE MCGRAW HILL CONNECT:
-- Course materials section shows the textbook and loose leaf options.
-- Read section displays your eTextbook.
-- Assignments are organized by weekly folders.
-- You can download the mobile app to read offline.
-
 EXPECTED RESULT:
 After following these steps, you should have access to both the McGraw Hill Connect eTextbook and weekly assignments.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "ia_mcgraw_hill_connect_no_read_now.txt", "source_id": "ia_mcgraw_hill_connect_no_read_now", "source_type": "instruction", "platform": ["mcgraw"], "section_title": "FULL_DOCUMENT [part 1/2]"}]
+[META:{"source_file": "ia_mcgraw_hill_connect_no_read_now.txt", "source_id": "ia_mcgraw_hill_connect_no_read_now", "source_type": "instruction", "platform": ["mcgraw"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
 Student is opted into Immediate Access but sees a "Launch Courseware" button instead of a "Read Now" button when accessing their McGraw Hill Connect course materials. The student may be expecting a "Read Now" button like VitalSource eTextbooks but McGraw Hill Connect uses a different access flow.
 
 APPLIES TO:
 Courses using McGraw Hill Connect digital content through Immediate Access.
 
-BLACKBOARD LOCATION:
-Learning Activities tab (left side menu) or Immediate Access tab
+CANVAS LOCATION:
+Course Navigation > McGraw Hill
 
 EXPLANATION:
-McGraw Hill Connect does not use a "Read Now" button. Instead, access is provided through a "Launch Courseware" button which takes you directly into the McGraw Hill Connect platform where both the eText and assignments are available.
+McGraw Hill Connect does not use a "Read Now" button. Instead, Canvas paths students through the McGraw Hill course navigation link into the McGraw Hill Connect platform where both the eText and assignments are available.
 
 STEP-BY-STEP RESOLUTION:
 
-1. Log into Canvas.
-2. Open the correct course.
-3. Try the Learning Activities tab first:
-   a. Click "Learning Activities" from the left side menu.
-   b. Open the appropriate week folder (e.g., Week 1).
-   c. Click the McGraw Hill Connect link for the eText or assignment.
-4. Alternatively, try the Immediate Access tab:
-   a. Click "Immediate Access" from the left side menu.
-   b. Click "Immediate Access" again from the center of the page.
-   c. Click the "Launch Courseware" button (this is correct — McGraw Hill does not show "Read Now").
-5. If prompted, log in or create a McGraw Hill account using your CBU email address.
+1. Sign onto Canvas and go to the course using McGraw Hill Connect courseware.
+2. On the left-hand course menu, click → McGraw Hill to be pathed to your McGraw Hill Connect course.
+3. On the right-hand side, you will be pathed to the McGraw Hill site, where you will be prompted to log into a McGraw Hill Connect account.
+   a. If you do not have an existing account, create one with your Name@calbaptist.edu email address. DO NOT USE YOUR ID#@calbaptist.edu EMAIL.
+   b. If you have an existing account, log in with those credentials.
+4. Once logged in, you should be pathed to the McGraw Hill Connect course, where you can access both the eTextbook and the assignments below.
 
 LOGIN REQUIREMENTS:
 - Use your full CBU email address (firstname.lastname@calbaptist.edu).
 - Do NOT use your ID#@calbaptist.edu email.
 
 EXPECTED RESULT:
-After clicking "Launch Courseware" and logging in, you will have access to both the McGraw Hill eText and any assignments for your course. The "Read Now" button is not used for McGraw Hill Connect — "Launch Courseware" is the correct button for this platform.
-<<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "ia_mcgraw_hill_connect_no_read_now.txt", "source_id": "ia_mcgraw_hill_connect_no_read_now", "source_type": "instruction", "platform": ["mcgraw"], "section_title": "FULL_DOCUMENT [part 2/2]"}]
+After clicking the McGraw Hill course navigation link and logging in, you will have access to both the McGraw Hill eText and any assignments for your course. The "Read Now" button is not used for McGraw Hill Connect.
+
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_mcgraw_hill_connect_tools_access.txt", "source_id": "ia_mcgraw_hill_connect_tools_access", "source_type": "instruction", "platform": ["mcgraw"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
-Student cannot access their McGraw Hill Connect eTextbook or courseware through the Tools menu in Canvas.
+Student cannot access their McGraw Hill Connect eTextbook or courseware through Canvas.
 
 APPLIES TO:
-Courses using McGraw Hill Connect digital content accessed via the Tools tab (commonly used in Business courses such as BUS 212 Economics, Life and Society).
+Courses using McGraw Hill Connect digital content.
 
-BLACKBOARD LOCATION:
-Tools tab (left side pane)
+CANVAS LOCATION:
+Course Navigation > McGraw Hill
 
 STEP-BY-STEP RESOLUTION:
-1. Log into Canvas.
-2. Go to your course page.
-3. Click "Tools" on the left-hand side menu.
-4. Click the link titled "McGraw Hill Connect LTIA Basic Link."
-5. You will be taken to the McGraw Hill Connect course page.
-6. Access your materials:
-   - For eTextbook: Click on the book image under "Read" in the Course materials section.
-   - For Assignments: Click on the weekly folders (Week 1, Week 2, etc.) to view assignments.
-
-NAVIGATION INSIDE MCGRAW HILL CONNECT:
-- Instructor information and messaging options are at the top left.
-- Course materials section shows the textbook and loose leaf purchase options.
-- Read section displays your eTextbook - click to open.
-- Assignments section shows weekly folders with your coursework.
-- You can download the mobile app to read offline.
+1. Sign onto Canvas and go to the course using McGraw Hill Connect courseware.
+2. On the left-hand course menu, click → McGraw Hill to be pathed to your McGraw Hill Connect course.
+3. On the right-hand side, you will be pathed to the McGraw Hill site, where you will be prompted to log into a McGraw Hill Connect account.
+   a. If you do not have an existing account, create one with your Name@calbaptist.edu email address. DO NOT USE YOUR ID#@calbaptist.edu EMAIL.
+   b. If you have an existing account, log in with those credentials.
+4. Once logged in, you should be pathed to the McGraw Hill Connect course, where you can access both the eTextbook and the assignments below.
 
 EXPECTED RESULT:
-After clicking the McGraw Hill Connect LTIA Basic Link, you should have access to both the eTextbook and weekly assignments.
+After following these steps, you should have access to both the McGraw Hill Connect eTextbook and weekly assignments.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_mcgraw_hill_tools_access.txt", "source_id": "ia_mcgraw_hill_tools_access", "source_type": "instruction", "category": "platform_access", "platform": "mcgraw_hill", "issue_type": "access", "priority": "alternate", "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
@@ -153,26 +118,20 @@ Student is opted into Immediate Access but cannot access their McGraw Hill textb
 APPLIES TO:
 Courses using McGraw Hill Connect digital content (commonly used in Business courses such as BUS 212).
 
-BLACKBOARD LOCATION:
-Tools tab (left side pane)
+CANVAS LOCATION:
+Course Navigation > McGraw Hill
 
 STEP-BY-STEP RESOLUTION:
-1. Log onto Canvas.
-2. Select your course that uses McGraw Hill from your list of courses.
-3. Click "Tools" from the left-hand side menu.
-4. Select "McGraw Hill Connect LTIA Basic Link" from the Tools menu.
-5. Once in McGraw Hill Connect, click the image of the book under "Course materials" in the Read section.
-6. The e-book should deploy in the center of the page.
-
-NAVIGATION INSIDE MCGRAW HILL:
-- Course materials section: Access loose leaf options and your course text.
-- Read section: Click on your textbook to open it.
-- Assignments section: View weekly assignments organized by Week folders (Week 1, Week 2, etc.).
-- You can also download the mobile app to read offline.
+1. Sign onto Canvas and go to the course using McGraw Hill Connect courseware.
+2. On the left-hand course menu, click → McGraw Hill to be pathed to your McGraw Hill Connect course.
+3. On the right-hand side, you will be pathed to the McGraw Hill site, where you will be prompted to log into a McGraw Hill Connect account.
+   a. If you do not have an existing account, create one with your Name@calbaptist.edu email address. DO NOT USE YOUR ID#@calbaptist.edu EMAIL.
+   b. If you have an existing account, log in with those credentials.
+4. Once logged in, you should be pathed to the McGraw Hill Connect course, where you can access both the eTextbook and the assignments below.
 
 EXPECTED RESULT:
-After following these steps, you should have access to your McGraw Hill e-book and can view your weekly assignments.
+After following these steps, you should have access to your McGraw Hill e-book and can view your assignments.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>

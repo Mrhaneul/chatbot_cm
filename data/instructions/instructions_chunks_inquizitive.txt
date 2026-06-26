@@ -1,23 +1,28 @@
-[META:{"source_file": "ia_inquizitive_access.txt", "source_id": "ia_inquizitive_access", "source_type": "instruction", "platform": ["inquizitive"], "section_title": "SCENARIO_1"}]
-Platform: InQuizitive
-Issue Type: Access
-Program: Immediate Access
-Last Updated: 2026-02-26
-<<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "ia_inquizitive_access.txt", "source_id": "ia_inquizitive_access", "source_type": "instruction", "platform": ["inquizitive"], "section_title": "SCENARIO_2"}]
-How To Access the Little Seagull & InQuizitive
-1. On your Canvas course page, click -> Immediate Access on the left-hand side
-panel.
-a. Then click -> Immediate Access on the right-hand side.
+[META:{"source_file": "ia_inquizitive_access.txt", "source_id": "ia_inquizitive_access", "source_type": "instruction", "platform": ["inquizitive"], "section_title": "FULL_DOCUMENT"}]
+[META:{"source_id":"ia_inquizitive_access","platform":"INQUIZITIVE","issue_type":"access","subtype":"canvas_access"}]
 
-2. Click -> Launch Courseware.
-a. A new pop-up tab should appear. If no new tab appears, ensure that you
-have enabled Third-Party cookies and disabled Pop-up blockers.
+PROBLEM:
+Student cannot access Little Seagull InQuizitive through Canvas Immediate Access.
 
-In the new tab, you will be pathed to the Norton platform.
-3. Read/Accept the Terms of use and Privacy Policy and click -> Continue.
+APPLIES TO:
+Platform: Little Seagull InQuizitive
+LMS: Canvas
 
-Following the How to Use InQuizitive tutorial, you should be pathed to the Little Seagull
-Handbook home page, where you'll be able to access your eTextbook and InQuizitive
-assignments.
+CANVAS LOCATION:
+Course Navigation > Immediate Access, then launch courseware from the Immediate Access page.
+
+STEP-BY-STEP RESOLUTION:
+1. Sign onto Canvas and go to the course using IA.
+2. Click the → Immediate Access link
+3. Click → Launch Courseware.
+   a. A new pop-up tab should appear. If no new tab appears, ensure that you have enabled Third-Party cookies and disabled Pop-up blockers.
+4. In the new tab, you will be pathed to the Norton platform.
+5. Read/Accept the Terms of use and Privacy Policy and click → Continue.
+6. Following the How to Use InQuizitive tutorial, you should be pathed to the Little Seagull Handbook home page, where you’ll be able to access your eTextbook and InQuizitive assignments – see below.
+
+EXPECTED RESULT:
+Student successfully accesses Little Seagull InQuizitive content through Canvas.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>

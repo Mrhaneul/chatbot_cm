@@ -45,7 +45,8 @@ def test_imports_succeed():
 _ALL_PLATFORM_KEYS = [
     "CENGAGE", "MCGRAW_HILL", "PEARSON", "WILEY", "MACMILLAN",
     "SAGE", "BEDFORD", "CLIFTON", "SIMUCASE", "ZYBOOKS",
-    "STUKENT", "VITALSOURCE", "INQUIZITIVE",
+    "STUKENT", "VITALSOURCE", "INQUIZITIVE", "JONES_BARTLETT",
+    "ELSEVIER",
 ]
 
 @pytest.mark.parametrize("key", _ALL_PLATFORM_KEYS)
@@ -61,7 +62,7 @@ def test_platform_aliases_non_empty(key):
     assert len(PLATFORM_ALIASES[key]) >= 1, f"PLATFORM_ALIASES[{key}] is empty"
 
 def test_total_platform_count():
-    assert len(PLATFORM_ALIASES) == 13
+    assert len(PLATFORM_ALIASES) == 15
 
 
 # ── Alias spot-checks ─────────────────────────────────────────────────────────
@@ -80,6 +81,12 @@ def test_vitalsource_aliases_contain_vitalsource():
 
 def test_clifton_aliases_include_cliftonstrengths():
     assert "cliftonstrengths" in PLATFORM_ALIASES["CLIFTON"]
+
+def test_jones_bartlett_aliases_include_navigate():
+    assert "navigate" in PLATFORM_ALIASES["JONES_BARTLETT"]
+
+def test_elsevier_aliases_include_evolve():
+    assert "evolve" in PLATFORM_ALIASES["ELSEVIER"]
 
 
 # ── PLATFORM_RETRIEVAL_KEY ────────────────────────────────────────────────────
@@ -118,7 +125,7 @@ def test_publisher_list_map_value_for_inquizitive():
 
 def test_platforms_for_api_is_list():
     assert isinstance(PLATFORMS_FOR_API, list)
-    assert len(PLATFORMS_FOR_API) == 13
+    assert len(PLATFORMS_FOR_API) == 15
 
 def test_platforms_for_api_entry_has_required_fields():
     for entry in PLATFORMS_FOR_API:

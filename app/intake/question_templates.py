@@ -37,7 +37,7 @@ QUESTION_TEMPLATES: dict[str, str] = {
         "Are you looking for a digital textbook, a workbook, or a lab manual?"
     ),
     "ask_blackboard_or_publisher_location": (
-        "Are you trying to access the material through the Immediate Access tab in Blackboard, "
+        "Are you trying to access the material through the Immediate Access tab in Canvas, "
         "or directly through the publisher's website?"
     ),
     "ask_course_or_material_when_platform_unknown": (

@@ -292,3 +292,107 @@ def test_repeated_removes_create_distinct_archives_without_overwrite(admin_conte
     assert ARCHIVE_NAME_RE.match(second_archive.name)
     assert first_archive.read_text(encoding="utf-8") == first_version
     assert second_archive.read_text(encoding="utf-8") == second_version
+
+
+def test_create_instruction_writes_structured_file_without_pdf_mapping(admin_content_env, monkeypatch):
+    ingest_calls = []
+    map_calls = []
+    monkeypatch.setattr(admin, "_trigger_ingest_background", lambda: ingest_calls.append("ingest"))
+    monkeypatch.setattr(admin, "_write_instruction_pdf_map", lambda *args: map_calls.append(args))
+
+    response = asyncio.run(
+        admin.create_instruction(
+            admin.InstructionCreateRequest(
+                platform="JONES_BARTLETT",
+                issue_type="access",
+                subtype="canvas_access",
+                canvas_location="Course Navigation > Immediate Access",
+                steps="1. Log in to Canvas.\n2. Click Immediate Access.",
+                expected_result="Student accesses Jones & Bartlett Navigate.",
+                if_issue_persists="Contact ImmediateAccess@calbaptist.edu for assistance.",
+            )
+        )
+    )
+    payload = _json(response)
+    target = admin_content_env["instruction_root"] / "ia_jones_bartlett_access.txt"
+
+    assert payload == {
+        "success": True,
+        "filename": "ia_jones_bartlett_access.txt",
+        "status": "created",
+        "ingest": "triggered",
+    }
+    assert ingest_calls == ["ingest"]
+    assert map_calls == []
+    text = target.read_text(encoding="utf-8")
+    assert '[META:{"source_id":"ia_jones_bartlett_access","platform":"JONES_BARTLETT","issue_type":"access","subtype":"canvas_access"}]' in text
+    assert "Platform: Jones & Bartlett Navigate" in text
+    assert "STEP-BY-STEP RESOLUTION:\n1. Log in to Canvas.\n2. Click Immediate Access." in text
+
+
+def test_create_instruction_writes_pdf_mapping_when_provided(admin_content_env, monkeypatch):
+    ingest_calls = []
+    map_calls = []
+    monkeypatch.setattr(admin, "_trigger_ingest_background", lambda: ingest_calls.append("ingest"))
+    monkeypatch.setattr(admin, "_write_instruction_pdf_map", lambda *args: map_calls.append(args))
+
+    response = asyncio.run(
+        admin.create_instruction(
+            admin.InstructionCreateRequest(
+                platform="ELSEVIER",
+                issue_type="access",
+                subtype="canvas_access",
+                canvas_location="Course Navigation > Immediate Access",
+                steps="1. Log in to Canvas.",
+                expected_result="Student accesses Elsevier Evolve.",
+                if_issue_persists="Contact ImmediateAccess@calbaptist.edu for assistance.",
+                pdf_doc_id="elsevier_evolve_access",
+            )
+        )
+    )
+    payload = _json(response)
+
+    assert payload["success"] is True
+    assert ingest_calls == ["ingest"]
+    assert map_calls == [("ia_elsevier_access.txt", "elsevier_evolve_access")]
+
+
+def test_list_instruction_sources_reports_pdf_mapping(admin_content_env, monkeypatch):
+    instruction = admin_content_env["instruction_root"] / "ia_jones_bartlett_access.txt"
+    instruction.write_text(
+        '[META:{"source_id":"ia_jones_bartlett_access","platform":"JONES_BARTLETT","issue_type":"access","subtype":"canvas_access"}]\n\nBODY',
+        encoding="utf-8",
+    )
+    faq_dir = admin_content_env["faq_root"] / "immediate_access"
+    faq_dir.mkdir()
+    (faq_dir / "ia_opt_out_canvas.txt").write_text(
+        """---
+source_id: ia_opt_out_canvas
+source_type: faq
+category: immediate_access
+platform: canvas
+issue_type: opt_out
+priority: canonical
+---
+
+QUESTION:
+Q
+
+ANSWER:
+A
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(admin, "_fetch_txt_pdf_mapping_ids", lambda: {"ia_jones_bartlett_access.txt"})
+
+    response = asyncio.run(admin.list_instruction_sources())
+    payload = _json(response)
+
+    assert payload["success"] is True
+    by_name = {item["filename"]: item for item in payload["instructions"]}
+    assert by_name["ia_jones_bartlett_access.txt"]["platform"] == "JONES_BARTLETT"
+    assert by_name["ia_jones_bartlett_access.txt"]["issue_type"] == "access"
+    assert by_name["ia_jones_bartlett_access.txt"]["pdf_linked"] is True
+    assert by_name["ia_opt_out_canvas.txt"]["platform"] == "canvas"
+    assert by_name["ia_opt_out_canvas.txt"]["issue_type"] == "opt_out"
+    assert by_name["ia_opt_out_canvas.txt"]["pdf_linked"] is False

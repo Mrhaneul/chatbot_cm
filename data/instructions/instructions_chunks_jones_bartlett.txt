@@ -1,0 +1,32 @@
+[META:{"source_file": "ia_jones_bartlett_access.txt", "source_id": "ia_jones_bartlett_access", "source_type": "instruction", "platform": ["jones_bartlett"], "section_title": "FULL_DOCUMENT"}]
+[META:{"source_id":"ia_jones_bartlett_access","platform":"JONES_BARTLETT","issue_type":"access","subtype":"canvas_access"}]
+
+PROBLEM:
+Student cannot access Jones & Bartlett Navigate through Canvas Immediate Access.
+
+APPLIES TO:
+Platform: Jones & Bartlett Navigate
+LMS: Canvas
+
+CANVAS LOCATION:
+Course Navigation > Immediate Access, then use the textbook tile to reveal the access code and open the provided URL.
+
+STEP-BY-STEP RESOLUTION:
+1. Sign onto Canvas and go to the course using IA.
+2. Click the → Immediate Access link.
+3. Under the textbook tile, click → Reveal Access Code.
+4. Copy & Paste the provided URL into a new tab.
+5. Copy the access code provided to your clipboard.
+6. In the new Jones & Bartlett tab, read and accept the terms and click → Accept.
+7. Enter the code from Canvas into the required field and click → Redeem.
+8. Log in or create a new account with Jones & Bartlett Learning using your CBU credentials.
+   - Use your Name@calbaptist.edu email address
+   - DO NOT use your ID#@calbaptist.edu email, as you will not receive necessary verification emails that may be sent to the email.
+9. Once the account is created and the access code is successfully redeemed, you should be able to access your Jones & Bartlett Navigate material.
+
+EXPECTED RESULT:
+Student successfully accesses Jones & Bartlett Navigate content through Canvas.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+<<<CHUNK_SEPARATOR>>>
