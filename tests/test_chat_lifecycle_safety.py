@@ -3112,8 +3112,11 @@ class TestDirectPlatformAccessAndPersonalInfo:
             r = await process_chat_request(_session_req(session_id, message))
 
         assert not r.source.startswith("INTAKE"), f"Must not enter intake. Got {r.source!r}"
+        assert r.source != "CLARIFICATION_NEEDED", f"Must route to instructions. Got: {r.reply!r}"
         assert "which platform" not in r.reply.lower(), f"Must not ask platform. Got: {r.reply!r}"
+        assert "cengage textbook" not in r.reply.lower(), f"Must not ask textbook-vs-MindTap. Got: {r.reply!r}"
         assert "cengage" in r.reply.lower() or "mindtap" in r.reply.lower()
+        assert r.source == "INSTR_CENGAGE_001"
 
     @pytest.mark.parametrize("message", [
         "How can I open Pearson MyLab?",
@@ -3136,9 +3139,69 @@ class TestDirectPlatformAccessAndPersonalInfo:
             r = await process_chat_request(_session_req(session_id, message))
 
         assert not r.source.startswith("INTAKE"), f"Must not enter intake. Got {r.source!r}"
+        assert r.source != "CLARIFICATION_NEEDED", f"Must route to instructions. Got: {r.reply!r}"
         assert "which platform or publisher" not in r.reply.lower(), (
             f"Must not re-ask for platform. Got: {r.reply!r}"
         )
+        assert "textbook" not in r.reply.lower() or r.route_type == "RAG_LLM"
+
+    async def test_active_intake_access_routes_to_cengage_instructions(self):
+        session_id = f"test-intake-access-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=_planner_asks_platform())),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=self._fake_retrieve)),
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(side_effect=self._fake_llm)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r1 = await process_chat_request(_session_req(session_id, "How do I access to my book?"))
+            r2 = await process_chat_request(_session_req(session_id, "Cengage"))
+
+        assert r1.source.startswith("INTAKE"), f"Turn 1 must ask platform. Got {r1.source!r}"
+        assert r2.source != "CLARIFICATION_NEEDED", f"Must route to instructions. Got: {r2.reply!r}"
+        assert "cengage textbook" not in r2.reply.lower(), f"Must not ask textbook-vs-MindTap. Got: {r2.reply!r}"
+        assert r2.source == "INSTR_CENGAGE_001"
+
+    async def test_voluntary_course_and_professor_context_does_not_escalate(self):
+        session_id = f"test-course-prof-context-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(return_value=_planner_asks_platform())),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=self._fake_retrieve)),
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(side_effect=self._fake_llm)),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r1 = await process_chat_request(_session_req(
+                session_id,
+                "I'm trying to access my immediate access books for my PSY540 "
+                "for Dr. Narviar Barker Browne's class. I can't access it.",
+            ))
+            r2 = await process_chat_request(_session_req(session_id, "McGraw Hill"))
+
+        assert r1.source.startswith("INTAKE"), f"Turn 1 must continue intake. Got {r1.source!r}"
+        assert r1.source != "INTAKE:ESCALATION"
+        assert "which platform" in r1.reply.lower()
+        assert "course code" not in r1.reply.lower()
+        assert r2.source == "INSTR_MCGRAW_001"
+        assert r2.source != "DETERMINISTIC_GREETING"
+        assert "mcgraw" in r2.reply.lower() or "connect" in r2.reply.lower()
+
+    async def test_vague_course_material_issue_asks_safe_issue_type(self):
+        session_id = f"test-course-material-issue-{uuid.uuid4()}"
+        with (
+            patch("app.main.ENABLE_SAFETY_CLASSIFIER", False),
+            patch("app.main.run_intake_planner", new=AsyncMock(side_effect=AssertionError("must not plan"))),
+            patch("app.main.retrieve_async", new=AsyncMock(side_effect=AssertionError("must not retrieve"))),
+            patch("app.main.call_llm_with_semaphore", new=AsyncMock(side_effect=AssertionError("must not call LLM"))),
+            patch("app.main.get_recommendations_for_chat", return_value=[]),
+        ):
+            r = await process_chat_request(_session_req(session_id, "I have a course material issue"))
+
+        reply_lower = r.reply.lower()
+        assert r.source == "INTAKE"
+        assert "what kind of course material issue" in reply_lower
+        assert "course code" not in reply_lower
+        assert "which platform" not in reply_lower
 
     async def test_active_intake_id_escalates(self):
         from app.intake.flow import INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE

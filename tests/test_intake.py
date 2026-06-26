@@ -29,6 +29,7 @@ from app.intake.flow import (
     intake_fallback_message,
     is_unknown_answer,
     is_personal_info_reply,
+    is_generic_course_material_issue,
     INTAKE_ESCALATION_MESSAGE,
     INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE,
     MAX_UNKNOWN_ATTEMPTS,
@@ -821,6 +822,21 @@ class TestIsPersonalInfoReply:
     def test_course_code_biol_not_personal_info(self):
         assert not is_personal_info_reply("BIOL2401", active_intake=True)
 
+    def test_course_code_psy_not_personal_info(self):
+        assert not is_personal_info_reply("PSY540", active_intake=True)
+
+    def test_professor_name_not_personal_info(self):
+        assert not is_personal_info_reply(
+            "This is for Dr. Narviar Barker Browne's class.",
+            active_intake=True,
+        )
+
+    def test_course_and_professor_context_not_personal_info(self):
+        assert not is_personal_info_reply(
+            "I'm trying to access my Immediate Access books for PSY540 for Dr. Narviar Barker Browne's class.",
+            active_intake=True,
+        )
+
     def test_short_number_is_not_personal_info(self):
         # A 4-digit number is not a 6-8 digit student ID
         assert not is_personal_info_reply("week 5 has 1200 pages", active_intake=True)
@@ -1189,6 +1205,10 @@ class TestNoCourseCodeCollection:
             f"Expected {message!r} to match VAGUE_PATTERN_RE so deterministic "
             "intake runs (platform -> issue) instead of the planner."
         )
+
+    def test_generic_course_material_issue_asks_issue_type_first(self) -> None:
+        assert is_generic_course_material_issue("I have a course material issue")
+        assert not is_generic_course_material_issue("I can't access Cengage")
 
     # ---- question_templates.py escalation test (imported from test_chat_lifecycle) ----
 

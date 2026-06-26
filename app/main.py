@@ -72,6 +72,7 @@ from app.intake.flow import (
     intake_fallback_message,
     is_unknown_answer,
     is_personal_info_reply,
+    is_generic_course_material_issue,
     INTAKE_ESCALATION_MESSAGE,
     INTAKE_ACCOUNT_ESCALATION_MESSAGE,
     INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE,
@@ -2835,11 +2836,15 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 session["stored_platform"] = new_profile.platform
                 session["stored_intent"] = "IA_ACCESS_ISSUE"
             else:
-                question = intake_next_question(new_profile)
-                if new_profile.platform is None:
-                    new_profile.last_requested_slot = "platform"
-                elif new_profile.issue_type is None:
+                if is_generic_course_material_issue(message):
+                    question = QUESTION_TEMPLATES["ask_course_code"]
                     new_profile.last_requested_slot = "issue_type"
+                else:
+                    question = intake_next_question(new_profile)
+                    if new_profile.platform is None:
+                        new_profile.last_requested_slot = "platform"
+                    elif new_profile.issue_type is None:
+                        new_profile.last_requested_slot = "issue_type"
                 session["intake_profile"] = new_profile.to_dict()
                 session["history"].append({"role": "user", "content": message})
                 session["history"].append({"role": "assistant", "content": question})
@@ -2972,6 +2977,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 or _completed_intake_material_type is not None
             ):
                 intent = "IA_ACCESS_ISSUE"
+                skip_platform_ambiguity_clarification = True
             retrieval_query = _enriched_query
             platform = _completed_intake_platform
             session["stored_platform"] = platform
@@ -2979,6 +2985,13 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         elif forced_retrieval is not None:
             intent = "GENERAL_FAQ"
             platform = None
+
+        if (
+            forced_retrieval is None
+            and platform is not None
+            and _message_has_access_intent(message)
+        ):
+            skip_platform_ambiguity_clarification = True
 
         if forced_retrieval is None and is_ambiguous_refund_policy_query(message):
             clarification = ambiguous_refund_clarification_reply()
@@ -4359,6 +4372,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
         is_greeting = (
             len(message.split()) <= 3
+            and not _intake_completed
+            and platform is None
             and any(kw in message.lower() for kw in GREETING_KEYWORDS)
         )
         if is_greeting:
@@ -4988,7 +5003,11 @@ async def chat_stream(payload: ChatRequest):
             stream_forced_selected_source_file = None
 
             # Deterministic greeting: skip retrieval and LLM entirely.
-            if len(message.split()) <= 3 and any(kw in message.lower() for kw in GREETING_KEYWORDS):
+            if (
+                len(message.split()) <= 3
+                and platform is None
+                and any(kw in message.lower() for kw in GREETING_KEYWORDS)
+            ):
                 session["history"].append({"role": "user", "content": message})
                 session["history"].append({"role": "assistant", "content": GREETING_REPLY})
                 session["last_activity"] = datetime.now()
@@ -5160,11 +5179,15 @@ async def chat_stream(payload: ChatRequest):
                     retrieval_query = new_profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
                     # fall through to retrieval
                 else:
-                    question = intake_next_question(new_profile)
-                    if new_profile.platform is None:
-                        new_profile.last_requested_slot = "platform"
-                    elif new_profile.issue_type is None:
+                    if is_generic_course_material_issue(message):
+                        question = QUESTION_TEMPLATES["ask_course_code"]
                         new_profile.last_requested_slot = "issue_type"
+                    else:
+                        question = intake_next_question(new_profile)
+                        if new_profile.platform is None:
+                            new_profile.last_requested_slot = "platform"
+                        elif new_profile.issue_type is None:
+                            new_profile.last_requested_slot = "issue_type"
                     session["intake_profile"] = new_profile.to_dict()
                     session["history"].append({"role": "user", "content": message})
                     session["history"].append({"role": "assistant", "content": question})

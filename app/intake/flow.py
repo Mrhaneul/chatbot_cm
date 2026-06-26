@@ -102,6 +102,13 @@ _PLATFORM_LOW_INFO_PATTERNS = (
     "not showing anything",
 )
 
+_GENERIC_COURSE_MATERIAL_ISSUE_RE = re.compile(
+    r"\b(course|class)\s+(material|materials|textbook|book|content)s?\b.*\b(issue|problem|trouble)\b"
+    r"|\b(issue|problem|trouble)\b.*\b(course|class)\s+(material|materials|textbook|book|content)s?\b"
+    r"|\bneed (help|assistance)\b.*\b(course|class)\s+(material|materials|textbook|book|content)s?\b",
+    re.IGNORECASE,
+)
+
 
 def is_unknown_answer(message: str) -> bool:
     """True when the user signals they cannot supply the requested slot value."""
@@ -154,6 +161,18 @@ def _is_platform_low_info_message(message: str) -> bool:
         return False
     msg_lower = message.lower()
     return any(pattern in msg_lower for pattern in _PLATFORM_LOW_INFO_PATTERNS)
+
+
+def is_generic_course_material_issue(message: str) -> bool:
+    """
+    True for vague course-material complaints that should ask issue type before
+    platform, e.g. "I have a course material issue".
+    """
+    return (
+        extract_platform(message) is None
+        and extract_issue_type(message) is None
+        and bool(_GENERIC_COURSE_MATERIAL_ISSUE_RE.search(message))
+    )
 
 
 def should_enter_intake(message: str, session: dict) -> bool:
