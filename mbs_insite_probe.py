@@ -543,16 +543,53 @@ def parse_materials(html):
             req_el = bk.select_one(".Course_With_Material_Required")
             title = bk.select_one(".Book_Title")
 
-            prices, fmt = [], None
+            prices, fmt, formats = [], None, []
             price_div = bk.select_one(".price-div")
             if price_div:
                 hdr = price_div.select_one(".Access_Price_Title, .accessName, .print_header")
                 if hdr:
                     fmt = _clean(hdr.get_text())
-                for m in re.finditer(r"\$\s*([\d,]+\.\d{2})\s*([A-Za-z][A-Za-z ]*)?",
-                                     price_div.get_text(" ", strip=True)):
-                    prices.append({"amount": m.group(1),
-                                   "condition": _clean(m.group(2)) if m.group(2) else None})
+                for radio in bk.select("input.Course_Material_Radio"):
+                    amount = radio.get("data-price")
+                    variant = radio.get("data-title")
+                    fmt_name = radio.get("data-name")
+                    if not amount:
+                        continue
+                    amount = amount.replace("$", "").replace(",", "").strip()
+                    fmt_name = _clean(fmt_name) if fmt_name else None
+                    if fmt_name and fmt_name not in formats:
+                        formats.append(fmt_name)
+                    prices.append({
+                        "amount": amount,
+                        "condition": fmt_name,
+                        "variant": _clean(variant) if variant else None,
+                    })
+                for radio_row in bk.select(".Course_Material_Radio_Print"):
+                    if radio_row.select_one("input.Course_Material_Radio"):
+                        continue
+                    row_text = radio_row.get_text(" ", strip=True)
+                    match = re.search(r"\$\s*([\d,]+\.\d{2})\s*([A-Za-z][A-Za-z ]*)?", row_text)
+                    if not match:
+                        continue
+                    group_hdr = radio_row.find_previous("h3")
+                    fmt_name = _clean(group_hdr.get_text()) if group_hdr else fmt
+                    if fmt_name not in {"Print", "Digital"}:
+                        continue
+                    variant = _clean(match.group(2)) if match.group(2) else None
+                    amount = match.group(1).replace(",", "")
+                    if fmt_name and fmt_name not in formats:
+                        formats.append(fmt_name)
+                    if not any(p.get("amount") == amount and p.get("variant") == variant for p in prices):
+                        prices.append({
+                            "amount": amount,
+                            "condition": fmt_name,
+                            "variant": variant,
+                        })
+                if not prices:
+                    for m in re.finditer(r"\$\s*([\d,]+\.\d{2})\s*([A-Za-z][A-Za-z ]*)?",
+                                         price_div.get_text(" ", strip=True)):
+                        prices.append({"amount": m.group(1),
+                                       "condition": _clean(m.group(2)) if m.group(2) else None})
 
             course["books"].append({
                 "isbn": _hidden(bk, "ga4-book-isbn"),
@@ -564,6 +601,7 @@ def parse_materials(html):
                 "requirement": _clean(req_el.get_text()) if req_el else "Optional",
                 "immediate_access": ia,
                 "format": fmt,
+                "formats": formats,
                 "prices": prices,
                 "hide_pricing": hide_pricing,
                 "publisher_direct_link": pub_link,
