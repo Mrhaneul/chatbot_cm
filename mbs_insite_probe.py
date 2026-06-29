@@ -131,30 +131,33 @@ def make_session():
 
 # ------------------------------------------------------- dropdown walk ------
 # These return JSON. Run each, print the raw body once, then map the fields.
-def get_terms(client, token):
+def get_terms(client, token, *, verbose=True):
     r = _request_with_retry(client, "POST", f"{BASE}/SelectTermDept/Terms",
                     headers=XHR_HEADERS,
                     data={"__RequestVerificationToken": token})
     r.raise_for_status()
-    print("TERMS:", r.text[:400])
+    if verbose:
+        print("TERMS:", r.text[:400])
     return r.json()
 
-def get_departments(client, token, term_id):
+def get_departments(client, token, term_id, *, verbose=True):
     r = _request_with_retry(client, "POST", f"{BASE}/SelectTermDept/Department",
                     headers=XHR_HEADERS,
                     data={"__RequestVerificationToken": token,
                           "termId": term_id})
     r.raise_for_status()
-    print("DEPARTMENTS:", r.text[:400])
+    if verbose:
+        print("DEPARTMENTS:", r.text[:400])
     return r.json()
 
-def get_courses(client, token, term_id, dept_id):
+def get_courses(client, token, term_id, dept_id, *, verbose=True):
     r = _request_with_retry(client, "POST", f"{BASE}/SelectTermDept/Courses",
                     headers=XHR_HEADERS,
                     data={"__RequestVerificationToken": token,
                           "termId": term_id, "deptId": dept_id})
     r.raise_for_status()
-    print("COURSES:", r.text[:400])
+    if verbose:
+        print("COURSES:", r.text[:400])
     return r.json()
 
 def get_course_sections(
@@ -167,6 +170,7 @@ def get_course_sections(
     term_label="",
     dept_label="",
     course_label="",
+    verbose=True,
 ):
     model = {
         "term": term_label,
@@ -189,7 +193,8 @@ def get_course_sections(
                     headers=XHR_HEADERS,
                     data=urlencode(data))
     r.raise_for_status()
-    print("COURSELIST:", r.text[:400])
+    if verbose:
+        print("COURSELIST:", r.text[:400])
     return r.json()   # expect each section to carry a csId (+ nB / nba flags)
 
 
@@ -261,7 +266,7 @@ def map_dropdown_shapes():
 
 
 # ------------------------------------------------------------- seed + get ---
-def add_course(client, cs_id, n_b="false", n_ba="false", token=None):
+def add_course(client, cs_id, n_b="false", n_ba="false", token=None, *, verbose=True):
     """Seed the session with one course-section."""
     headers = {
         **XHR_HEADERS,
@@ -274,12 +279,13 @@ def add_course(client, cs_id, n_b="false", n_ba="false", token=None):
                     headers=headers,
                     data=data)
     r.raise_for_status()
-    print("AddCourse.status_code:", r.status_code)
-    print("AddCourse:", r.text[:600])
+    if verbose:
+        print("AddCourse.status_code:", r.status_code)
+        print("AddCourse:", r.text[:600])
     return r
 
 
-def delete_course(client, cs_id, token=None):
+def delete_course(client, cs_id, token=None, *, verbose=True):
     headers = {
         **XHR_HEADERS,
         "Referer": MATERIALS_URL,
@@ -291,7 +297,8 @@ def delete_course(client, cs_id, token=None):
                     headers=headers,
                     data=data)
     r.raise_for_status()
-    print("DeleteCourse:", r.text[:200])
+    if verbose:
+        print("DeleteCourse:", r.text[:200])
     return r
 
 def fetch_materials_html(client, cs_id=None):
@@ -316,41 +323,79 @@ def run_validation(cs_id="5021563", n_b="false", n_ba="false"):
     return result, client, token
 
 
-def enumerate_term(client, token, term_id):
+def _cart_clear(records):
+    return not records or all(not record.get("books") for record in records)
+
+
+def enumerate_term(client, token, term_id, *, dry_run=False, on_records=None, verbose=True):
+    errors = []
     term_label = str(term_id)
-    terms = _parse_dropdown_items(get_terms(client, token), "ter")
+    terms = _parse_dropdown_items(get_terms(client, token, verbose=verbose), "ter")
     for term in terms:
         if term["id"] == str(term_id):
             term_label = term["label"]
             break
 
     records = []
-    departments = _parse_dropdown_items(get_departments(client, token, term_id), "dpt")
+    processed_sections = 0
+    checked_cart_clear = False
+    departments = _parse_dropdown_items(get_departments(client, token, term_id, verbose=verbose), "dpt")
     for dept in departments:
-        courses = _parse_dropdown_items(get_courses(client, token, term_id, dept["id"]), "cou")
+        courses = _parse_dropdown_items(get_courses(client, token, term_id, dept["id"], verbose=verbose), "cou")
         for course in courses:
             cs_id = course["id"]
-            get_course_sections(
-                client,
-                token,
-                term_id,
-                dept["id"],
-                cs_id,
-                term_label=term_label,
-                dept_label=dept["label"],
-                course_label=course["label"],
-            )
             try:
-                add_course(client, cs_id, token=token)
+                get_course_sections(
+                    client,
+                    token,
+                    term_id,
+                    dept["id"],
+                    cs_id,
+                    term_label=term_label,
+                    dept_label=dept["label"],
+                    course_label=course["label"],
+                    verbose=verbose,
+                )
+                add_course(client, cs_id, token=token, verbose=verbose)
                 html = fetch_materials_html(client, cs_id=cs_id)
-                records.extend(parse_materials(html))
+                parsed = parse_materials(html)
+                records.extend(parsed)
+                if on_records and parsed:
+                    on_records(parsed)
+                if dry_run:
+                    print(f"\n=== DRY RUN PARSED {processed_sections + 1} ({cs_id}) ===")
+                    print(json.dumps(parsed, indent=2))
+            except Exception as exc:
+                error = {
+                    "csId": cs_id,
+                    "department": dept["label"],
+                    "course": course["label"],
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+                errors.append(error)
+                print(f"[ENUMERATE ERROR] csId={cs_id} {error['error']}")
             finally:
-                delete_course(client, cs_id, token=token)
+                try:
+                    delete_course(client, cs_id, token=token, verbose=verbose)
+                except Exception as exc:
+                    print(f"[DELETE ERROR] csId={cs_id} {type(exc).__name__}: {exc}")
+                if not checked_cart_clear:
+                    clear_html = fetch_materials_html(client)
+                    clear_records = parse_materials(clear_html)
+                    print(f"cart clear: {_cart_clear(clear_records)}")
+                    checked_cart_clear = True
                 time.sleep(SECTION_DELAY_SECONDS)
+            processed_sections += 1
+            if not verbose and processed_sections % 25 == 0:
+                print(f"processed {processed_sections} sections; cached {len(records)} parsed courses")
+            if dry_run and processed_sections >= 2:
+                enumerate_term.last_errors = errors
+                return records
+    enumerate_term.last_errors = errors
     return records
 
 
-def cache_term(term_label):
+def cache_term(term_label, *, dry_run=False):
     from app.bookstore_cache import upsert_courses
 
     client, token = make_session()
@@ -366,10 +411,32 @@ def cache_term(term_label):
         available = ", ".join(_clean_term_label(term["label"]) for term in terms)
         raise ValueError(f"Term not found: {term_label}. Available terms: {available}")
 
-    records = enumerate_term(client, token, selected["id"])
-    upsert_courses(records)
+    flushed_ids = set()
+
+    def _flush(parsed_records):
+        upsert_courses(parsed_records)
+        for record in parsed_records:
+            if record.get("course_id"):
+                flushed_ids.add(record["course_id"])
+
+    records = enumerate_term(
+        client,
+        token,
+        selected["id"],
+        dry_run=dry_run,
+        on_records=_flush,
+        verbose=dry_run,
+    )
+    if dry_run:
+        remaining = [record for record in records if record.get("course_id") not in flushed_ids]
+        if remaining:
+            upsert_courses(remaining)
     book_count = sum(len(record.get("books", [])) for record in records)
     print(f"Cached {len(records)} courses, {book_count} books for term {_clean_term_label(selected['label'])}")
+    errors = getattr(enumerate_term, "last_errors", [])
+    if errors:
+        print("Errors:")
+        print(json.dumps(errors, indent=2))
     return records
 
 
@@ -516,6 +583,7 @@ if __name__ == "__main__":
     parser.add_argument("--n-ba", default="false")
     parser.add_argument("--map-dropdowns", action="store_true")
     parser.add_argument("--cache-term")
+    parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
         "--playwright",
         action="store_true",
@@ -526,7 +594,7 @@ if __name__ == "__main__":
     if args.map_dropdowns:
         map_dropdown_shapes()
     elif args.cache_term:
-        cache_term(args.cache_term)
+        cache_term(args.cache_term, dry_run=args.dry_run)
     elif args.playwright:
         run_playwright_validation(args.cs_id)
     else:

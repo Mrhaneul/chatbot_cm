@@ -101,6 +101,16 @@ def _book_price(book: dict) -> str:
     return _norm(book.get("price"))
 
 
+def _fresh_cutoff(max_age_hours: Optional[float]) -> str:
+    if max_age_hours is None:
+        return ""
+    seconds = max(float(max_age_hours), 0.0) * 3600
+    return datetime.fromtimestamp(
+        datetime.now(timezone.utc).timestamp() - seconds,
+        tz=timezone.utc,
+    ).isoformat()
+
+
 def upsert_courses(records: list[dict]) -> None:
     now = datetime.now(timezone.utc).isoformat()
     with _connect() as conn:
@@ -165,7 +175,7 @@ def upsert_courses(records: list[dict]) -> None:
                 )
 
 
-def lookup_course(dept, course_number, section, term=None) -> Optional[dict]:
+def lookup_course(dept, course_number, section, term=None, max_age_hours=24) -> Optional[dict]:
     dept = _norm(dept)
     course_number = _norm(course_number)
     section = _norm(section)
@@ -182,6 +192,10 @@ def lookup_course(dept, course_number, section, term=None) -> Optional[dict]:
     if term:
         query += " AND lower(trim(term)) = lower(trim(?))"
         params.append(term)
+    cutoff = _fresh_cutoff(max_age_hours)
+    if cutoff:
+        query += " AND last_refreshed >= ?"
+        params.append(cutoff)
     query += " ORDER BY last_refreshed DESC LIMIT 1"
 
     with _connect() as conn:
@@ -189,7 +203,7 @@ def lookup_course(dept, course_number, section, term=None) -> Optional[dict]:
         return _row_to_course(conn, row) if row else None
 
 
-def lookup_by_instructor(instructor_name, term=None) -> list[dict]:
+def lookup_by_instructor(instructor_name, term=None, max_age_hours=24) -> Optional[list[dict]]:
     instructor_name = _norm(instructor_name)
     term = _norm(term)
 
@@ -202,7 +216,14 @@ def lookup_by_instructor(instructor_name, term=None) -> list[dict]:
     if term:
         query += " AND lower(trim(term)) = lower(trim(?))"
         params.append(term)
+    cutoff = _fresh_cutoff(max_age_hours)
+    if cutoff:
+        query += " AND last_refreshed >= ?"
+        params.append(cutoff)
     query += " ORDER BY last_refreshed DESC, term, department, course_number, section"
 
     with _connect() as conn:
-        return [_row_to_course(conn, row) for row in conn.execute(query, params).fetchall()]
+        rows = conn.execute(query, params).fetchall()
+        if not rows:
+            return None
+        return [_row_to_course(conn, row) for row in rows]
