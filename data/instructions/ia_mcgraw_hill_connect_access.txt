@@ -1,4 +1,4 @@
----
+﻿---
 source_id: ia_mcgraw_hill_connect_access
 source_type: instruction
 category: platform_access
@@ -13,16 +13,16 @@ Student is opted into Immediate Access but cannot access McGraw Hill Connect tex
 APPLIES TO:
 Courses using McGraw Hill Connect.
 
-BLACKBOARD LOCATION:
-Learning Activities tab
+CANVAS LOCATION:
+Course Navigation > McGraw Hill
 
 STEP-BY-STEP RESOLUTION:
-1. Log in to Canvas.
-2. Open the correct course.
-3. Click on the “Learning Activities” tab in the left menu.
-4. Open the appropriate week folder (e.g., Week 1).
-5. Click the McGraw Hill Connect link for the eText or assignment.
-6. If prompted, log in or create a McGraw Hill account using your CBU email address.
+1. Sign onto Canvas and go to the course using McGraw Hill Connect courseware.
+2. On the left-hand course menu, click → McGraw Hill to be pathed to your McGraw Hill Connect course.
+3. On the right-hand side, you will be pathed to the McGraw Hill site, where you will be prompted to log into a McGraw Hill Connect account.
+   a. If you do not have an existing account, create one with your Name@calbaptist.edu email address. DO NOT USE YOUR ID#@calbaptist.edu EMAIL.
+   b. If you have an existing account, log in with those credentials.
+4. Once logged in, you should be pathed to the McGraw Hill Connect course, where you can access both the eTextbook and the assignments below.
 
 LOGIN REQUIREMENTS:
 - Use your full CBU email address (firstname.lastname@calbaptist.edu).
@@ -32,4 +32,7 @@ EXPECTED RESULT:
 Once logged in, the eText and assignments should open successfully within McGraw Hill Connect.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+
+
+

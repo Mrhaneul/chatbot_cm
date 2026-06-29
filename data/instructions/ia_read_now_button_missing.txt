@@ -1,4 +1,4 @@
-PROBLEM:
+﻿PROBLEM:
 Student is opted into Immediate Access but cannot find the "Read Now" button to access their digital textbook. The student may see a "Launch Courseware" button instead, or no access button at all.
 
 APPLIES TO:
@@ -9,16 +9,15 @@ COMMON CAUSES:
 - The course uses a publisher platform (McGraw Hill, Pearson, Cengage) that delivers access through courseware links rather than a "Read Now" button
 - The student needs to complete initial registration or account creation on the publisher platform first
 
-BLACKBOARD LOCATION:
-Immediate Access tab (left side pane) or course-specific tabs such as Course Materials, Learning Activities, or Weekly Chapters
+CANVAS LOCATION:
+Course Navigation > Immediate Access
 
 STEP-BY-STEP RESOLUTION:
 
-1. Log into Canvas.
-2. Open the correct course.
-3. Click "Immediate Access" from the left side menu.
-4. Click "Immediate Access" again from the center of the page.
-5. Look for one of the following buttons:
+1. Sign onto Canvas and go to the course using IA.
+2. Click the → Immediate Access link.
+3. Your IA materials should appear on the same page.
+4. Look for one of the following buttons:
    - "Read Now" — for VitalSource/Bedford eTextbooks
    - "Launch Courseware" — for platform-based courses (McGraw Hill, Pearson, Cengage, etc.)
    - A direct publisher link — for Sage, Macmillan, ZyBooks, etc.
@@ -27,8 +26,11 @@ IF YOU SEE "LAUNCH COURSEWARE" INSTEAD OF "READ NOW":
 This is expected behavior for courses using publisher platforms such as McGraw Hill Connect, Pearson MyLab, or Cengage MindTap. Click "Launch Courseware" to access your materials through the publisher platform.
 
 IF YOU SEE NO BUTTON AT ALL:
-- Check other tabs in the left menu such as Course Materials, Learning Activities, or Weekly Chapters
-- Some courses deliver textbook access through links inside the course rather than the Immediate Access tab
+- Some courses deliver textbook access through a direct publisher link instead of a "Read Now" button.
+- If the access link is not visible in Canvas, contact ImmediateAccess@calbaptist.edu for help identifying the correct path.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+
+
+

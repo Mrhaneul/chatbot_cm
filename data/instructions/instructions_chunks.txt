@@ -9,23 +9,19 @@ ACCESS LOCATION:
 Campus Store Website - Bookstore.Calbaptist.edu
 
 STEP-BY-STEP RESOLUTION:
-1. Go to the Campus Store website at Bookstore.Calbaptist.edu
-2. Click the Profile Icon in the top right-hand corner of the page.
+1. Log onto the Campus Store Website at Bookstore.Calbaptist.edu
+2. Select the Profile Icon in the top right-hand corner.
 3. Log into an existing account OR create a new account:
-   - Use your CBU email: firstname.lastname@calbaptist.edu
-   - Do NOT use your ID#@calbaptist.edu email address.
-4. Once logged in, click "Activate and Access eBooks" from your account menu.
-5. Click "Click here to activate an in-store purchase."
+   a. Use your Name@Calbaptist.edu email address;
+   b. DO NOT USE YOUR ID#@calbaptist.edu ADDRESS.
+4. Once logged in, click → Activate and Access eBooks
+5. Click → Click here to activate an in-store purchase.
 6. Enter the Redemption Code found at the bottom of your receipt.
-7. Click "Activate" to redeem the code.
-8. Once redeemed, your book will appear under "Other Digital Titles."
-9. Click the dropdown "Access Content" next to your book.
-10. Click "Access" to open the content page.
-11. On the book cover page, look for a small pop-up in the top right corner. Click "Instructions."
-12. A pop-up menu will appear. Click "Reveal Access Code."
-13. Copy the access code displayed.
-14. Click "Go to Website" under the access code OR visit the link provided by your instructor.
-15. Paste your access code on the publisher's website to activate your materials.
+7. Once the redemption code has been redeemed, your book will appear under Other Digital Titles.
+8. Click the dropdown → Access Content. Then click → Access.
+9. You’ll be taken to a page with a larger display of the front cover. In the top right corner, you will see a small pop-up. Click → Instructions.
+10. A pop-up menu will appear with an option to → Reveal Access Code
+11. Once the access code is revealed, copy the access code, then click the option → Go to Website under the access code OR visit the link provided by your instructor to access your material.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "dc_codes_instore_redemption.txt", "source_id": "dc_codes_instore_redemption", "source_type": "instruction", "platform": ["general"], "section_title": "FULL_DOCUMENT [part 2/2]"}]
 IMPORTANT NOTES:
@@ -46,20 +42,21 @@ Student is opted into Immediate Access but cannot access the Bedford Bookshelf o
 APPLIES TO:
 Courses using Bedford Bookshelf titles through Immediate Access.
 
-BLACKBOARD LOCATION:
-Immediate Access tab
+CANVAS LOCATION:
+Course Navigation > Immediate Access
 
 STEP-BY-STEP RESOLUTION:
-1. Log in to Canvas and select your course.
-2. Click the "Immediate Access" option from the left sidebar.
-3. Click the Immediate Access link on the right-hand side.
-4. The Bedford Bookshelf page will appear.
-5. Click "Read Now".
-6. Sign in to your Bookshelf account.
-   a. If you do not have a Bookshelf account, create one using your CBU credentials.
-   b. Use your NAME@calbaptist.edu email address.
-   c. Do NOT use your ID@calbaptist.edu email address.
-7. Enter the title of the material your course will be using in the search field at the top (Ex. Hello, Writer).
+1. Sign onto Canvas and go to the course using IA.
+2. Click the → Immediate Access link
+3. The Bedford Bookshelf will appear on the page.
+   a. Click → Read Now
+4. Sign in to your Bookshelf account.
+   a. If you have not made a Bookshelf account, you can create one using your CBU credentials.
+   b. Create a Bookshelf account using your NAME@calbaptist.edu.
+   c. Do Not Use Your ID@calbaptist.edu. You will NOT receive emails outside of CBU, such as VitalSource Account Verifications, if you use this email address.
+5. Once you have successfully logged in, you will see The Bedford Bookshelf library available to you.
+   a. Click → Search on the left sidebar.
+6. Enter the title of the material your course will be using in the search field at the top (Ex. Hello, Writer or In Conversation).
    a. Click → Open Book on the right-hand side to begin reading your material.
 
 LOGIN REQUIREMENTS:
@@ -71,7 +68,7 @@ EXPECTED RESULT:
 The Bedford Bookshelf library will load and allow access to the assigned course materials.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_bedford_bookshelf_email_error_access.txt", "source_id": "ia_bedford_bookshelf_email_error_access", "source_type": "instruction", "category": "platform_access", "platform": "bedford", "issue_type": "email_error", "priority": "specific_case", "section_title": "FULL_DOCUMENT [part 1/2]"}]
 PROBLEM:
@@ -112,7 +109,7 @@ IF ISSUE PERSISTS:
 - Confirm the student is accessing the material through Canvas, not directly through VitalSource.
 - Verify the account merge has fully completed.
 - Refer the student back to VitalSource Support if content still does not appear.
-- Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+- Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 
 SUPPORT CONTACT:
 VitalSource Support Team
@@ -123,32 +120,25 @@ ImmediateAccess@calbaptist.edu
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_browser_chrome_cookies_popups.txt", "source_id": "ia_browser_chrome_cookies_popups", "source_type": "instruction", "platform": ["general"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
-Immediate Access content does not load correctly due to blocked cookies or pop-ups in Chrome.
+Immediate Access content does not load correctly due to stale browser cookies, cache, or history in Chrome.
 
 APPLIES TO:
 Students using Google Chrome.
 
 STEP-BY-STEP RESOLUTION:
-1. Open the Chrome browser.
-2. Click the three-dot icon in the upper right corner.
-3. Click "Settings".
-4. Click "Privacy and Security".
-5. Click "Third-Party Cookies".
-6. Ensure the following settings:
-   a. Allow Third-Party Cookies is enabled.
-   b. Block Third-Party Cookies is disabled.
-   c. Block Third-Party Cookies in Incognito Mode is disabled.
-   d. Send a "Do Not Track" request is disabled.
-7. Return to Privacy and Security.
-8. Scroll down and click "Site Settings".
-9. Click "Pop-ups and redirects".
-10. Under Default Behavior, ensure "Sites can send pop-ups and use redirects" is enabled.
+1. In the Chrome browser, in the top left-hand corner, click the three-dots icon.
+2. Click → Settings toward the bottom.
+3. In settings, click → Privacy and security.
+4. Click → Delete browsing data.
+5. In the pop-up, select → All time at the top.
+6. Ensure all three options are selected: Browsing history, Cookies and other site data, and Cached images and files.
+7. Click → Delete from this device.
 
 EXPECTED RESULT:
-Immediate Access links should open correctly without errors.
+Immediate Access content should reload with cleared Chrome cookies, cache, and history.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_browser_ipad_safari_cookies_popups.txt", "source_id": "ia_browser_ipad_safari_cookies_popups", "source_type": "instruction", "platform": ["general"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
@@ -158,42 +148,88 @@ APPLIES TO:
 Students using Safari on iPad.
 
 STEP-BY-STEP RESOLUTION:
-1. Open the Settings app.
-2. Scroll down and tap "Apps".
-3. Select "Safari".
-4. In the General section, toggle Block Pop-ups to OFF.
-5. Scroll to Privacy & Security.
-6. Toggle Prevent Cross-Site Tracking to OFF.
-7. Scroll down and tap "Advanced".
-8. Toggle Block All Cookies to OFF.
+1. Open → Settings app.
+2. Scroll down to the bottom. Click → Apps tab.
+3. On the right-hand side, find and select → Safari app.
+4. Scroll to the General section and toggle Block Pop-ups to OFF.
+5. Scroll to the Privacy & Security section and toggle Prevent Cross-Site Tracking to OFF.
+6. Scroll down and click into the Advanced section.
+7. In the Privacy section, toggle Block All Cookies to OFF.
 
 EXPECTED RESULT:
 Immediate Access content should load properly on iPad.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_browser_safari_cookies_popups.txt", "source_id": "ia_browser_safari_cookies_popups", "source_type": "instruction", "platform": ["general"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
-Immediate Access content does not load due to blocked pop-ups in Safari on macOS.
+Immediate Access content does not load correctly due to stale browser cookies, cache, or history in Safari on macOS.
 
 APPLIES TO:
 Students using Safari on macOS.
 
 STEP-BY-STEP RESOLUTION:
-1. Open Safari.
-2. Click "Safari" in the top-left menu.
-3. Click "Settings".
-4. Click "Websites".
-5. Select "Pop-Up Windows" from the left panel.
-6. Set all listed websites to Allow.
-7. At the bottom, set "When visiting other websites" to Allow.
+Clearing Cookies
+1. In the Safari app, click → Safari on the top left-hand corner.
+2. Then click → Settings from the menu.
+3. Click → Privacy from the menu bar.
+4. Click → Manage Website Data.
+5. Click → Remove All from the bottom left-hand corner.
+
+Clearing Cache
+1. In the Safari app, click → Safari on the top left-hand corner.
+2. Click → Settings from the menu.
+3. Click → Advanced from the menu bar.
+4. At the bottom of the page, click → Show Features for Web Developers.
+5. At the top of the screen, click → Develop, followed by → Empty Caches from the menu.
+
+Clearing History
+1. In the Safari app, click → Safari on the top left-hand corner.
+2. Click → Clear History from the menu.
+3. Select → All History from the dropdown menu.
+4. At the bottom right-hand corner, click → Clear History.
 
 EXPECTED RESULT:
-Pop-ups required for Immediate Access platforms will function correctly.
+Immediate Access content should reload with cleared Safari cookies, cache, and history.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+<<<CHUNK_SEPARATOR>>>
+[META:{"source_file": "ia_catalyst_labflow_access.txt", "source_id": "ia_catalyst_labflow_access", "source_type": "instruction", "platform": ["general"], "section_title": "FULL_DOCUMENT"}]
+[META:{"source_id":"ia_catalyst_labflow_access","platform":"CATALYST_LABFLOW","issue_type":"access","subtype":"canvas_access"}]
+
+PROBLEM:
+Student cannot access Catalyst LabFlow through Canvas Immediate Access.
+
+APPLIES TO:
+Platform: Catalyst LabFlow
+LMS: Canvas
+
+CANVAS LOCATION:
+Course Navigation > Immediate Access, then use the textbook tile to reveal the access code and open the provided URL.
+
+STEP-BY-STEP RESOLUTION:
+1. Log onto Canvas and select the course using Labflow.
+2. Click → Immediate Access from the left-hand course menu.
+3. Click → Reveal Access Code
+4. Click → Copy to copy the access code to your clipboard.
+5. Open the provided URL in a new browser.
+6. On the Catalyst/Labflow website, through the provided URL, you will be prompted to either:
+   1) Log into an existing Catalyst/Labflow account
+   OR
+   2) Create a new Catalyst/Labflow account using your CBU credentials.
+      a. (e.g. Jane.Smith@calbaptist.edu)
+      b. DO NOT use your ID#@calbaptist.edu email address
+7. Once you’ve logged into your New/Existing Catalyst account, search California Baptist University under Enroll in a course.
+8. Click → Enroll on the appropriate course using Labflow and enter the code from the Canvas Immediate Access link.
+   - This will grant you access to the Labflow content.
+
+EXPECTED RESULT:
+Student successfully accesses Catalyst LabFlow content through Canvas.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_cengage_mindtap_access.txt", "source_id": "ia_cengage_mindtap_access", "source_type": "instruction", "platform": ["cengage"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
@@ -202,17 +238,18 @@ Student is opted into Immediate Access but cannot access Cengage MindTap textboo
 APPLIES TO:
 Courses using Cengage MindTap.
 
-BLACKBOARD LOCATION:
-Course Materials tab
+CANVAS LOCATION:
+Course Navigation > Immediate Access
 
 STEP-BY-STEP RESOLUTION:
-1. Log in to Canvas.
-2. Open the correct course.
-3. Click on the “Course Materials” tab in the left menu.
-4. Click the MindTap registration or access link.
-5. Open the appropriate week folder.
-6. Select the MindTap chapter or assignment link.
-7. Log in or create a Cengage account using your CBU email address.
+1. Sign onto Canvas and go to the course using Cengage MindTap/CNowV2.
+2. Click the → Immediate Access link on the left-hand side course menu.
+3. On the right-hand side, the Cengage MindTap/CNowV2 material should appear with an option to ‘Launch Courseware’. Click → Launch Courseware.
+4. You will be pathed to the Cengage site, where you will be prompted to log into a Cengage account.
+   a. If you do not have an existing account, create one with your Name@calbaptist.edu email address.
+   b. DO NOT USE YOUR ID#@calbaptist.edu EMAIL.
+   c. If you have an existing account, log in with those credentials.
+5. Once logged in, you should be directly pathed to your MindTap/CNowV2 course, where you will be able to access your eText and courseware assignments.
 
 LOGIN REQUIREMENTS:
 - Use your full CBU email address (firstname.lastname@calbaptist.edu).
@@ -222,7 +259,36 @@ EXPECTED RESULT:
 After logging in, the MindTap eText and assignments should be accessible.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+<<<CHUNK_SEPARATOR>>>
+[META:{"source_file": "ia_clifton_access.txt", "source_id": "ia_clifton_access", "source_type": "instruction", "platform": ["clifton"], "section_title": "FULL_DOCUMENT"}]
+[META:{"source_id":"ia_clifton_access","platform":"CLIFTON","issue_type":"access","subtype":"canvas_access"}]
+
+PROBLEM:
+Student cannot access CliftonStrengths through Canvas Immediate Access.
+
+APPLIES TO:
+Platform: CliftonStrengths
+LMS: Canvas
+
+CANVAS LOCATION:
+Course Navigation > Immediate Access, then use the textbook tile to reveal the access code and open the CliftonStrengths material.
+
+STEP-BY-STEP RESOLUTION:
+1. Log onto Canvas and click into the course using Clifton StrengthsFinder through IA.
+2. On the left-hand side menu, click → Immediate Access
+3. Copy your Clifton StrengthsFinder Access Code by clicking → Reveal Access Code.
+4. Once you’ve copied your unique access code, click → Read Now on the textbook tile.
+5. Click the tab titled IMPORTANT Information About Taking the Clifton StrengthsFinder.
+   a. Locate the appropriate link to input your Access code (i.e. strengths.gallup.com)
+6. Under the For Students option, click → Redeem Code.
+7. Paste your access code into the given field, then click → Continue.
+
+EXPECTED RESULT:
+Student successfully accesses CliftonStrengths content through Canvas.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_cliftonstrengths_assessment_access.txt", "source_id": "ia_cliftonstrengths_assessment_access", "source_type": "instruction", "platform": ["clifton"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
@@ -231,7 +297,7 @@ Student is opted into Immediate Access but cannot access their CliftonStrengths 
 APPLIES TO:
 Courses using the CliftonStrengths for Students assessment by Gallup.
 
-BLACKBOARD LOCATION:
+CANVAS LOCATION:
 Immediate Access tab
 
 STEP-BY-STEP RESOLUTION:
@@ -255,7 +321,39 @@ EXPECTED RESULT:
 After redeeming your access code, you will have access to take the CliftonStrengths Assessment and view your results.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+<<<CHUNK_SEPARATOR>>>
+[META:{"source_file": "ia_elsevier_evolve_access.txt", "source_id": "ia_elsevier_evolve_access", "source_type": "instruction", "platform": ["elsevier"], "section_title": "FULL_DOCUMENT"}]
+[META:{"source_id":"ia_elsevier_evolve_access","platform":"ELSEVIER","issue_type":"access","subtype":"canvas_access"}]
+
+PROBLEM:
+Student cannot access Elsevier Evolve through Canvas Immediate Access.
+
+APPLIES TO:
+Platform: Elsevier Evolve
+LMS: Canvas
+
+CANVAS LOCATION:
+Course Navigation > Immediate Access, then use the textbook tile to reveal the access code and open the provided URL.
+
+STEP-BY-STEP RESOLUTION:
+1. Sign onto Canvas and go to the course using IA.
+2. Click the → Immediate Access link
+3. Under the textbook tile, click → Reveal Access Code
+4. Open the provided URL in a new tab.
+5. Copy the provided access code.
+6. In the new Elsevier tab, click → I’m a Student
+7. At the bottom of the page, paste the code from Canvas into the Redeem an Access Code field
+   - Continue to follow the prompts to access your materials.
+8. You may need to create an Elsevier Evolve account using your CBU credentials.
+   - Use your Name@calbaptist.edu email address
+   - DO NOT use your ID#@calbaptist.edu address as you may not receive the necessary verification emails from Elsevier.
+
+EXPECTED RESULT:
+Student successfully accesses Elsevier Evolve content through Canvas.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_etextbook_general_access.txt", "source_id": "ia_etextbook_general_access", "source_type": "instruction", "platform": ["bedford"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
@@ -264,7 +362,7 @@ Student is opted into Immediate Access but cannot access their eTextbook through
 APPLIES TO:
 General Immediate Access eTextbooks delivered through VitalSource or similar platforms (commonly used in English courses such as ENG 113 Composition with Bedford Bookshelf).
 
-BLACKBOARD LOCATION:
+CANVAS LOCATION:
 Immediate Access tab (left side pane)
 
 STEP-BY-STEP RESOLUTION:
@@ -279,30 +377,67 @@ EXPECTED RESULT:
 After clicking "Read Now," you should be taken directly to your eTextbook content in VitalSource Bookshelf or the publisher's reading platform.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "ia_inquizitive_access.txt", "source_id": "ia_inquizitive_access", "source_type": "instruction", "platform": ["inquizitive"], "section_title": "SCENARIO_1"}]
-Platform: InQuizitive
-Issue Type: Access
-Program: Immediate Access
-Last Updated: 2026-02-26
+[META:{"source_file": "ia_inquizitive_access.txt", "source_id": "ia_inquizitive_access", "source_type": "instruction", "platform": ["inquizitive"], "section_title": "FULL_DOCUMENT"}]
+[META:{"source_id":"ia_inquizitive_access","platform":"INQUIZITIVE","issue_type":"access","subtype":"canvas_access"}]
+
+PROBLEM:
+Student cannot access Little Seagull InQuizitive through Canvas Immediate Access.
+
+APPLIES TO:
+Platform: Little Seagull InQuizitive
+LMS: Canvas
+
+CANVAS LOCATION:
+Course Navigation > Immediate Access, then launch courseware from the Immediate Access page.
+
+STEP-BY-STEP RESOLUTION:
+1. Sign onto Canvas and go to the course using IA.
+2. Click the → Immediate Access link
+3. Click → Launch Courseware.
+   a. A new pop-up tab should appear. If no new tab appears, ensure that you have enabled Third-Party cookies and disabled Pop-up blockers.
+4. In the new tab, you will be pathed to the Norton platform.
+5. Read/Accept the Terms of use and Privacy Policy and click → Continue.
+6. Following the How to Use InQuizitive tutorial, you should be pathed to the Little Seagull Handbook home page, where you’ll be able to access your eTextbook and InQuizitive assignments – see below.
+
+EXPECTED RESULT:
+Student successfully accesses Little Seagull InQuizitive content through Canvas.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "ia_inquizitive_access.txt", "source_id": "ia_inquizitive_access", "source_type": "instruction", "platform": ["inquizitive"], "section_title": "SCENARIO_2"}]
-How To Access the Little Seagull & InQuizitive
-1. On your Canvas course page, click -> Immediate Access on the left-hand side
-panel.
-a. Then click -> Immediate Access on the right-hand side.
+[META:{"source_file": "ia_jones_bartlett_access.txt", "source_id": "ia_jones_bartlett_access", "source_type": "instruction", "platform": ["jones_bartlett"], "section_title": "FULL_DOCUMENT"}]
+[META:{"source_id":"ia_jones_bartlett_access","platform":"JONES_BARTLETT","issue_type":"access","subtype":"canvas_access"}]
 
-2. Click -> Launch Courseware.
-a. A new pop-up tab should appear. If no new tab appears, ensure that you
-have enabled Third-Party cookies and disabled Pop-up blockers.
+PROBLEM:
+Student cannot access Jones & Bartlett Navigate through Canvas Immediate Access.
 
-In the new tab, you will be pathed to the Norton platform.
-3. Read/Accept the Terms of use and Privacy Policy and click -> Continue.
+APPLIES TO:
+Platform: Jones & Bartlett Navigate
+LMS: Canvas
 
-Following the How to Use InQuizitive tutorial, you should be pathed to the Little Seagull
-Handbook home page, where you'll be able to access your eTextbook and InQuizitive
-assignments.
+CANVAS LOCATION:
+Course Navigation > Immediate Access, then use the textbook tile to reveal the access code and open the provided URL.
+
+STEP-BY-STEP RESOLUTION:
+1. Sign onto Canvas and go to the course using IA.
+2. Click the → Immediate Access link.
+3. Under the textbook tile, click → Reveal Access Code.
+4. Copy & Paste the provided URL into a new tab.
+5. Copy the access code provided to your clipboard.
+6. In the new Jones & Bartlett tab, read and accept the terms and click → Accept.
+7. Enter the code from Canvas into the required field and click → Redeem.
+8. Log in or create a new account with Jones & Bartlett Learning using your CBU credentials.
+   - Use your Name@calbaptist.edu email address
+   - DO NOT use your ID#@calbaptist.edu email, as you will not receive necessary verification emails that may be sent to the email.
+9. Once the account is created and the access code is successfully redeemed, you should be able to access your Jones & Bartlett Navigate material.
+
+EXPECTED RESULT:
+Student successfully accesses Jones & Bartlett Navigate content through Canvas.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_macmillan_achieve_access.txt", "source_id": "ia_macmillan_achieve_access", "source_type": "instruction", "platform": ["macmillan"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
@@ -311,19 +446,14 @@ Student is opted into Immediate Access but cannot access their MacMillan Achieve
 APPLIES TO:
 Courses using MacMillan Achieve digital content (commonly used in Chemistry courses such as CHE 115).
 
-BLACKBOARD LOCATION:
-Tools tab (left side pane)
+CANVAS LOCATION:
+Course Navigation > MacMillan Achieve
 
 STEP-BY-STEP RESOLUTION:
-1. Log into Canvas.
-2. Select the course that uses MacMillan Achieve.
-3. Click "Tools" from the left side pane.
-4. Select "MacMillan LTI Advantage Course Tools" from the Tools menu.
-5. Choose your content type:
-   - Click "Achieve" to access the Achieve homepage and work on assignments.
-   - Click "E-book" to access the e-book that accompanies your MacMillan Learning course.
-6. If you have not used MacMillan Achieve before, you will be prompted to create an Achieve account first.
-7. Once logged in, you will see the Course Home with a Week Outline showing your assignments.
+1. Sign onto Canvas and go to the course using IA.
+2. Click the → MacMillan Achieve tool on the left-hand side.
+3. Select either → Achieve when you are ready to work on an assignment OR select → E-book when you want to review a chapter.
+   a. If you have not used MacMillan Achieve before, you’ll be prompted to create an Achieve account first.
 
 SUPPORT TOOLS AVAILABLE:
 - MacMillan Learning Diagnostics: Run diagnostics on your MacMillan Learning connection.
@@ -334,7 +464,7 @@ EXPECTED RESULT:
 After following these steps, you should have full access to your MacMillan Achieve assignments and e-book content organized by week.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_mcgraw_hill_connect_access.txt", "source_id": "ia_mcgraw_hill_connect_access", "source_type": "instruction", "category": "platform_access", "platform": "mcgraw_hill", "issue_type": "access", "priority": "canonical", "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
@@ -343,16 +473,16 @@ Student is opted into Immediate Access but cannot access McGraw Hill Connect tex
 APPLIES TO:
 Courses using McGraw Hill Connect.
 
-BLACKBOARD LOCATION:
-Learning Activities tab
+CANVAS LOCATION:
+Course Navigation > McGraw Hill
 
 STEP-BY-STEP RESOLUTION:
-1. Log in to Canvas.
-2. Open the correct course.
-3. Click on the “Learning Activities” tab in the left menu.
-4. Open the appropriate week folder (e.g., Week 1).
-5. Click the McGraw Hill Connect link for the eText or assignment.
-6. If prompted, log in or create a McGraw Hill account using your CBU email address.
+1. Sign onto Canvas and go to the course using McGraw Hill Connect courseware.
+2. On the left-hand course menu, click → McGraw Hill to be pathed to your McGraw Hill Connect course.
+3. On the right-hand side, you will be pathed to the McGraw Hill site, where you will be prompted to log into a McGraw Hill Connect account.
+   a. If you do not have an existing account, create one with your Name@calbaptist.edu email address. DO NOT USE YOUR ID#@calbaptist.edu EMAIL.
+   b. If you have an existing account, log in with those credentials.
+4. Once logged in, you should be pathed to the McGraw Hill Connect course, where you can access both the eTextbook and the assignments below.
 
 LOGIN REQUIREMENTS:
 - Use your full CBU email address (firstname.lastname@calbaptist.edu).
@@ -362,127 +492,92 @@ EXPECTED RESULT:
 Once logged in, the eText and assignments should open successfully within McGraw Hill Connect.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "ia_mcgraw_hill_connect_learning_activities_access.txt", "source_id": "ia_mcgraw_hill_connect_learning_activities_access", "source_type": "instruction", "platform": ["mcgraw"], "section_title": "FULL_DOCUMENT [part 1/2]"}]
+[META:{"source_file": "ia_mcgraw_hill_connect_learning_activities_access.txt", "source_id": "ia_mcgraw_hill_connect_learning_activities_access", "source_type": "instruction", "platform": ["mcgraw"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
-Student cannot access their McGraw Hill Connect eTextbook or courseware through the Immediate Access tab or Learning Activities in Canvas.
+Student cannot access their McGraw Hill Connect eTextbook or courseware through Canvas.
 
 APPLIES TO:
-Courses using McGraw Hill Connect digital content accessed via Immediate Access tab or Learning Activities (commonly used in Business courses such as BUS 463 Business and Organizational Management).
+Courses using McGraw Hill Connect digital content.
 
-BLACKBOARD LOCATION:
-Immediate Access tab OR Learning Activities tab (left side pane)
+CANVAS LOCATION:
+Course Navigation > McGraw Hill
 
-METHOD 1 - VIA IMMEDIATE ACCESS TAB:
-1. Log into Canvas and go to your course page.
-2. Click "Immediate Access" on the left-hand side menu.
-3. Click the "Immediate Access" link in the center of the page.
-4. Click the "McGraw Hill Connect LTIA Basic Link."
-5. You will be taken to the McGraw Hill Connect course page with access to the eTextbook and assignments.
-
-METHOD 2 - VIA LEARNING ACTIVITIES TAB:
-1. Log into Canvas and go to your course page.
-2. Click "Learning Activities" on the left-hand side menu.
-3. IMPORTANT: Complete the Student Responsibility Agreement (SRA) first before accessing other content.
-4. Click on the weekly folder to view that week's assignments (e.g., "Week 1: Overview of Organizational Behavior").
-5. Find the "McGraw Hill Connect" folder within the week.
-6. Click on individual assignment links (SmartBook, Quiz, Connect Orientation Videos, etc.).
+STEP-BY-STEP RESOLUTION:
+1. Sign onto Canvas and go to the course using McGraw Hill Connect courseware.
+2. On the left-hand course menu, click → McGraw Hill to be pathed to your McGraw Hill Connect course.
+3. On the right-hand side, you will be pathed to the McGraw Hill site, where you will be prompted to log into a McGraw Hill Connect account.
+   a. If you do not have an existing account, create one with your Name@calbaptist.edu email address. DO NOT USE YOUR ID#@calbaptist.edu EMAIL.
+   b. If you have an existing account, log in with those credentials.
+4. Once logged in, you should be pathed to the McGraw Hill Connect course, where you can access both the eTextbook and the assignments below.
 
 LOGIN REQUIREMENTS:
 - If prompted to log in on the McGraw Hill website, use an existing McGraw Hill account OR create a new account.
 - Use your CBU email: firstname.lastname@calbaptist.edu
 - Do NOT use your CBUID#@calbaptist.edu email address.
 
-ACCESSING THE EBOOK WITHIN AN ASSIGNMENT:
-1. In the assignment, click "Continue" on the bottom right-hand side.
-2. Click "eBook" on the left-hand side of the page.
-3. A pop-up will appear on the right-hand side showing the "Browse eBook" option.
-4. Click on the eBook cover to open and read.
-<<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "ia_mcgraw_hill_connect_learning_activities_access.txt", "source_id": "ia_mcgraw_hill_connect_learning_activities_access", "source_type": "instruction", "platform": ["mcgraw"], "section_title": "FULL_DOCUMENT [part 2/2]"}]
-NAVIGATION INSIDE MCGRAW HILL CONNECT:
-- Course materials section shows the textbook and loose leaf options.
-- Read section displays your eTextbook.
-- Assignments are organized by weekly folders.
-- You can download the mobile app to read offline.
-
 EXPECTED RESULT:
 After following these steps, you should have access to both the McGraw Hill Connect eTextbook and weekly assignments.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "ia_mcgraw_hill_connect_no_read_now.txt", "source_id": "ia_mcgraw_hill_connect_no_read_now", "source_type": "instruction", "platform": ["mcgraw"], "section_title": "FULL_DOCUMENT [part 1/2]"}]
+[META:{"source_file": "ia_mcgraw_hill_connect_no_read_now.txt", "source_id": "ia_mcgraw_hill_connect_no_read_now", "source_type": "instruction", "platform": ["mcgraw"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
 Student is opted into Immediate Access but sees a "Launch Courseware" button instead of a "Read Now" button when accessing their McGraw Hill Connect course materials. The student may be expecting a "Read Now" button like VitalSource eTextbooks but McGraw Hill Connect uses a different access flow.
 
 APPLIES TO:
 Courses using McGraw Hill Connect digital content through Immediate Access.
 
-BLACKBOARD LOCATION:
-Learning Activities tab (left side menu) or Immediate Access tab
+CANVAS LOCATION:
+Course Navigation > McGraw Hill
 
 EXPLANATION:
-McGraw Hill Connect does not use a "Read Now" button. Instead, access is provided through a "Launch Courseware" button which takes you directly into the McGraw Hill Connect platform where both the eText and assignments are available.
+McGraw Hill Connect does not use a "Read Now" button. Instead, Canvas paths students through the McGraw Hill course navigation link into the McGraw Hill Connect platform where both the eText and assignments are available.
 
 STEP-BY-STEP RESOLUTION:
 
-1. Log into Canvas.
-2. Open the correct course.
-3. Try the Learning Activities tab first:
-   a. Click "Learning Activities" from the left side menu.
-   b. Open the appropriate week folder (e.g., Week 1).
-   c. Click the McGraw Hill Connect link for the eText or assignment.
-4. Alternatively, try the Immediate Access tab:
-   a. Click "Immediate Access" from the left side menu.
-   b. Click "Immediate Access" again from the center of the page.
-   c. Click the "Launch Courseware" button (this is correct — McGraw Hill does not show "Read Now").
-5. If prompted, log in or create a McGraw Hill account using your CBU email address.
+1. Sign onto Canvas and go to the course using McGraw Hill Connect courseware.
+2. On the left-hand course menu, click → McGraw Hill to be pathed to your McGraw Hill Connect course.
+3. On the right-hand side, you will be pathed to the McGraw Hill site, where you will be prompted to log into a McGraw Hill Connect account.
+   a. If you do not have an existing account, create one with your Name@calbaptist.edu email address. DO NOT USE YOUR ID#@calbaptist.edu EMAIL.
+   b. If you have an existing account, log in with those credentials.
+4. Once logged in, you should be pathed to the McGraw Hill Connect course, where you can access both the eTextbook and the assignments below.
 
 LOGIN REQUIREMENTS:
 - Use your full CBU email address (firstname.lastname@calbaptist.edu).
 - Do NOT use your ID#@calbaptist.edu email.
 
 EXPECTED RESULT:
-After clicking "Launch Courseware" and logging in, you will have access to both the McGraw Hill eText and any assignments for your course. The "Read Now" button is not used for McGraw Hill Connect — "Launch Courseware" is the correct button for this platform.
-<<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "ia_mcgraw_hill_connect_no_read_now.txt", "source_id": "ia_mcgraw_hill_connect_no_read_now", "source_type": "instruction", "platform": ["mcgraw"], "section_title": "FULL_DOCUMENT [part 2/2]"}]
+After clicking the McGraw Hill course navigation link and logging in, you will have access to both the McGraw Hill eText and any assignments for your course. The "Read Now" button is not used for McGraw Hill Connect.
+
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_mcgraw_hill_connect_tools_access.txt", "source_id": "ia_mcgraw_hill_connect_tools_access", "source_type": "instruction", "platform": ["mcgraw"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
-Student cannot access their McGraw Hill Connect eTextbook or courseware through the Tools menu in Canvas.
+Student cannot access their McGraw Hill Connect eTextbook or courseware through Canvas.
 
 APPLIES TO:
-Courses using McGraw Hill Connect digital content accessed via the Tools tab (commonly used in Business courses such as BUS 212 Economics, Life and Society).
+Courses using McGraw Hill Connect digital content.
 
-BLACKBOARD LOCATION:
-Tools tab (left side pane)
+CANVAS LOCATION:
+Course Navigation > McGraw Hill
 
 STEP-BY-STEP RESOLUTION:
-1. Log into Canvas.
-2. Go to your course page.
-3. Click "Tools" on the left-hand side menu.
-4. Click the link titled "McGraw Hill Connect LTIA Basic Link."
-5. You will be taken to the McGraw Hill Connect course page.
-6. Access your materials:
-   - For eTextbook: Click on the book image under "Read" in the Course materials section.
-   - For Assignments: Click on the weekly folders (Week 1, Week 2, etc.) to view assignments.
-
-NAVIGATION INSIDE MCGRAW HILL CONNECT:
-- Instructor information and messaging options are at the top left.
-- Course materials section shows the textbook and loose leaf purchase options.
-- Read section displays your eTextbook - click to open.
-- Assignments section shows weekly folders with your coursework.
-- You can download the mobile app to read offline.
+1. Sign onto Canvas and go to the course using McGraw Hill Connect courseware.
+2. On the left-hand course menu, click → McGraw Hill to be pathed to your McGraw Hill Connect course.
+3. On the right-hand side, you will be pathed to the McGraw Hill site, where you will be prompted to log into a McGraw Hill Connect account.
+   a. If you do not have an existing account, create one with your Name@calbaptist.edu email address. DO NOT USE YOUR ID#@calbaptist.edu EMAIL.
+   b. If you have an existing account, log in with those credentials.
+4. Once logged in, you should be pathed to the McGraw Hill Connect course, where you can access both the eTextbook and the assignments below.
 
 EXPECTED RESULT:
-After clicking the McGraw Hill Connect LTIA Basic Link, you should have access to both the eTextbook and weekly assignments.
+After following these steps, you should have access to both the McGraw Hill Connect eTextbook and weekly assignments.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_mcgraw_hill_tools_access.txt", "source_id": "ia_mcgraw_hill_tools_access", "source_type": "instruction", "category": "platform_access", "platform": "mcgraw_hill", "issue_type": "access", "priority": "alternate", "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
@@ -491,57 +586,95 @@ Student is opted into Immediate Access but cannot access their McGraw Hill textb
 APPLIES TO:
 Courses using McGraw Hill Connect digital content (commonly used in Business courses such as BUS 212).
 
-BLACKBOARD LOCATION:
-Tools tab (left side pane)
+CANVAS LOCATION:
+Course Navigation > McGraw Hill
 
 STEP-BY-STEP RESOLUTION:
-1. Log onto Canvas.
-2. Select your course that uses McGraw Hill from your list of courses.
-3. Click "Tools" from the left-hand side menu.
-4. Select "McGraw Hill Connect LTIA Basic Link" from the Tools menu.
-5. Once in McGraw Hill Connect, click the image of the book under "Course materials" in the Read section.
-6. The e-book should deploy in the center of the page.
-
-NAVIGATION INSIDE MCGRAW HILL:
-- Course materials section: Access loose leaf options and your course text.
-- Read section: Click on your textbook to open it.
-- Assignments section: View weekly assignments organized by Week folders (Week 1, Week 2, etc.).
-- You can also download the mobile app to read offline.
+1. Sign onto Canvas and go to the course using McGraw Hill Connect courseware.
+2. On the left-hand course menu, click → McGraw Hill to be pathed to your McGraw Hill Connect course.
+3. On the right-hand side, you will be pathed to the McGraw Hill site, where you will be prompted to log into a McGraw Hill Connect account.
+   a. If you do not have an existing account, create one with your Name@calbaptist.edu email address. DO NOT USE YOUR ID#@calbaptist.edu EMAIL.
+   b. If you have an existing account, log in with those credentials.
+4. Once logged in, you should be pathed to the McGraw Hill Connect course, where you can access both the eTextbook and the assignments below.
 
 EXPECTED RESULT:
-After following these steps, you should have access to your McGraw Hill e-book and can view your weekly assignments.
+After following these steps, you should have access to your McGraw Hill e-book and can view your assignments.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "ia_pearson_mylab_mastering_access.txt", "source_id": "ia_pearson_mylab_mastering_access", "source_type": "instruction", "platform": ["pearson"], "section_title": "FULL_DOCUMENT"}]
+[META:{"source_file": "ia_opt_out_canvas.txt", "source_id": "ia_opt_out_canvas", "source_type": "instruction", "platform": ["general"], "section_title": "FULL_DOCUMENT"}]
+[META:{"source_id":"ia_opt_out_canvas","platform":"GENERAL","issue_type":"access","subtype":"canvas_access"}]
+
+PROBLEM:
+Student cannot access Immediate Access opt out through Canvas Immediate Access.
+
+APPLIES TO:
+Platform: Immediate Access opt out
+LMS: Canvas
+
+CANVAS LOCATION:
+Canvas > Courses > course using Immediate Access > Immediate Access.
+
+STEP-BY-STEP RESOLUTION:
+1. Log onto Canvas and click → Courses
+2. Click into the course using Immediate Access
+3. Click → Immediate Access on the left-hand side.
+4. Identify the IA title you’d like to opt out of, then click → Want to Opt Out?
+5. Follow the prompts and confirm your Opt-Out.
+6. After successfully opting out, you should receive an automated email to your Lancer Mail confirming Your Preference to Opt-Out Has Been Recorded.
+
+EXPECTED RESULT:
+Student successfully accesses Immediate Access opt out content through Canvas.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+<<<CHUNK_SEPARATOR>>>
+[META:{"source_file": "ia_overview.txt", "source_id": "ia_overview", "source_type": "instruction", "platform": ["general"], "section_title": "FULL_DOCUMENT"}]
+[META:{"source_id":"ia_overview","platform":"GENERAL","issue_type":"access","subtype":"canvas_access"}]
+
+PROBLEM:
+Student cannot access Immediate Access eTextbooks through Canvas Immediate Access.
+
+APPLIES TO:
+Platform: Immediate Access eTextbooks
+LMS: Canvas
+
+CANVAS LOCATION:
+Course Navigation > Immediate Access.
+
+STEP-BY-STEP RESOLUTION:
+1. Sign onto Canvas and go to the course using IA.
+2. Click the → Immediate Access link
+3. Your IA materials should appear on the same page. Click → Read Now.
+
+EXPECTED RESULT:
+Student successfully accesses Immediate Access eTextbooks content through Canvas.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+<<<CHUNK_SEPARATOR>>>
+[META:{"source_file": "ia_pearson_mylab_mastering_access.txt", "source_id": "ia_pearson_mylab_mastering_access", "source_type": "instruction", "platform": ["pearson"], "section_title": "FULL_DOCUMENT [part 1/2]"}]
 PROBLEM:
 Student is opted into Immediate Access but cannot access their Pearson MyLab or Modified Mastering textbook and assignments.
 
 APPLIES TO:
 Courses using Pearson MyLab or Modified Mastering digital content.
 
-BLACKBOARD LOCATION:
-Immediate Access tab (left side pane)
+CANVAS LOCATION:
+Course Navigation > Immediate Access
 
 STEP-BY-STEP RESOLUTION:
-1. Log onto Canvas.
-2. Select the course that uses Pearson MyLab or Mastering.
-3. Click "Immediate Access" from the left side menu.
-4. Click "Immediate Access" again from the center of the page.
-5. Click the "Launch Courseware" button.
-6. Click "Continue" on the Legal Policies page to accept the terms.
-7. Click "Open MyLab & Mastering" to access the Pearson platform.
-8. If you are new to Pearson, click "Create account" to register.
-9. Fill in your account information:
-   - First name and Last name
-   - Email (use your CBU email)
-   - Username
-   - Password
-   - Country
-   - Role (select Student)
-10. Agree to the Terms of Use and Privacy notice.
-11. Click "Create account" to complete registration.
+1. In the Canvas course page using Pearson MyLab – Mastering or Modified Courseware.
+2. Click → Immediate Access, from the left hand-side course menu.
+3. Your Pearson title will appear on the right-hand side of the screen. Click → Launch Courseware and skip to Step 5.
+4. Alternatively, if the Pearson courseware tile has a ‘Reveal Access Code’ option, click → Reveal Access Code
+5. Click → Copy to copy the access code to the clipboard, then navigate to the URL provided under More Info.
+6. From here one of two things will be displayed on your screen.
+   a. If you have not yet created a Pearson MyLab, Mastering or Modified Account, you’ll be prompted to create one.
+   b. Be sure to use your NAME@calbaptist.edu, NOT your StudentID@calbaptist.edu as this will not allow for multi-factor authentication.
+   c. Then you should see “You’re done!”, your professor’s name, and the ‘Go To My Courses’ tile.
+   d. If you have used Pearson MyLab, Modified, or Mastering for another class previously, you already have created an account. The system will recognize your login and path you directly to Open MyLab & Mastering.
 
 LOGIN REQUIREMENTS:
 - Use your official CBU email address: firstname.lastname@calbaptist.edu
@@ -554,9 +687,10 @@ After registration, you will see a confirmation page showing:
 3. A "Go to My Courses" button to access your materials
 
 You will also receive a registration confirmation email. Your Pearson account will be linked to your Canvas account for future access.
-
+<<<CHUNK_SEPARATOR>>>
+[META:{"source_file": "ia_pearson_mylab_mastering_access.txt", "source_id": "ia_pearson_mylab_mastering_access", "source_type": "instruction", "platform": ["pearson"], "section_title": "FULL_DOCUMENT [part 2/2]"}]
 IF ISSUE PERSISTS:
-Use the "Forgot your Pearson username or password?" link on the login page, or visit the Help & Support section in Pearson. You can also contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Use the "Forgot your Pearson username or password?" link on the login page, or visit the Help & Support section in Pearson. You can also contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_read_now_button_missing.txt", "source_id": "ia_read_now_button_missing", "source_type": "instruction", "platform": ["general"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
@@ -570,16 +704,15 @@ COMMON CAUSES:
 - The course uses a publisher platform (McGraw Hill, Pearson, Cengage) that delivers access through courseware links rather than a "Read Now" button
 - The student needs to complete initial registration or account creation on the publisher platform first
 
-BLACKBOARD LOCATION:
-Immediate Access tab (left side pane) or course-specific tabs such as Course Materials, Learning Activities, or Weekly Chapters
+CANVAS LOCATION:
+Course Navigation > Immediate Access
 
 STEP-BY-STEP RESOLUTION:
 
-1. Log into Canvas.
-2. Open the correct course.
-3. Click "Immediate Access" from the left side menu.
-4. Click "Immediate Access" again from the center of the page.
-5. Look for one of the following buttons:
+1. Sign onto Canvas and go to the course using IA.
+2. Click the → Immediate Access link.
+3. Your IA materials should appear on the same page.
+4. Look for one of the following buttons:
    - "Read Now" — for VitalSource/Bedford eTextbooks
    - "Launch Courseware" — for platform-based courses (McGraw Hill, Pearson, Cengage, etc.)
    - A direct publisher link — for Sage, Macmillan, ZyBooks, etc.
@@ -588,11 +721,11 @@ IF YOU SEE "LAUNCH COURSEWARE" INSTEAD OF "READ NOW":
 This is expected behavior for courses using publisher platforms such as McGraw Hill Connect, Pearson MyLab, or Cengage MindTap. Click "Launch Courseware" to access your materials through the publisher platform.
 
 IF YOU SEE NO BUTTON AT ALL:
-- Check other tabs in the left menu such as Course Materials, Learning Activities, or Weekly Chapters
-- Some courses deliver textbook access through links inside the course rather than the Immediate Access tab
+- Some courses deliver textbook access through a direct publisher link instead of a "Read Now" button.
+- If the access link is not visible in Canvas, contact ImmediateAccess@calbaptist.edu for help identifying the correct path.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_sage_vantage_access.txt", "source_id": "ia_sage_vantage_access", "source_type": "instruction", "platform": ["sage"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
@@ -601,26 +734,17 @@ Student is opted into Immediate Access but cannot access their Sage Vantage cour
 APPLIES TO:
 Courses using Sage Vantage digital courseware (commonly used in Behavioral Science courses such as BEH 290 Introduction to Research Methods).
 
-BLACKBOARD LOCATION:
-Weekly Chapters tab (left side menu)
+CANVAS LOCATION:
+Course Navigation > Modules
 
 STEP-BY-STEP RESOLUTION:
-1. Log into Canvas.
-2. Select the course that uses Sage Vantage.
-3. Click "Weekly Chapters" from the left side menu.
-4. Select the chapter you want to access (e.g., "Chapter 1").
-5. Click on the chapter content link (e.g., "Chapter 1: The Purpose of Research").
-6. You will be prompted to register and create a Sage Vantage account as a student.
-7. Fill in your registration information:
-   - First Name
-   - Last Name
-   - Country
-   - Username (use your CBU email)
-   - Email Address (use your CBU email)
-   - Password (must be at least 8 characters with uppercase, lowercase, number, and/or symbol)
-   - Confirm Password
-8. Check the box to agree to the Terms of Use.
-9. Click "Register" to complete your account setup.
+1. Log in to Canvas and select the course using Sage Vantage.
+   - E.g., BEH 290-A
+2. In the Canvas course, click into → Modules.
+3. Under the weekly assignments, click the link to the textbook chapter through Sage Vantage.
+4. After clicking into the link, register and create an account as a student using your CBU credentials.
+   - Use your Name@calbaptist.edu email address.
+   - DO NOT use your ID#@calbaptist.edu email, as you will not receive verification requests from Sage Vantage that may be needed.
 
 LOGIN REQUIREMENTS:
 - Use your official CBU email address for both Username and Email Address fields.
@@ -629,55 +753,67 @@ EXPECTED RESULT:
 After registration, you should gain access to the Sage Vantage chapter materials, including reading content and video activities.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "ia_simucase_access.txt", "source_id": "ia_simucase_access", "source_type": "instruction", "platform": ["simucase"], "section_title": "FULL_DOCUMENT [part 1/2]"}]
+[META:{"source_file": "ia_simucase_access.txt", "source_id": "ia_simucase_access", "source_type": "instruction", "platform": ["simucase"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
 Student is opted into Immediate Access but cannot access their SimuCase simulation platform or needs help redeeming their access code.
 
 APPLIES TO:
 Courses using the SimuCase simulation platform (commonly used in Social Work courses such as SWK 335 Substance Use Disorders, Treatment, Recovery).
 
-BLACKBOARD LOCATION:
-Immediate Access tab (left side pane)
+CANVAS LOCATION:
+Course Navigation > Immediate Access
 
 STEP-BY-STEP RESOLUTION:
-1. Log into Canvas.
-2. Select the course that uses SimuCase.
-3. Click "Immediate Access" from the left-hand side pane.
-4. Click "Immediate Access" again from the center of the page.
-5. Click "Reveal Access Code" to display your unique SimuCase code.
-6. Copy the access code that appears.
-7. Copy the publisher's URL appearing under "More Info" (https://www.simucase.com/members/register/simucase).
-8. Open a new browser tab and paste the URL to navigate to the SimuCase registration page.
-9. On the SimuCase website, click "Accept All" on the Privacy Choices popup.
-10. Fill in your account information:
-    - First Name and Last Name
-    - Primary Email Address (use your CBU email)
-    - Secondary Email Address (optional personal email)
-    - Create Password
-    - Area of Focus (e.g., Social Work)
-    - Select "Yes" for educational institution affiliation
-    - University: California Baptist University
-    - Role: Undergraduate Student
-    - Graduation Date
-11. Click "Continue" to proceed to the Payment page.
-12. On the Payment page, navigate back to your Canvas page.
-13. Click "Copy" to copy the unique access code from Canvas.
-14. Return to the SimuCase page and paste your code in the "Promo Code" field.
-15. Click "Apply" to redeem your access code.
+1. Login to Canvas and select the course that is using the SimuCase platform.
+   - This example uses SWK 335, but the same steps apply to any course using SimuCase.
+2. Click → Immediate Access from the left-hand side pane.
+3. Click → Reveal Access Code
+4. Open a new browser and Copy the publisher’s URL appearing under → More Info. Then, paste the URL in the new browser to create your SimuCase account.
+5. Click → Accept All, then proceed to create your account by filling in the questions that appear on the screen, then click → Continue.
+6. Next, enter the code from Canvas into the field → Promo Code, then click → Apply.
+   - You should then be able to access your SimuCase material.
 
 IMPORTANT NOTES:
 - Your access code functions as a Promo Code on the SimuCase payment page.
 - The code covers your membership cost through Immediate Access.
 - Do not select a paid membership option - use your Promo Code instead.
-<<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "ia_simucase_access.txt", "source_id": "ia_simucase_access", "source_type": "instruction", "platform": ["simucase"], "section_title": "FULL_DOCUMENT [part 2/2]"}]
+
 EXPECTED RESULT:
 After applying your promo code, you should have full access to the SimuCase simulation materials for your course.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+<<<CHUNK_SEPARATOR>>>
+[META:{"source_file": "ia_strengths_leadership_access.txt", "source_id": "ia_strengths_leadership_access", "source_type": "instruction", "platform": ["clifton"], "section_title": "FULL_DOCUMENT"}]
+[META:{"source_id":"ia_strengths_leadership_access","platform":"CLIFTON","issue_type":"access","subtype":"canvas_access"}]
+
+PROBLEM:
+Student cannot access Strengths Based Leadership through Canvas Immediate Access.
+
+APPLIES TO:
+Platform: Strengths Based Leadership
+LMS: Canvas
+
+CANVAS LOCATION:
+Course Navigation > Immediate Access, then use the textbook tile to reveal the access code and open the Strengths Based Leadership material.
+
+STEP-BY-STEP RESOLUTION:
+1. Log onto Canvas and click into the course using Strengths Based Leadership through IA.
+2. On the left-hand side menu, click → Immediate Access
+3. Copy your Strengths Based Leadership access code by clicking → Reveal Access Code.
+4. Once you’ve copied your unique access code, click → Read Now on the textbook tile.
+5. Click the tab titled IMPORTANT Information About Taking the Clifton StrengthsFinder.
+   a. Locate the appropriate link to input your Access code (i.e. strengths.gallup.com)
+6. Under the For Students option, click → Redeem Code.
+7. Paste your access code into the given field, then click → Continue
+
+EXPECTED RESULT:
+Student successfully accesses Strengths Based Leadership content through Canvas.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_stukent_access.txt", "source_id": "ia_stukent_access", "source_type": "instruction", "platform": ["stukent"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
@@ -686,36 +822,20 @@ Student cannot access their Stukent courseware, simulations (Simternship), or as
 APPLIES TO:
 Courses using Stukent digital courseware and simulations (commonly used in Communication courses such as COM 440 Digital Trends in Communication).
 
-BLACKBOARD LOCATION:
-Tools tab OR Weekly Activities tab (left side pane)
+CANVAS LOCATION:
+Course Navigation > Stukent
 
-METHOD 1 - VIA TOOLS TAB:
-1. Log onto Canvas and go to your course page.
-2. Click "Tools" on the left-hand sidebar.
-3. Find and click the "Stukent" tool in the Tools list.
-4. A new pop-up will appear. Click "Open Stukent."
-5. You will be taken to the Stukent "My Courses" page.
-6. Find your course (it will show "LMS Connected" if properly linked).
-7. Click "Launch Simternship" to access simulations OR click "Launch Courseware" to access course content.
-
-METHOD 2 - VIA WEEKLY ACTIVITIES TAB:
-1. Log onto Canvas and go to your course page.
-2. Click "Weekly Activities" on the left-hand side menu.
-3. Click on the week folder you want to access (e.g., "WEEK 1").
-4. Under each week, you will see Stukent links for specific assignments/quizzes.
-5. Click on the assignment link (e.g., "Chapter 1 Quiz").
-6. A Stukent page will appear. Click "Launch Chapter 1 Quiz" (or the relevant assignment button).
-
-STUKENT CONTENT TYPES:
-- Simternship: Interactive simulations for hands-on practice (e.g., SEO Simternship).
-- Courseware: Course content, readings, and skill-based materials (e.g., SEO: Strategy & Skills).
-- Quizzes: Chapter-based assessments.
+STEP-BY-STEP RESOLUTION:
+1. Sign onto Canvas and go to the course using Stukent.
+2. On the left-hand course menu, click → Stukent to be pathed to your Stukent course materials.
+3. A new pop-up will appear. Click → Open Stukent.
+4. Since this material is provided through Immediate Access, you should be able to launch your Stukent materials by clicking → Launch Simternship/Courseware
 
 EXPECTED RESULT:
 After following these steps, you should have access to your Stukent simulations, courseware, and quizzes. Since this material is provided through Immediate Access, no additional payment or access code should be required.
 
 IF ISSUE PERSISTS:
-Contact the Immediate Access Support Team at ImmediateAccess@calbaptist.edu for assistance.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_vitalsource_bookshelf_account_creation.txt", "source_id": "ia_vitalsource_bookshelf_account_creation", "source_type": "instruction", "category": "platform_access", "platform": "vitalsource", "issue_type": "account_creation", "priority": "canonical", "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
@@ -725,17 +845,17 @@ APPLIES TO:
 Courses using VitalSource Bookshelf.
 
 STEP-BY-STEP RESOLUTION:
-1. Go to Bookshelf.VitalSource.com.
-2. Click "Create a VitalSource Account".
-3. Select "I’m a Student".
-4. Enter the required information.
-5. Use your NAME@calbaptist.edu email address.
-6. Agree to the Terms of Use and Privacy Policy.
-7. Click "Create Account".
-8. Select "Higher Ed".
-9. Enter "California Baptist University" as the institution.
-10. Click "Submit".
-11. Verify the account using the confirmation email.
+1. Go to Bookshelf.VitalSource.com
+2. Click → Create a VitalSource Account
+3. Select → I’m a Student.
+   a. Fill out the necessary information to create the account.
+   b. Be sure to use your Name@calbaptist.edu email address
+   c. Be sure to agree to the Terms of Use and Privacy Policy.
+4. Click → Create Account
+5. Click → Higher Ed
+   a. Enter the Institution name → California Baptist University
+   b. Click → Submit
+6. Verify the account through the email received.
 
 LOGIN REQUIREMENTS:
 - Use your NAME@calbaptist.edu email address.
@@ -744,7 +864,7 @@ EXPECTED RESULT:
 The VitalSource Bookshelf account is created and ready for use.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_wileyplus_access.txt", "source_id": "ia_wileyplus_access", "source_type": "instruction", "platform": ["wiley"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
@@ -753,27 +873,19 @@ Student cannot access their WileyPlus courseware, e-textbook, or assignments.
 APPLIES TO:
 Courses using WileyPlus digital courseware (commonly used in Math courses such as MAT 342).
 
-BLACKBOARD LOCATION:
-Tools tab (left side pane)
+CANVAS LOCATION:
+Course Navigation > WileyPLUS
 
 STEP-BY-STEP RESOLUTION:
-1. Log onto Canvas.
-2. Select your course that uses WileyPlus.
-3. Click "Tools" from the left side menu.
-4. Find and click on "Wiley Course Resources" from the Tools list.
-5. You will be presented with two options:
-   - Option 1: Click "Login to an Existing Account" if you already have a WileyPlus account.
-   - Option 2: Create a new account by filling in the registration form.
-6. If creating a new account, enter:
-   - First Name
-   - Last Name
-   - Email Address (use your CBU email)
-   - Confirm Email Address
-   - Department (select your department)
-7. Check the consent boxes for Terms of Use and Privacy Policy.
-8. Click "Submit" to create your account.
-9. A 4-digit verification code will be emailed to you.
-10. Enter the 4-digit code when prompted to verify your account.
+1. Log onto Canvas and select the course using WileyPLUS courseware.
+2. Find and click on the WileyPLUS tool on the left-hand side.
+3. Students will be presented with the choice to either:
+   1) Login to an existing account
+   OR
+   2) Create a new account
+4. If a new account was created, then a 4-digit code will be sent to the registered email address.
+5. Copy and enter the emailed code into the WileyPLUS page.
+   - Once the code is successfully redeemed, the material should become available.
 
 NAVIGATION INSIDE WILEYPLUS:
 After logging in, you will see the Course Resources page with:
@@ -785,7 +897,7 @@ EXPECTED RESULT:
 After entering the verification code, you will have access to your WileyPlus e-textbook and course resources organized by chapter.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_zybooks_access.txt", "source_id": "ia_zybooks_access", "source_type": "instruction", "platform": ["zybooks"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
@@ -794,22 +906,28 @@ Student is opted into Immediate Access but cannot access their Zybooks textbook 
 APPLIES TO:
 Courses using Zybooks digital textbooks (commonly used in EGR courses such as Intro to Computer Programming in Python).
 
-BLACKBOARD LOCATION:
-Immediate Access tab (left side pane)
+CANVAS LOCATION:
+Course Navigation > Immediate Access
 
 STEP-BY-STEP RESOLUTION:
-1. Log onto Canvas.
-2. Select the course in which you are enrolled that uses Zybooks.
-3. Click "Immediate Access" from the left side pane.
-4. Click "Immediate Access" once more from the center of the page.
-5. Click the "Reveal Access Code" button.
-6. Click "Copy" to copy the access code displayed in the field.
-7. Navigate to the Zybooks URL provided on the page (example: https://learn.zybooks.com/zybook/CALBAPTISTEGR120CorsoSpring2026).
-8. Paste your unique access code on the Zybooks website to activate your content.
+1. Log onto Canvas and select the course using ZyBooks.
+2. Click → Immediate Access from the left-hand course menu.
+3. Click → Reveal Access Code
+4. Click → Copy to copy the access code to your clipboard.
+5. Open the provided URL in a new browser.
+6. On the ZyBooks website, through the provided URL, you will be prompted to either:
+   1) Log into an existing ZyBooks account
+   OR
+   2) Create a new ZyBooks account using your CBU credentials.
+      a. (e.g. Jane.Smith@calbaptist.edu)
+      b. DO NOT use your ID#@calbaptist.edu email address
+7. If you created a new account, be sure to verify your account by clicking on the verification link sent to the registered email address.
+8. Enter the code from the Canvas Immediate Access link.
+   - This will grant you access to the ZyBooks content.
 
 EXPECTED RESULT:
 After entering the access code on the Zybooks website, you will have full access to the Zybooks content for your course.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>

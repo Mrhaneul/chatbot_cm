@@ -3,6 +3,7 @@ load_dotenv()
 import json
 from email.mime import message
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.staticfiles import StaticFiles
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.llm.llama_client import (
     LlamaClient,
@@ -22,7 +23,7 @@ import os
 import re
 import numpy as np
 from datetime import datetime, timedelta
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import uuid
 import time
 from pathlib import Path
@@ -72,12 +73,19 @@ from app.intake.flow import (
     intake_fallback_message,
     is_unknown_answer,
     is_personal_info_reply,
+    is_generic_course_material_issue,
     INTAKE_ESCALATION_MESSAGE,
     INTAKE_ACCOUNT_ESCALATION_MESSAGE,
     INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE,
 )
 from app.intake.question_templates import QUESTION_KEY_TO_SLOT, QUESTION_TEMPLATES, FALLBACK_QUESTION
 from app.intake.llm_planner import run_intake_planner, should_run_planner, get_question_for_decision
+try:
+    from app.bookstore_cache import lookup_course as cache_lookup_course
+    from app.bookstore_cache import lookup_by_instructor as cache_lookup_by_instructor
+except Exception:
+    cache_lookup_course = None
+    cache_lookup_by_instructor = None
 
 from app.admin import admin_router
 from app.feedback import feedback_router
@@ -116,9 +124,8 @@ def strip_meta_prefix(context: str) -> str:
 
 def extract_step_by_step(content: str) -> str:
     """
-    Extract just the numbered step-by-step resolution from an instruction
-    file chunk, discarding boilerplate sections (PROBLEM, APPLIES TO,
-    BLACKBOARD LOCATION, EXPECTED RESULT, IF ISSUE PERSISTS).
+    Extract the numbered step-by-step resolution from an instruction file chunk
+    and keep the support contact, when present.
 
     Falls back to returning the full content if no STEP-BY-STEP section
     is found (so the response is never empty).
@@ -129,7 +136,17 @@ def extract_step_by_step(content: str) -> str:
         re.DOTALL | re.IGNORECASE,
     )
     if match:
-        return match.group(1).strip()
+        steps = match.group(1).strip()
+        support_match = re.search(
+            r"IF ISSUE PERSISTS:\s*\n(.*?)(?=\n[A-Z][A-Z\s\-]+:|$)",
+            content,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if support_match:
+            support = support_match.group(1).strip()
+            if support:
+                return f"{steps}\n\nIf issue persists:\n{support}"
+        return steps
     return content
 
 
@@ -161,6 +178,10 @@ class NgrokMiddleware(BaseHTTPMiddleware):
 app.add_middleware(NgrokMiddleware)
 
 app.include_router(admin_router)
+import os as _os
+_pdfs_dir = _os.path.join(_os.path.dirname(__file__), "static", "pdfs")
+_os.makedirs(_pdfs_dir, exist_ok=True)
+app.mount("/static/pdfs", StaticFiles(directory=_pdfs_dir), name="pdfs")
 app.include_router(feedback_router)
 
 @app.get("/admin")
@@ -662,6 +683,9 @@ def detect_intent(message: str) -> str:
     """Detect user intent from message."""
     normalized = message.lower()
 
+    if detect_book_lookup_intent(message):
+        return "book_lookup"
+
     # Opt-out and physical textbook policy questions must go to FAQ, not IA troubleshooting.
     # "access" in IA_KEYWORDS is too broad and would otherwise match "immediate access"
     # in a policy question, misrouting it to IA_ACCESS_ISSUE.
@@ -720,6 +744,169 @@ def detect_intent(message: str) -> str:
         return "IA_ACCESS_ISSUE"
     
     return "GENERAL_FAQ"
+
+
+BOOK_LOOKUP_SIGNALS = (
+    "what book", "which book", "textbook for", "textbooks for",
+    "required book", "required books",
+    "what do i need for", "reading for", "book for my class",
+    "materials for", "books for", "required materials",
+    "textbook is required", "textbooks are required",
+    "textbook required", "required textbook",
+    "what textbook do i need", "what textbooks do i need",
+)
+
+DEPARTMENT_NAME_TO_CODE = {
+    "accounting": "ACC",
+    "athletic training": "ATR",
+    "aviation": "AVN",
+    "behavioral science": "BEH",
+    "biology": "BIO",
+    "business": "BUS",
+    "christian studies": "CBS",
+    "communication disorders": "CDS",
+    "chemistry": "CHE",
+    "computer science": "CST",
+    "education": "EDU",
+    "engineering": "EGR",
+    "english": "ENG",
+    "global studies": "GST",
+    "history": "HIS",
+    "kinesiology": "KIN",
+    "leadership": "LDR",
+    "marketing": "MKT",
+    "music": "MUS",
+    "nursing": "NUR",
+    "psychology": "PSY",
+    "social work": "SWK",
+}
+
+
+def detect_book_lookup_intent(message: str) -> bool:
+    text = (message or "").lower()
+    if any(term in text for term in ("can't access", "cannot access", "unable to access", "trouble", "issue", "problem", "not working")):
+        return any(term in text for term in ("what book", "which book", "required book", "what do i need", "required materials"))
+    has_signal = any(signal in text for signal in BOOK_LOOKUP_SIGNALS)
+    has_course_code = re.search(r"\b[A-Z]{2,4}\s*[- ]?\s*\d{3}[A-Z]?\b", message or "") is not None
+    if has_signal:
+        return True
+    if "course material" in text or "course materials" in text:
+        return has_course_code or "materials for" in text or "material for" in text
+    return False
+
+
+def extract_book_lookup_slots(message: str) -> dict:
+    text = message or ""
+    slots: dict[str, Any] = {
+        "intent": "book_lookup",
+        "dept": None,
+        "course_number": None,
+        "section": None,
+        "instructor": None,
+        "term": None,
+        "needs_clarification": False,
+        "question": None,
+    }
+
+    course_match = re.search(
+        r"\b(?P<dept>[A-Z]{2,4})\s*[- ]?\s*(?P<num>\d{3}[A-Z]?)(?:\s*[- ]?\s*(?:section|sec\.?)?\s*(?P<section>[A-Z]{1,3}))?\b",
+        text,
+    )
+    if course_match:
+        slots["dept"] = course_match.group("dept").upper()
+        slots["course_number"] = course_match.group("num").upper()
+        section = course_match.group("section")
+        if section and section.upper() not in {"FOR", "AND", "THE"}:
+            slots["section"] = section.upper()
+    else:
+        for name, code in DEPARTMENT_NAME_TO_CODE.items():
+            if name in text.lower():
+                slots["dept"] = code
+                break
+        number_match = re.search(r"\b(\d{3}[A-Z]?)\b", text)
+        if number_match:
+            slots["course_number"] = number_match.group(1).upper()
+
+    section_match = re.search(r"\b(?:section|sec\.?)\s*([A-Z]{1,3})\b", text, re.IGNORECASE)
+    if section_match:
+        slots["section"] = section_match.group(1).upper()
+
+    instructor_patterns = (
+        r"\b(?:professor|prof\.?|dr\.?|instructor)\s+([A-Z][A-Za-z'’-]+)",
+        r"\bwith\s+([A-Z][A-Za-z'’-]+)\b",
+        r"\bfor\s+([A-Z][A-Za-z'’-]+)'s\s+class\b",
+    )
+    for pattern in instructor_patterns:
+        match = re.search(pattern, text)
+        if match:
+            slots["instructor"] = match.group(1).strip()
+            break
+
+    term_match = re.search(
+        r"\b((?:summer|fall|spring|winter)(?:\s+(?:full\s+term|session\s+\d))?\s+\d{2,4})\b",
+        text,
+        re.IGNORECASE,
+    )
+    if term_match:
+        slots["term"] = term_match.group(1).strip().upper()
+
+    missing = []
+    if not slots["dept"]:
+        missing.append("department code")
+    if not slots["course_number"]:
+        missing.append("course number")
+    if missing:
+        slots["needs_clarification"] = True
+        slots["question"] = (
+            "Which course should I look up? Please send the department code and course number, "
+            "for example: ATR 511."
+        )
+    return slots
+
+
+def lookup_textbook_tool(dept, course_number, section=None, instructor=None, term=None) -> dict:
+    if cache_lookup_course is None or cache_lookup_by_instructor is None:
+        return {"found": False, "reason": "not_in_cache"}
+
+    result = None
+    if dept and course_number:
+        result = cache_lookup_course(dept, course_number, section, term)
+    if result is None and instructor:
+        matches = cache_lookup_by_instructor(instructor, term) or []
+        for course in matches:
+            if (
+                (course.get("department") or "").strip().lower() == (dept or "").strip().lower()
+                and (course.get("course_number") or "").strip().lower() == (course_number or "").strip().lower()
+            ):
+                result = course
+                break
+    if result is None:
+        return {"found": False, "reason": "not_in_cache"}
+    return {
+        "found": True,
+        "course": result,
+        "books": result.get("books", []),
+        "store_url": "https://bookstore.calbaptist.edu/CourseMaterials",
+    }
+
+
+def build_book_lookup_prompt(result: dict, user_query: str) -> str:
+    last_updated = (result.get("course") or {}).get("last_refreshed") or "not available"
+    payload = json.dumps(result, ensure_ascii=False, indent=2)
+    return (
+        "You are Lance, the CBU Campus Store assistant. Answer the student's bookstore "
+        "textbook lookup question using only the JSON lookup result below.\n\n"
+        f"Student message: {user_query}\n\n"
+        f"Lookup result JSON:\n{payload}\n\n"
+        "Rules:\n"
+        "- If found=false: tell the student the bookstore data may not be loaded yet for that course, "
+        "direct them to https://bookstore.calbaptist.edu/textbooks, and offer ImmediateAccess@calbaptist.edu as a fallback.\n"
+        "- If found=true with no books: tell the student no materials have been listed yet for that course and direct them to the store_url.\n"
+        "- If found=true with books: list each book with title, author, edition, requirement, format, and price. "
+        "If immediate_access=true, note it is an Immediate Access title covered by their student account. "
+        "If publisher_direct_link is set, include it. End with the store_url for confirmation.\n"
+        f"- Always end with exactly: Last updated: {last_updated}"
+    )
 
 
 def enhance_query_with_conversation_context(message: str, history: list) -> str:
@@ -1957,11 +2144,10 @@ def is_confirmed_materials_issue(message: str) -> bool:
 def ia_enrollment_reply() -> str:
     return (
         "Whether a specific textbook is included in Immediate Access depends on your course enrollment. "
-        "If your book is not appearing in your Immediate Access tab in Blackboard, it may not be part of the "
+        "If your book is not appearing in your Immediate Access tab in Canvas, it may not be part of the "
         "program for that course section.\n\n"
-        "For confirmation, please contact us directly at ImmediateAccess@calbaptist.edu. Include your name, "
-        "student ID number, and course information (course code, section, and instructor name) and we will "
-        "check your enrollment."
+        "For confirmation, please contact ImmediateAccess@calbaptist.edu for assistance. "
+        "If possible, include a screenshot of what you are seeing."
     )
 
 
@@ -2451,6 +2637,21 @@ def _is_low_risk_clarification_reply(message: str) -> bool:
     return bool(_LOW_RISK_CLARIFICATION_RE.fullmatch(msg)) or bool(_DONT_KNOW_SAFE_RE.fullmatch(msg))
 
 
+# Access-intent verbs used to resolve issue_type='access' when a platform is
+# already named but no explicit access keyword was extracted, e.g.
+# "Where do I find McGraw Hill Connect?" or "How do I use Cengage?".
+_ACCESS_INTENT_VERBS = (
+    "access", "open", "find", "locate", "view", "where", "get to", "get into",
+    "log in", "login", "use my", "use the", "how do i use", "how to use",
+)
+
+
+def _message_has_access_intent(message: str) -> bool:
+    """True when the message expresses intent to reach/open course materials."""
+    m = (message or "").lower()
+    return any(verb in m for verb in _ACCESS_INTENT_VERBS)
+
+
 async def process_chat_request(payload: ChatRequest) -> ChatResponse:
     """
     Main chat endpoint with session management and performance tracking.
@@ -2512,6 +2713,65 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 image_context = {}
 
         is_cache_issue = is_browser_cache_issue(message) or is_browser_cache_issue(retrieval_query)
+
+        # Bookstore textbook lookup is a Campus Store request, but the safety
+        # classifier may ask a generic textbook clarification before the cached
+        # lookup tool can run. Route clear bookstore lookup requests here while
+        # still letting student ID/email messages fall through to the existing
+        # personal-info guard below.
+        book_lookup_slots = extract_book_lookup_slots(message) if detect_book_lookup_intent(message) else None
+        if book_lookup_slots and not is_personal_info_reply(message, active_intake=False):
+            if book_lookup_slots.get("needs_clarification"):
+                question = book_lookup_slots["question"]
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": question})
+                session["last_activity"] = datetime.now()
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=question,
+                    source="BOOK_LOOKUP:CLARIFICATION",
+                    article_link=None,
+                    confidence=1.0,
+                    retrieval_time_ms=0,
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[],
+                    debug_mode=debug_mode,
+                )
+
+            lookup_result = lookup_textbook_tool(
+                book_lookup_slots["dept"],
+                book_lookup_slots["course_number"],
+                section=book_lookup_slots.get("section"),
+                instructor=book_lookup_slots.get("instructor"),
+                term=book_lookup_slots.get("term"),
+            )
+            system_prompt = build_book_lookup_prompt(lookup_result, message)
+            llm_start = time.time()
+            reply, llm_queue_wait_ms = await call_llm_with_semaphore(
+                message=message,
+                context="",
+                history=session["history"][-MAX_HISTORY_TURNS:],
+                system_hint=system_prompt,
+                image_base64=None,
+            )
+            llm_time_ms = (time.time() - llm_start) * 1000
+            session["history"].append({"role": "user", "content": message})
+            session["history"].append({"role": "assistant", "content": reply})
+            session["last_activity"] = datetime.now()
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=reply,
+                source="BOOK_LOOKUP",
+                article_link=None,
+                confidence=1.0 if lookup_result.get("found") else 0.0,
+                retrieval_time_ms=0,
+                llm_time_ms=round(llm_time_ms, 2),
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[],
+                debug_mode=debug_mode,
+                route_type="BOOK_LOOKUP",
+            )
 
         # -- Safety gate -------------------------------------------------------
         # Runs before Quick Help, retrieval, and LLM generation.
@@ -2595,6 +2855,94 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 debug_mode=debug_mode,
             )
         # ---------------------------------------------------------------------
+
+        # -- Personal-info guard ----------------------------------------------
+        # Runs immediately after hard safety, before slot update, intake
+        # completion, planner, retrieval, and LLM. If the raw message contains a
+        # student ID or email, escalate to ImmediateAccess and stop — no
+        # retrieval, no LLM, no PDF recommendations. Applies to both fresh
+        # messages and active-intake replies.
+        _active_intake_now = (
+            session.get("intake_profile") is not None
+            or session.get("awaiting_platform_type", False)
+            or session.get("awaiting_publisher_list_response", False)
+            or session.get("awaiting_class_access_clarification", False)
+            or session.get("awaiting_vitalsource_screen_confirm", False)
+        )
+        if is_personal_info_reply(message, active_intake=_active_intake_now):
+            print("[INTAKE] Personal info (ID/email) detected -> escalating before routing")
+            session["intake_profile"] = None
+            session["awaiting_platform_type"] = False
+            session["history"].append({"role": "user", "content": message})
+            session["history"].append({"role": "assistant", "content": INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE})
+            session["last_activity"] = datetime.now()
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE,
+                source="INTAKE:ESCALATION",
+                article_link=None,
+                confidence=1.0,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[],
+                debug_mode=debug_mode,
+            )
+        # ---------------------------------------------------------------------
+
+        book_lookup_slots = extract_book_lookup_slots(message) if detect_book_lookup_intent(message) else None
+        if book_lookup_slots:
+            if book_lookup_slots.get("needs_clarification"):
+                question = book_lookup_slots["question"]
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": question})
+                session["last_activity"] = datetime.now()
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=question,
+                    source="BOOK_LOOKUP:CLARIFICATION",
+                    article_link=None,
+                    confidence=1.0,
+                    retrieval_time_ms=0,
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[],
+                    debug_mode=debug_mode,
+                )
+
+            lookup_result = lookup_textbook_tool(
+                book_lookup_slots["dept"],
+                book_lookup_slots["course_number"],
+                section=book_lookup_slots.get("section"),
+                instructor=book_lookup_slots.get("instructor"),
+                term=book_lookup_slots.get("term"),
+            )
+            system_prompt = build_book_lookup_prompt(lookup_result, message)
+            llm_start = time.time()
+            reply, llm_queue_wait_ms = await call_llm_with_semaphore(
+                message=message,
+                context="",
+                history=session["history"][-MAX_HISTORY_TURNS:],
+                system_hint=system_prompt,
+                image_base64=None,
+            )
+            llm_time_ms = (time.time() - llm_start) * 1000
+            reply = strip_article_link_lines(reply)
+            session["history"].append({"role": "user", "content": message})
+            session["history"].append({"role": "assistant", "content": reply})
+            session["last_activity"] = datetime.now()
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=reply,
+                source="BOOK_LOOKUP",
+                article_link=None,
+                confidence=1.0 if lookup_result.get("found") else 0.0,
+                retrieval_time_ms=0,
+                llm_time_ms=round(llm_time_ms, 2),
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[],
+                debug_mode=debug_mode,
+            )
 
         quick_help_match = build_quick_help_match(message)
         if quick_help_match:
@@ -2704,24 +3052,6 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     _completed_intake_platform = profile.platform
                     _completed_intake_issue_type = profile.issue_type
                     _completed_intake_material_type = profile.material_type
-            elif is_personal_info_reply(message):
-                print("[INTAKE] Student provided personal info (ID/email) -> escalating")
-                session["intake_profile"] = None
-                session["history"].append({"role": "user", "content": message})
-                session["history"].append({"role": "assistant", "content": INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE})
-                session["last_activity"] = datetime.now()
-                total_time_ms = (time.time() - request_start) * 1000
-                return ChatResponse(
-                    reply=INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE,
-                    source="INTAKE:ESCALATION",
-                    article_link=None,
-                    confidence=1.0,
-                    retrieval_time_ms=0,
-                    llm_time_ms=0,
-                    total_time_ms=round(total_time_ms, 2),
-                    recommended_pdfs=[],
-                    debug_mode=debug_mode,
-                )
             elif is_unknown_answer(message) and profile.last_requested_slot:
                 print(
                     f"[INTAKE] Unknown answer for slot={profile.last_requested_slot!r} "
@@ -2804,11 +3134,15 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 session["stored_platform"] = new_profile.platform
                 session["stored_intent"] = "IA_ACCESS_ISSUE"
             else:
-                question = intake_next_question(new_profile)
-                if new_profile.platform is None:
-                    new_profile.last_requested_slot = "platform"
-                elif new_profile.issue_type is None:
+                if is_generic_course_material_issue(message):
+                    question = QUESTION_TEMPLATES["ask_course_code"]
                     new_profile.last_requested_slot = "issue_type"
+                else:
+                    question = intake_next_question(new_profile)
+                    if new_profile.platform is None:
+                        new_profile.last_requested_slot = "platform"
+                    elif new_profile.issue_type is None:
+                        new_profile.last_requested_slot = "issue_type"
                 session["intake_profile"] = new_profile.to_dict()
                 session["history"].append({"role": "user", "content": message})
                 session["history"].append({"role": "assistant", "content": question})
@@ -2848,51 +3182,87 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 if not _planner_profile.platform and _session_known_slots.get("platform"):
                     _planner_profile.platform = _session_known_slots["platform"]
                 # Map location/finding planner intent to issue_type='access'.
-                # "book_location" and similar intents mean the student wants to find
-                # or access their material — issue_type is inherently 'access'.
                 _LOCATION_INTENTS = {"book_location", "finding_materials", "where_to_access",
                                      "material_location", "access_material", "book_access"}
-                if _planner_profile.issue_type is None and planner_decision.intent in _LOCATION_INTENTS:
+                if (
+                    _planner_profile.issue_type is None
+                    and planner_decision.intent in _LOCATION_INTENTS
+                    and _message_has_access_intent(message)
+                ):
                     _planner_profile.issue_type = "access"
-                # If the planner asks for a slot already present in the profile
-                # (e.g. material_type was already extracted from the original message),
-                # redirect to the next genuinely missing slot.
-                # ask_course_code is always redirected — Lance must never ask students
+
+                # ask_course_code is always redirected — Lance never asks students
                 # for their course code, section, or enrollment details.
                 _next_key = planner_decision.next_question_key or "ask_platform_for_book_access"
                 if _next_key == "ask_course_code":
                     _next_key = "ask_issue_for_platform" if _planner_profile.platform else "ask_platform_for_book_access"
                     print(f"[PLANNER] ask_course_code suppressed -> {_next_key}")
                 _requested_slot = QUESTION_KEY_TO_SLOT.get(_next_key, "platform")
-                if _requested_slot == "material_type" and _planner_profile.material_type is not None:
-                    if _planner_profile.platform is None:
-                        _next_key = "ask_platform_for_book_access"
-                        _requested_slot = "platform"
-                    elif _planner_profile.issue_type is None:
+                if (
+                    _requested_slot == "issue_type"
+                    and _planner_profile.platform is None
+                    and _message_has_access_intent(message)
+                ):
+                    _next_key, _requested_slot = "ask_platform_for_book_access", "platform"
+
+                # Bug 1: the planner wants to ask for platform, but platform is
+                # already known (from the message or session). Don't re-ask. Resolve
+                # the issue (extracted or a clear access intent) and complete intake;
+                # if the issue is still unknown, ask for the ISSUE instead of platform.
+                _complete_via_planner = False
+                if _requested_slot == "platform" and _planner_profile.platform is not None:
+                    if _planner_profile.issue_type is None and _message_has_access_intent(message):
+                        _planner_profile.issue_type = "access"
+                    if _planner_profile.issue_type is not None:
+                        _complete_via_planner = True
+                    else:
                         _next_key = "ask_issue_for_platform"
                         _requested_slot = "issue_type"
-                elif _requested_slot == "issue_type" and _planner_profile.issue_type is not None:
-                    if _planner_profile.platform is None:
-                        _next_key = "ask_platform_for_book_access"
-                        _requested_slot = "platform"
-                question = QUESTION_TEMPLATES.get(_next_key, FALLBACK_QUESTION)
-                _planner_profile.last_requested_slot = _requested_slot
-                session["intake_profile"] = _planner_profile.to_dict()
-                session["history"].append({"role": "user", "content": message})
-                session["history"].append({"role": "assistant", "content": question})
-                session["last_activity"] = datetime.now()
-                total_time_ms = (time.time() - request_start) * 1000
-                return ChatResponse(
-                    reply=question,
-                    source="INTAKE:LLM_PLANNER",
-                    article_link=None,
-                    confidence=0.0,
-                    retrieval_time_ms=0,
-                    llm_time_ms=0,
-                    total_time_ms=round(total_time_ms, 2),
-                    recommended_pdfs=[],
-                    debug_mode=debug_mode,
-                )
+
+                if _complete_via_planner:
+                    session["intake_profile"] = None
+                    session["stored_platform"] = _planner_profile.platform
+                    session["stored_intent"] = "IA_ACCESS_ISSUE"
+                    _enriched_query = _planner_profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
+                    _intake_completed = True
+                    _completed_intake_platform = _planner_profile.platform
+                    _completed_intake_issue_type = _planner_profile.issue_type
+                    _completed_intake_material_type = _planner_profile.material_type
+                    print(
+                        f"[PLANNER] platform={_planner_profile.platform} present + "
+                        f"issue={_planner_profile.issue_type} -> completing intake, skip ask_platform"
+                    )
+                    # fall through to RAG (do not return)
+                else:
+                    # Redirect away from slots already filled.
+                    if _requested_slot == "error_message" and _planner_profile.platform is None:
+                        _next_key, _requested_slot = "ask_platform_for_book_access", "platform"
+                    if _requested_slot == "material_type" and _planner_profile.material_type is not None:
+                        if _planner_profile.platform is None:
+                            _next_key, _requested_slot = "ask_platform_for_book_access", "platform"
+                        elif _planner_profile.issue_type is None:
+                            _next_key, _requested_slot = "ask_issue_for_platform", "issue_type"
+                    elif _requested_slot == "issue_type" and _planner_profile.issue_type is not None:
+                        if _planner_profile.platform is None:
+                            _next_key, _requested_slot = "ask_platform_for_book_access", "platform"
+                    question = QUESTION_TEMPLATES.get(_next_key, FALLBACK_QUESTION)
+                    _planner_profile.last_requested_slot = _requested_slot
+                    session["intake_profile"] = _planner_profile.to_dict()
+                    session["history"].append({"role": "user", "content": message})
+                    session["history"].append({"role": "assistant", "content": question})
+                    session["last_activity"] = datetime.now()
+                    total_time_ms = (time.time() - request_start) * 1000
+                    return ChatResponse(
+                        reply=question,
+                        source="INTAKE:LLM_PLANNER",
+                        article_link=None,
+                        confidence=0.0,
+                        retrieval_time_ms=0,
+                        llm_time_ms=0,
+                        total_time_ms=round(total_time_ms, 2),
+                        recommended_pdfs=[],
+                        debug_mode=debug_mode,
+                    )
             if planner_decision.enriched_query:
                 retrieval_query = planner_decision.enriched_query
         # ---------------------------------------------------------------------
@@ -2917,6 +3287,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 or _completed_intake_material_type is not None
             ):
                 intent = "IA_ACCESS_ISSUE"
+                skip_platform_ambiguity_clarification = True
             retrieval_query = _enriched_query
             platform = _completed_intake_platform
             session["stored_platform"] = platform
@@ -2924,6 +3295,13 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
         elif forced_retrieval is not None:
             intent = "GENERAL_FAQ"
             platform = None
+
+        if (
+            forced_retrieval is None
+            and platform is not None
+            and _message_has_access_intent(message)
+        ):
+            skip_platform_ambiguity_clarification = True
 
         if forced_retrieval is None and is_ambiguous_refund_policy_query(message):
             clarification = ambiguous_refund_clarification_reply()
@@ -3112,7 +3490,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 "could you let me know which platform or publisher your textbook uses?\n\n"
                 "For example: VitalSource, Cengage MindTap, Pearson MyLab, McGraw Hill Connect, "
                 "Bedford, Sage, WileyPlus, etc.\n\n"
-                "If you're not sure, check the Immediate Access tab in Blackboard -- "
+                "If you're not sure, check the Immediate Access tab in Canvas -- "
                 "it should show the name of the publisher."
             )
             session["history"].append({"role": "user", "content": message})
@@ -3282,7 +3660,7 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 # User confirmed it's about logging in / accessing the class itself
                 access_reply = (
                     "Contact ImmediateAccess@calbaptist.edu for assistance. "
-                    "Please send your email from your LancerMail address and include your name, ID#, and course info."
+                    "If possible, include a screenshot of what you are seeing."
                 )
                 session["history"].append({"role": "user", "content": message})
                 session["history"].append({"role": "assistant", "content": access_reply})
@@ -3615,9 +3993,9 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
             if is_cannot_find_immediate_access:
                 escalate_reply = (
-                    "If you still can't find the Immediate Access tab in Blackboard, please contact "
-                    "ImmediateAccess@calbaptist.edu for assistance. Please send your email from your "
-                    "LancerMail address and include your name, ID#, and course info."
+                    "If you still can't find the Immediate Access tab in Canvas, please contact "
+                    "ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot "
+                    "of what you are seeing."
                 )
                 session["history"].append({
                     "role": "user",
@@ -3943,9 +4321,9 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             and any(t in message.lower() for t in missing_ia_followup_terms)
         ):
             escalate_reply = (
-                "If you still can't find the Immediate Access tab in Blackboard, please contact "
-                "ImmediateAccess@calbaptist.edu for assistance. Please send your email from your "
-                "LancerMail address and include your name, ID#, and course info."
+                "If you still can't find the Immediate Access tab in Canvas, please contact "
+                "ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot "
+                "of what you are seeing."
             )
             session["history"].append({
                 "role": "user",
@@ -4304,6 +4682,8 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
         is_greeting = (
             len(message.split()) <= 3
+            and not _intake_completed
+            and platform is None
             and any(kw in message.lower() for kw in GREETING_KEYWORDS)
         )
         if is_greeting:
@@ -4840,6 +5220,51 @@ async def chat_stream(payload: ChatRequest):
                     print(f"[VISION WARN] pre-safety image analysis failed: {_img_exc}")
                     image_context = {}
 
+            # Bookstore textbook lookup is in Campus Store scope, but the
+            # safety classifier can otherwise turn it into a generic textbook
+            # clarification. Handle clear lookup requests before IA intake/RAG,
+            # while preserving the personal-info escalation path.
+            book_lookup_slots = extract_book_lookup_slots(message) if detect_book_lookup_intent(message) else None
+            if book_lookup_slots and not is_personal_info_reply(message, active_intake=False):
+                if book_lookup_slots.get("needs_clarification"):
+                    question = book_lookup_slots["question"]
+                    session["history"].append({"role": "user", "content": message})
+                    session["history"].append({"role": "assistant", "content": question})
+                    session["last_activity"] = datetime.now()
+                    async for token in _stream_words(question):
+                        yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'BOOK_LOOKUP:CLARIFICATION', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                    return
+
+                lookup_result = lookup_textbook_tool(
+                    book_lookup_slots["dept"],
+                    book_lookup_slots["course_number"],
+                    section=book_lookup_slots.get("section"),
+                    instructor=book_lookup_slots.get("instructor"),
+                    term=book_lookup_slots.get("term"),
+                )
+                system = build_book_lookup_prompt(lookup_result, message)
+                full_response = ""
+                full_thought = ""
+                async with llm_semaphore:
+                    async for chunk in stream_llm_response(message, system):
+                        chunk_type = chunk.get("type", "response")
+                        token = chunk.get("token", "")
+                        if not token:
+                            continue
+                        if chunk_type == "thought":
+                            full_thought += token
+                            yield f"data: {json.dumps({'type': 'thought', 'token': token, 'done': False})}\n\n"
+                        else:
+                            full_response += token
+                            yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
+                full_response = strip_article_link_lines(full_response).strip()
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": full_response})
+                session["last_activity"] = datetime.now()
+                yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'BOOK_LOOKUP', 'confidence': 1.0 if lookup_result.get('found') else 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': full_thought, 'route_type': 'BOOK_LOOKUP', 'selected_source_file': None})}\n\n"
+                return
+
             # -- Safety gate (same order as /chat: runs before everything) --------
             _safety_eval_message = retrieval_query if (image_context and retrieval_query != message) else message
             _active_intake_profile = session.get("intake_profile")
@@ -4905,14 +5330,80 @@ async def chat_stream(payload: ChatRequest):
                 )
                 return
 
+            # -- Personal-info guard (same order as /chat) --------------------
+            # ID/email -> escalate before intake, planner, retrieval, or LLM.
+            _active_intake_now = (
+                session.get("intake_profile") is not None
+                or session.get("awaiting_platform_type", False)
+                or session.get("awaiting_publisher_list_response", False)
+                or session.get("awaiting_class_access_clarification", False)
+                or session.get("awaiting_vitalsource_screen_confirm", False)
+            )
+            if is_personal_info_reply(message, active_intake=_active_intake_now):
+                print("[STREAM INTAKE] Personal info (ID/email) detected -> escalating before routing")
+                session["intake_profile"] = None
+                session["awaiting_platform_type"] = False
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE})
+                session["last_activity"] = datetime.now()
+                async for token in _stream_words(INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE):
+                    yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE:ESCALATION', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                return
+
             platform = detect_platform_from_text(message)
             intent = detect_intent(message)
             stream_forced_retrieval = None
             stream_forced_route_type = None
             stream_forced_selected_source_file = None
 
+            if intent == "book_lookup":
+                book_lookup_slots = extract_book_lookup_slots(message)
+                if book_lookup_slots.get("needs_clarification"):
+                    question = book_lookup_slots["question"]
+                    session["history"].append({"role": "user", "content": message})
+                    session["history"].append({"role": "assistant", "content": question})
+                    session["last_activity"] = datetime.now()
+                    async for token in _stream_words(question):
+                        yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'BOOK_LOOKUP:CLARIFICATION', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                    return
+
+                lookup_result = lookup_textbook_tool(
+                    book_lookup_slots["dept"],
+                    book_lookup_slots["course_number"],
+                    section=book_lookup_slots.get("section"),
+                    instructor=book_lookup_slots.get("instructor"),
+                    term=book_lookup_slots.get("term"),
+                )
+                system = build_book_lookup_prompt(lookup_result, message)
+                full_response = ""
+                full_thought = ""
+                async with llm_semaphore:
+                    async for chunk in stream_llm_response(message, system):
+                        chunk_type = chunk.get("type", "response")
+                        token = chunk.get("token", "")
+                        if not token:
+                            continue
+                        if chunk_type == "thought":
+                            full_thought += token
+                            yield f"data: {json.dumps({'type': 'thought', 'token': token, 'done': False})}\n\n"
+                        else:
+                            full_response += token
+                            yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
+                full_response = strip_article_link_lines(full_response).strip()
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": full_response})
+                session["last_activity"] = datetime.now()
+                yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'BOOK_LOOKUP', 'confidence': 1.0 if lookup_result.get('found') else 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': full_thought, 'route_type': 'BOOK_LOOKUP', 'selected_source_file': None})}\n\n"
+                return
+
             # Deterministic greeting: skip retrieval and LLM entirely.
-            if len(message.split()) <= 3 and any(kw in message.lower() for kw in GREETING_KEYWORDS):
+            if (
+                len(message.split()) <= 3
+                and platform is None
+                and any(kw in message.lower() for kw in GREETING_KEYWORDS)
+            ):
                 session["history"].append({"role": "user", "content": message})
                 session["history"].append({"role": "assistant", "content": GREETING_REPLY})
                 session["last_activity"] = datetime.now()
@@ -5032,16 +5523,6 @@ async def chat_stream(payload: ChatRequest):
                         _stream_completed_issue_type = profile.issue_type
                         _stream_completed_material_type = profile.material_type
                         # fall through to retrieval
-                elif is_personal_info_reply(message):
-                    print("[STREAM INTAKE] Student provided personal info (ID/email) -> escalating")
-                    session["intake_profile"] = None
-                    session["history"].append({"role": "user", "content": message})
-                    session["history"].append({"role": "assistant", "content": INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE})
-                    session["last_activity"] = datetime.now()
-                    async for token in _stream_words(INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE):
-                        yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
-                    yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE:ESCALATION', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
-                    return
                 elif is_unknown_answer(message) and profile.last_requested_slot:
                     print(
                         f"[STREAM INTAKE] Unknown answer for slot={profile.last_requested_slot!r} "
@@ -5094,11 +5575,15 @@ async def chat_stream(payload: ChatRequest):
                     retrieval_query = new_profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
                     # fall through to retrieval
                 else:
-                    question = intake_next_question(new_profile)
-                    if new_profile.platform is None:
-                        new_profile.last_requested_slot = "platform"
-                    elif new_profile.issue_type is None:
+                    if is_generic_course_material_issue(message):
+                        question = QUESTION_TEMPLATES["ask_course_code"]
                         new_profile.last_requested_slot = "issue_type"
+                    else:
+                        question = intake_next_question(new_profile)
+                        if new_profile.platform is None:
+                            new_profile.last_requested_slot = "platform"
+                        elif new_profile.issue_type is None:
+                            new_profile.last_requested_slot = "issue_type"
                     session["intake_profile"] = new_profile.to_dict()
                     session["history"].append({"role": "user", "content": message})
                     session["history"].append({"role": "assistant", "content": question})
@@ -5134,38 +5619,76 @@ async def chat_stream(payload: ChatRequest):
                         # Map location/finding planner intent to issue_type='access'.
                         _LOCATION_INTENTS = {"book_location", "finding_materials", "where_to_access",
                                              "material_location", "access_material", "book_access"}
-                        if _planner_profile.issue_type is None and planner_decision.intent in _LOCATION_INTENTS:
+                        if (
+                            _planner_profile.issue_type is None
+                            and planner_decision.intent in _LOCATION_INTENTS
+                            and _message_has_access_intent(message)
+                        ):
                             _planner_profile.issue_type = "access"
-                        # If the planner asks for a slot already present in the profile,
-                        # redirect to the next genuinely missing slot.
-                        # ask_course_code is always suppressed — Lance never asks students
-                        # for their course code or enrollment details.
+
+                        # ask_course_code is always suppressed.
                         _next_key = planner_decision.next_question_key or "ask_platform_for_book_access"
                         if _next_key == "ask_course_code":
                             _next_key = "ask_issue_for_platform" if _planner_profile.platform else "ask_platform_for_book_access"
                             print(f"[STREAM PLANNER] ask_course_code suppressed -> {_next_key}")
                         _requested_slot = QUESTION_KEY_TO_SLOT.get(_next_key, "platform")
-                        if _requested_slot == "material_type" and _planner_profile.material_type is not None:
-                            if _planner_profile.platform is None:
-                                _next_key = "ask_platform_for_book_access"
-                                _requested_slot = "platform"
-                            elif _planner_profile.issue_type is None:
+                        if (
+                            _requested_slot == "issue_type"
+                            and _planner_profile.platform is None
+                            and _message_has_access_intent(message)
+                        ):
+                            _next_key, _requested_slot = "ask_platform_for_book_access", "platform"
+
+                        # Bug 1: planner wants platform but platform is already known
+                        # -> complete intake (resolve issue) or ask the ISSUE instead.
+                        _complete_via_planner = False
+                        if _requested_slot == "platform" and _planner_profile.platform is not None:
+                            if _planner_profile.issue_type is None and _message_has_access_intent(message):
+                                _planner_profile.issue_type = "access"
+                            if _planner_profile.issue_type is not None:
+                                _complete_via_planner = True
+                            else:
                                 _next_key = "ask_issue_for_platform"
                                 _requested_slot = "issue_type"
-                        elif _requested_slot == "issue_type" and _planner_profile.issue_type is not None:
-                            if _planner_profile.platform is None:
-                                _next_key = "ask_platform_for_book_access"
-                                _requested_slot = "platform"
-                        question = QUESTION_TEMPLATES.get(_next_key, FALLBACK_QUESTION)
-                        _planner_profile.last_requested_slot = _requested_slot
-                        session["intake_profile"] = _planner_profile.to_dict()
-                        session["history"].append({"role": "user", "content": message})
-                        session["history"].append({"role": "assistant", "content": question})
-                        session["last_activity"] = datetime.now()
-                        async for token in _stream_words(question):
-                            yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
-                        yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE:LLM_PLANNER', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
-                        return
+
+                        if _complete_via_planner:
+                            session["intake_profile"] = None
+                            session["stored_platform"] = _planner_profile.platform
+                            session["stored_intent"] = "IA_ACCESS_ISSUE"
+                            platform = _planner_profile.platform
+                            intent = "IA_ACCESS_ISSUE"
+                            retrieval_query = _planner_profile.build_enriched_query(PLATFORM_DISPLAY_NAMES)
+                            _stream_intake_completed = True
+                            _stream_enriched_query = retrieval_query
+                            _stream_completed_platform = _planner_profile.platform
+                            _stream_completed_issue_type = _planner_profile.issue_type
+                            _stream_completed_material_type = _planner_profile.material_type
+                            print(
+                                f"[STREAM PLANNER] platform={_planner_profile.platform} present + "
+                                f"issue={_planner_profile.issue_type} -> completing intake, skip ask_platform"
+                            )
+                            # fall through to retrieval (no return)
+                        else:
+                            if _requested_slot == "error_message" and _planner_profile.platform is None:
+                                _next_key, _requested_slot = "ask_platform_for_book_access", "platform"
+                            if _requested_slot == "material_type" and _planner_profile.material_type is not None:
+                                if _planner_profile.platform is None:
+                                    _next_key, _requested_slot = "ask_platform_for_book_access", "platform"
+                                elif _planner_profile.issue_type is None:
+                                    _next_key, _requested_slot = "ask_issue_for_platform", "issue_type"
+                            elif _requested_slot == "issue_type" and _planner_profile.issue_type is not None:
+                                if _planner_profile.platform is None:
+                                    _next_key, _requested_slot = "ask_platform_for_book_access", "platform"
+                            question = QUESTION_TEMPLATES.get(_next_key, FALLBACK_QUESTION)
+                            _planner_profile.last_requested_slot = _requested_slot
+                            session["intake_profile"] = _planner_profile.to_dict()
+                            session["history"].append({"role": "user", "content": message})
+                            session["history"].append({"role": "assistant", "content": question})
+                            session["last_activity"] = datetime.now()
+                            async for token in _stream_words(question):
+                                yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
+                            yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'INTAKE:LLM_PLANNER', 'confidence': 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                            return
                     if planner_decision.enriched_query:
                         retrieval_query = planner_decision.enriched_query
 

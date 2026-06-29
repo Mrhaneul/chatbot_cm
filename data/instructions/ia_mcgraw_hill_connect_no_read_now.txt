@@ -1,35 +1,33 @@
-PROBLEM:
+﻿PROBLEM:
 Student is opted into Immediate Access but sees a "Launch Courseware" button instead of a "Read Now" button when accessing their McGraw Hill Connect course materials. The student may be expecting a "Read Now" button like VitalSource eTextbooks but McGraw Hill Connect uses a different access flow.
 
 APPLIES TO:
 Courses using McGraw Hill Connect digital content through Immediate Access.
 
-BLACKBOARD LOCATION:
-Learning Activities tab (left side menu) or Immediate Access tab
+CANVAS LOCATION:
+Course Navigation > McGraw Hill
 
 EXPLANATION:
-McGraw Hill Connect does not use a "Read Now" button. Instead, access is provided through a "Launch Courseware" button which takes you directly into the McGraw Hill Connect platform where both the eText and assignments are available.
+McGraw Hill Connect does not use a "Read Now" button. Instead, Canvas paths students through the McGraw Hill course navigation link into the McGraw Hill Connect platform where both the eText and assignments are available.
 
 STEP-BY-STEP RESOLUTION:
 
-1. Log into Canvas.
-2. Open the correct course.
-3. Try the Learning Activities tab first:
-   a. Click "Learning Activities" from the left side menu.
-   b. Open the appropriate week folder (e.g., Week 1).
-   c. Click the McGraw Hill Connect link for the eText or assignment.
-4. Alternatively, try the Immediate Access tab:
-   a. Click "Immediate Access" from the left side menu.
-   b. Click "Immediate Access" again from the center of the page.
-   c. Click the "Launch Courseware" button (this is correct — McGraw Hill does not show "Read Now").
-5. If prompted, log in or create a McGraw Hill account using your CBU email address.
+1. Sign onto Canvas and go to the course using McGraw Hill Connect courseware.
+2. On the left-hand course menu, click → McGraw Hill to be pathed to your McGraw Hill Connect course.
+3. On the right-hand side, you will be pathed to the McGraw Hill site, where you will be prompted to log into a McGraw Hill Connect account.
+   a. If you do not have an existing account, create one with your Name@calbaptist.edu email address. DO NOT USE YOUR ID#@calbaptist.edu EMAIL.
+   b. If you have an existing account, log in with those credentials.
+4. Once logged in, you should be pathed to the McGraw Hill Connect course, where you can access both the eTextbook and the assignments below.
 
 LOGIN REQUIREMENTS:
 - Use your full CBU email address (firstname.lastname@calbaptist.edu).
 - Do NOT use your ID#@calbaptist.edu email.
 
 EXPECTED RESULT:
-After clicking "Launch Courseware" and logging in, you will have access to both the McGraw Hill eText and any assignments for your course. The "Read Now" button is not used for McGraw Hill Connect — "Launch Courseware" is the correct button for this platform.
+After clicking the McGraw Hill course navigation link and logging in, you will have access to both the McGraw Hill eText and any assignments for your course. The "Read Now" button is not used for McGraw Hill Connect.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+
+
+

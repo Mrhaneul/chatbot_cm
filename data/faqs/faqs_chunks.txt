@@ -576,10 +576,10 @@ STEPS TO RESOLVE:
    If you have checked Canvas and confirmed your opt-in status but the textbook is still missing, contact:
    ImmediateAccess@calbaptist.edu
 
-   Include your name, student ID number, course code, section, and instructor name so the team can check your enrollment.
+   If possible, include a screenshot of what you are seeing.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_opt_out_physical_textbooks.txt", "source_id": "ia_opt_out_physical_textbooks", "source_type": "faq", "platform": null, "faq_id": ""}]
 QUESTION:

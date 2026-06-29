@@ -276,6 +276,59 @@
     padding: 18px;
   }
 
+  textarea {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-family: var(--sans);
+    font-size: 14px;
+    color: var(--text);
+    background: var(--surface);
+    transition: border-color 0.15s;
+    outline: none;
+    resize: vertical;
+  }
+
+  textarea:focus {
+    border-color: var(--cbu-blue);
+    box-shadow: 0 0 0 3px rgba(0,37,84,0.08);
+  }
+
+  .instructions-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .instructions-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    background: var(--surface);
+  }
+
+  .instructions-table th,
+  .instructions-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--surface-2);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .instructions-table th {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--cbu-blue);
+    background: var(--surface-2);
+  }
+
+  .instructions-table tr:last-child td { border-bottom: none; }
+  .pdf-linked { color: var(--success); font-weight: 700; }
+  .pdf-unlinked { color: var(--text-muted); }
+
   /* Toggle */
   .optional-toggle {
     display: flex;
@@ -825,6 +878,7 @@
   <div class="tab-nav">
     <button class="tab-btn active" id="tab-add-btn" onclick="switchTab('add')">➕ Add Content</button>
     <button class="tab-btn" id="tab-edit-btn" onclick="switchTab('edit')">Edit Content</button>
+    <button class="tab-btn" id="tab-instructions-btn" onclick="switchTab('instructions')">Instructions</button>
     <button class="tab-btn" id="tab-feedback-btn" onclick="switchTab('feedback')">Feedback</button>
     <button class="tab-btn remove-tab" id="tab-remove-btn" onclick="switchTab('remove')">🗑 Remove Content</button>
   </div>
@@ -1028,6 +1082,75 @@
     </div>
 
   </div><!-- /panel-edit -->
+
+  <!-- INSTRUCTIONS PANEL -->
+  <div id="panel-instructions" style="display:none">
+
+    <h1 class="page-title">Instructions</h1>
+    <p class="page-subtitle">
+      Add a platform instruction without editing files directly. Lance will save the
+      instruction and rebuild the search index in the background.
+    </p>
+
+    <div class="result-banner" id="instructionsResultBanner">
+      <div class="result-icon" id="instructionsResultIcon"></div>
+      <div class="result-body">
+        <div class="result-title" id="instructionsResultTitle"></div>
+        <div class="result-detail" id="instructionsResultDetail"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="step-num">1</span>Existing Instructions</div>
+      <div id="instructionsList" class="instructions-table-wrap">
+        <div class="empty-state">No instructions loaded.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="step-num">2</span>Add New Instruction</div>
+      <div class="field">
+        <label>Platform <span class="required">*</span></label>
+        <input type="text" id="instructionPlatform" placeholder="JONES_BARTLETT">
+      </div>
+      <div class="field">
+        <label>Issue type <span class="required">*</span></label>
+        <input type="text" id="instructionIssueType" value="access">
+      </div>
+      <div class="field">
+        <label>Subtype <span class="required">*</span></label>
+        <input type="text" id="instructionSubtype" value="canvas_access">
+      </div>
+      <div class="field">
+        <label>Canvas location <span class="required">*</span></label>
+        <input type="text" id="instructionCanvasLocation" placeholder="Course Navigation &gt; McGraw Hill">
+      </div>
+      <div class="field">
+        <label>Step-by-step instructions <span class="required">*</span></label>
+        <textarea id="instructionSteps" rows="10" placeholder="1. Log in to Canvas.&#10;2. ..."></textarea>
+      </div>
+      <div class="field">
+        <label>Expected result <span class="required">*</span></label>
+        <input type="text" id="instructionExpectedResult" placeholder="Student successfully accesses the course material.">
+      </div>
+      <div class="field">
+        <label>If issue persists <span class="required">*</span></label>
+        <input type="text" id="instructionIssuePersists" value="Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.">
+      </div>
+      <div class="field">
+        <label>PDF guide (optional) - leave blank if no PDF exists</label>
+        <input type="text" id="instructionPdfDocId" placeholder="e.g. jones_bartlett_access">
+      </div>
+    </div>
+
+    <div class="card" style="padding:20px 28px">
+      <button class="submit-btn" id="saveInstructionBtn" onclick="handleInstructionSubmit()">
+        <span>Save & Rebuild Index</span>
+        <span>â†’</span>
+      </button>
+    </div>
+
+  </div><!-- /panel-instructions -->
 
   <!-- FEEDBACK REVIEW PANEL -->
   <div id="panel-feedback" style="display:none">
@@ -1506,15 +1629,136 @@
   function switchTab(tab) {
     document.getElementById('panel-add').style.display    = tab === 'add'    ? 'block' : 'none';
     document.getElementById('panel-edit').style.display   = tab === 'edit'   ? 'block' : 'none';
+    document.getElementById('panel-instructions').style.display = tab === 'instructions' ? 'block' : 'none';
     document.getElementById('panel-feedback').style.display = tab === 'feedback' ? 'block' : 'none';
     document.getElementById('panel-remove').style.display = tab === 'remove' ? 'block' : 'none';
     document.getElementById('tab-add-btn').classList.toggle('active',    tab === 'add');
     document.getElementById('tab-edit-btn').classList.toggle('active',   tab === 'edit');
+    document.getElementById('tab-instructions-btn').classList.toggle('active', tab === 'instructions');
     document.getElementById('tab-feedback-btn').classList.toggle('active', tab === 'feedback');
     document.getElementById('tab-remove-btn').classList.toggle('active', tab === 'remove');
     if (tab === 'edit') loadContentList().then(populateEditDropdown);
+    if (tab === 'instructions') loadInstructionsList();
     if (tab === 'feedback') loadFeedbackList();
     if (tab === 'remove') loadContentList();
+  }
+
+  let instructionsListLoaded = false;
+
+  function showInstructionsResult(type, title, detail) {
+    const banner = document.getElementById('instructionsResultBanner');
+    banner.className = 'result-banner visible ' + type;
+    const icons = { success: '✓', error: '!', partial: '!' };
+    document.getElementById('instructionsResultIcon').textContent = icons[type] || '!';
+    document.getElementById('instructionsResultTitle').textContent = title;
+    document.getElementById('instructionsResultDetail').textContent = detail;
+    banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  async function loadInstructionsList() {
+    const wrap = document.getElementById('instructionsList');
+    wrap.innerHTML = '<div class="empty-state">Loading instructions...</div>';
+    try {
+      const resp = await fetch('/admin/instructions', { headers: getAdminHeaders() });
+      const result = await readAdminJson(resp);
+      if (!resp.ok || !result.success) {
+        showInstructionsResult('error', 'Could not load instructions', result.message || 'The list could not be loaded.');
+        wrap.innerHTML = '<div class="empty-state">Could not load instructions.</div>';
+        return;
+      }
+      renderInstructionsList(result.instructions || []);
+      instructionsListLoaded = true;
+    } catch (e) {
+      showInstructionsResult('error', 'Request failed', e.message);
+      wrap.innerHTML = '<div class="empty-state">Could not load instructions.</div>';
+    }
+  }
+
+  function renderInstructionsList(items) {
+    const wrap = document.getElementById('instructionsList');
+    if (!items.length) {
+      wrap.innerHTML = '<div class="empty-state">No instructions found.</div>';
+      return;
+    }
+
+    wrap.innerHTML = `
+      <table class="instructions-table">
+        <thead>
+          <tr>
+            <th>Filename</th>
+            <th>Platform</th>
+            <th>Issue type</th>
+            <th>PDF linked</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map(item => `
+            <tr>
+              <td>${escapeHtml(item.filename || '')}</td>
+              <td>${escapeHtml(item.platform || 'GENERAL')}</td>
+              <td>${escapeHtml(item.issue_type || '-')}</td>
+              <td>${item.pdf_linked ? '<span class="pdf-linked">✓</span>' : '<span class="pdf-unlinked">-</span>'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function clearInstructionForm() {
+    document.getElementById('instructionPlatform').value = '';
+    document.getElementById('instructionIssueType').value = 'access';
+    document.getElementById('instructionSubtype').value = 'canvas_access';
+    document.getElementById('instructionCanvasLocation').value = '';
+    document.getElementById('instructionSteps').value = '';
+    document.getElementById('instructionExpectedResult').value = '';
+    document.getElementById('instructionIssuePersists').value = 'Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.';
+    document.getElementById('instructionPdfDocId').value = '';
+  }
+
+  async function handleInstructionSubmit() {
+    const payload = {
+      platform: document.getElementById('instructionPlatform').value.trim(),
+      issue_type: document.getElementById('instructionIssueType').value.trim() || 'access',
+      subtype: document.getElementById('instructionSubtype').value.trim() || 'canvas_access',
+      canvas_location: document.getElementById('instructionCanvasLocation').value.trim(),
+      steps: document.getElementById('instructionSteps').value.trim(),
+      expected_result: document.getElementById('instructionExpectedResult').value.trim(),
+      if_issue_persists: document.getElementById('instructionIssuePersists').value.trim()
+    };
+    const pdfDocId = document.getElementById('instructionPdfDocId').value.trim();
+    if (pdfDocId) payload.pdf_doc_id = pdfDocId;
+
+    if (!payload.platform || !payload.canvas_location || !payload.steps || !payload.expected_result || !payload.if_issue_persists) {
+      showInstructionsResult('error', 'Missing required information', 'Fill in the required fields, then save again.');
+      return;
+    }
+
+    const btn = document.getElementById('saveInstructionBtn');
+    document.getElementById('instructionsResultBanner').className = 'result-banner';
+    btn.disabled = true;
+    btn.innerHTML = '<span>Saving and rebuilding index, please wait...</span>';
+
+    try {
+      const resp = await fetch('/admin/instructions', {
+        method: 'POST',
+        headers: { ...getAdminHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const result = await readAdminJson(resp);
+      if (!resp.ok || !result.success) {
+        showInstructionsResult('error', 'Could not save instruction', result.message || 'The instruction was not saved.');
+        return;
+      }
+      showInstructionsResult('success', 'Instruction saved', 'Index is rebuilding in the background - this takes about 30 seconds.');
+      await loadInstructionsList();
+      clearInstructionForm();
+    } catch (e) {
+      showInstructionsResult('error', 'Request failed', e.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<span>Save & Rebuild Index</span><span>â†’</span>';
+    }
   }
 
   // ── Remove tab: load content list from backend ──────────────────────────────

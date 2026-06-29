@@ -1,36 +1,23 @@
-PROBLEM:
+﻿PROBLEM:
 Student cannot access their Stukent courseware, simulations (Simternship), or assignments in Canvas.
 
 APPLIES TO:
 Courses using Stukent digital courseware and simulations (commonly used in Communication courses such as COM 440 Digital Trends in Communication).
 
-BLACKBOARD LOCATION:
-Tools tab OR Weekly Activities tab (left side pane)
+CANVAS LOCATION:
+Course Navigation > Stukent
 
-METHOD 1 - VIA TOOLS TAB:
-1. Log onto Canvas and go to your course page.
-2. Click "Tools" on the left-hand sidebar.
-3. Find and click the "Stukent" tool in the Tools list.
-4. A new pop-up will appear. Click "Open Stukent."
-5. You will be taken to the Stukent "My Courses" page.
-6. Find your course (it will show "LMS Connected" if properly linked).
-7. Click "Launch Simternship" to access simulations OR click "Launch Courseware" to access course content.
-
-METHOD 2 - VIA WEEKLY ACTIVITIES TAB:
-1. Log onto Canvas and go to your course page.
-2. Click "Weekly Activities" on the left-hand side menu.
-3. Click on the week folder you want to access (e.g., "WEEK 1").
-4. Under each week, you will see Stukent links for specific assignments/quizzes.
-5. Click on the assignment link (e.g., "Chapter 1 Quiz").
-6. A Stukent page will appear. Click "Launch Chapter 1 Quiz" (or the relevant assignment button).
-
-STUKENT CONTENT TYPES:
-- Simternship: Interactive simulations for hands-on practice (e.g., SEO Simternship).
-- Courseware: Course content, readings, and skill-based materials (e.g., SEO: Strategy & Skills).
-- Quizzes: Chapter-based assessments.
+STEP-BY-STEP RESOLUTION:
+1. Sign onto Canvas and go to the course using Stukent.
+2. On the left-hand course menu, click → Stukent to be pathed to your Stukent course materials.
+3. A new pop-up will appear. Click → Open Stukent.
+4. Since this material is provided through Immediate Access, you should be able to launch your Stukent materials by clicking → Launch Simternship/Courseware
 
 EXPECTED RESULT:
 After following these steps, you should have access to your Stukent simulations, courseware, and quizzes. Since this material is provided through Immediate Access, no additional payment or access code should be required.
 
 IF ISSUE PERSISTS:
-Contact the Immediate Access Support Team at ImmediateAccess@calbaptist.edu for assistance.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+
+
+

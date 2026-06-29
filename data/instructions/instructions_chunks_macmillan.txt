@@ -5,19 +5,14 @@ Student is opted into Immediate Access but cannot access their MacMillan Achieve
 APPLIES TO:
 Courses using MacMillan Achieve digital content (commonly used in Chemistry courses such as CHE 115).
 
-BLACKBOARD LOCATION:
-Tools tab (left side pane)
+CANVAS LOCATION:
+Course Navigation > MacMillan Achieve
 
 STEP-BY-STEP RESOLUTION:
-1. Log into Canvas.
-2. Select the course that uses MacMillan Achieve.
-3. Click "Tools" from the left side pane.
-4. Select "MacMillan LTI Advantage Course Tools" from the Tools menu.
-5. Choose your content type:
-   - Click "Achieve" to access the Achieve homepage and work on assignments.
-   - Click "E-book" to access the e-book that accompanies your MacMillan Learning course.
-6. If you have not used MacMillan Achieve before, you will be prompted to create an Achieve account first.
-7. Once logged in, you will see the Course Home with a Week Outline showing your assignments.
+1. Sign onto Canvas and go to the course using IA.
+2. Click the → MacMillan Achieve tool on the left-hand side.
+3. Select either → Achieve when you are ready to work on an assignment OR select → E-book when you want to review a chapter.
+   a. If you have not used MacMillan Achieve before, you’ll be prompted to create an Achieve account first.
 
 SUPPORT TOOLS AVAILABLE:
 - MacMillan Learning Diagnostics: Run diagnostics on your MacMillan Learning connection.
@@ -28,5 +23,5 @@ EXPECTED RESULT:
 After following these steps, you should have full access to your MacMillan Achieve assignments and e-book content organized by week.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>

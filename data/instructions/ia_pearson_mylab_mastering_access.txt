@@ -1,30 +1,23 @@
-PROBLEM:
+﻿PROBLEM:
 Student is opted into Immediate Access but cannot access their Pearson MyLab or Modified Mastering textbook and assignments.
 
 APPLIES TO:
 Courses using Pearson MyLab or Modified Mastering digital content.
 
-BLACKBOARD LOCATION:
-Immediate Access tab (left side pane)
+CANVAS LOCATION:
+Course Navigation > Immediate Access
 
 STEP-BY-STEP RESOLUTION:
-1. Log onto Canvas.
-2. Select the course that uses Pearson MyLab or Mastering.
-3. Click "Immediate Access" from the left side menu.
-4. Click "Immediate Access" again from the center of the page.
-5. Click the "Launch Courseware" button.
-6. Click "Continue" on the Legal Policies page to accept the terms.
-7. Click "Open MyLab & Mastering" to access the Pearson platform.
-8. If you are new to Pearson, click "Create account" to register.
-9. Fill in your account information:
-   - First name and Last name
-   - Email (use your CBU email)
-   - Username
-   - Password
-   - Country
-   - Role (select Student)
-10. Agree to the Terms of Use and Privacy notice.
-11. Click "Create account" to complete registration.
+1. In the Canvas course page using Pearson MyLab – Mastering or Modified Courseware.
+2. Click → Immediate Access, from the left hand-side course menu.
+3. Your Pearson title will appear on the right-hand side of the screen. Click → Launch Courseware and skip to Step 5.
+4. Alternatively, if the Pearson courseware tile has a ‘Reveal Access Code’ option, click → Reveal Access Code
+5. Click → Copy to copy the access code to the clipboard, then navigate to the URL provided under More Info.
+6. From here one of two things will be displayed on your screen.
+   a. If you have not yet created a Pearson MyLab, Mastering or Modified Account, you’ll be prompted to create one.
+   b. Be sure to use your NAME@calbaptist.edu, NOT your StudentID@calbaptist.edu as this will not allow for multi-factor authentication.
+   c. Then you should see “You’re done!”, your professor’s name, and the ‘Go To My Courses’ tile.
+   d. If you have used Pearson MyLab, Modified, or Mastering for another class previously, you already have created an account. The system will recognize your login and path you directly to Open MyLab & Mastering.
 
 LOGIN REQUIREMENTS:
 - Use your official CBU email address: firstname.lastname@calbaptist.edu
@@ -39,4 +32,7 @@ After registration, you will see a confirmation page showing:
 You will also receive a registration confirmation email. Your Pearson account will be linked to your Canvas account for future access.
 
 IF ISSUE PERSISTS:
-Use the "Forgot your Pearson username or password?" link on the login page, or visit the Help & Support section in Pearson. You can also contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Use the "Forgot your Pearson username or password?" link on the login page, or visit the Help & Support section in Pearson. You can also contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+
+
+

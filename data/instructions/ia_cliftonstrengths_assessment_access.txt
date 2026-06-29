@@ -1,10 +1,10 @@
-PROBLEM:
+﻿PROBLEM:
 Student is opted into Immediate Access but cannot access their CliftonStrengths Assessment or needs help redeeming their access code.
 
 APPLIES TO:
 Courses using the CliftonStrengths for Students assessment by Gallup.
 
-BLACKBOARD LOCATION:
+CANVAS LOCATION:
 Immediate Access tab
 
 STEP-BY-STEP RESOLUTION:
@@ -28,4 +28,7 @@ EXPECTED RESULT:
 After redeeming your access code, you will have access to take the CliftonStrengths Assessment and view your results.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+
+
+

@@ -1,3 +1,32 @@
+[META:{"source_file": "ia_clifton_access.txt", "source_id": "ia_clifton_access", "source_type": "instruction", "platform": ["clifton"], "section_title": "FULL_DOCUMENT"}]
+[META:{"source_id":"ia_clifton_access","platform":"CLIFTON","issue_type":"access","subtype":"canvas_access"}]
+
+PROBLEM:
+Student cannot access CliftonStrengths through Canvas Immediate Access.
+
+APPLIES TO:
+Platform: CliftonStrengths
+LMS: Canvas
+
+CANVAS LOCATION:
+Course Navigation > Immediate Access, then use the textbook tile to reveal the access code and open the CliftonStrengths material.
+
+STEP-BY-STEP RESOLUTION:
+1. Log onto Canvas and click into the course using Clifton StrengthsFinder through IA.
+2. On the left-hand side menu, click → Immediate Access
+3. Copy your Clifton StrengthsFinder Access Code by clicking → Reveal Access Code.
+4. Once you’ve copied your unique access code, click → Read Now on the textbook tile.
+5. Click the tab titled IMPORTANT Information About Taking the Clifton StrengthsFinder.
+   a. Locate the appropriate link to input your Access code (i.e. strengths.gallup.com)
+6. Under the For Students option, click → Redeem Code.
+7. Paste your access code into the given field, then click → Continue.
+
+EXPECTED RESULT:
+Student successfully accesses CliftonStrengths content through Canvas.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+<<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "ia_cliftonstrengths_assessment_access.txt", "source_id": "ia_cliftonstrengths_assessment_access", "source_type": "instruction", "platform": ["clifton"], "section_title": "FULL_DOCUMENT"}]
 PROBLEM:
 Student is opted into Immediate Access but cannot access their CliftonStrengths Assessment or needs help redeeming their access code.
@@ -5,7 +34,7 @@ Student is opted into Immediate Access but cannot access their CliftonStrengths 
 APPLIES TO:
 Courses using the CliftonStrengths for Students assessment by Gallup.
 
-BLACKBOARD LOCATION:
+CANVAS LOCATION:
 Immediate Access tab
 
 STEP-BY-STEP RESOLUTION:
@@ -29,5 +58,34 @@ EXPECTED RESULT:
 After redeeming your access code, you will have access to take the CliftonStrengths Assessment and view your results.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+<<<CHUNK_SEPARATOR>>>
+[META:{"source_file": "ia_strengths_leadership_access.txt", "source_id": "ia_strengths_leadership_access", "source_type": "instruction", "platform": ["clifton"], "section_title": "FULL_DOCUMENT"}]
+[META:{"source_id":"ia_strengths_leadership_access","platform":"CLIFTON","issue_type":"access","subtype":"canvas_access"}]
+
+PROBLEM:
+Student cannot access Strengths Based Leadership through Canvas Immediate Access.
+
+APPLIES TO:
+Platform: Strengths Based Leadership
+LMS: Canvas
+
+CANVAS LOCATION:
+Course Navigation > Immediate Access, then use the textbook tile to reveal the access code and open the Strengths Based Leadership material.
+
+STEP-BY-STEP RESOLUTION:
+1. Log onto Canvas and click into the course using Strengths Based Leadership through IA.
+2. On the left-hand side menu, click → Immediate Access
+3. Copy your Strengths Based Leadership access code by clicking → Reveal Access Code.
+4. Once you’ve copied your unique access code, click → Read Now on the textbook tile.
+5. Click the tab titled IMPORTANT Information About Taking the Clifton StrengthsFinder.
+   a. Locate the appropriate link to input your Access code (i.e. strengths.gallup.com)
+6. Under the For Students option, click → Redeem Code.
+7. Paste your access code into the given field, then click → Continue
+
+EXPECTED RESULT:
+Student successfully accesses Strengths Based Leadership content through Canvas.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>

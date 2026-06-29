@@ -1,21 +1,23 @@
-PROBLEM:
+﻿PROBLEM:
 Immediate Access content does not load on iPad due to Safari cookie or pop-up restrictions.
 
 APPLIES TO:
 Students using Safari on iPad.
 
 STEP-BY-STEP RESOLUTION:
-1. Open the Settings app.
-2. Scroll down and tap "Apps".
-3. Select "Safari".
-4. In the General section, toggle Block Pop-ups to OFF.
-5. Scroll to Privacy & Security.
-6. Toggle Prevent Cross-Site Tracking to OFF.
-7. Scroll down and tap "Advanced".
-8. Toggle Block All Cookies to OFF.
+1. Open → Settings app.
+2. Scroll down to the bottom. Click → Apps tab.
+3. On the right-hand side, find and select → Safari app.
+4. Scroll to the General section and toggle Block Pop-ups to OFF.
+5. Scroll to the Privacy & Security section and toggle Prevent Cross-Site Tracking to OFF.
+6. Scroll down and click into the Advanced section.
+7. In the Privacy section, toggle Block All Cookies to OFF.
 
 EXPECTED RESULT:
 Immediate Access content should load properly on iPad.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+
+
+

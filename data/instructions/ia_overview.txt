@@ -1,0 +1,25 @@
+﻿[META:{"source_id":"ia_overview","platform":"GENERAL","issue_type":"access","subtype":"canvas_access"}]
+
+PROBLEM:
+Student cannot access Immediate Access eTextbooks through Canvas Immediate Access.
+
+APPLIES TO:
+Platform: Immediate Access eTextbooks
+LMS: Canvas
+
+CANVAS LOCATION:
+Course Navigation > Immediate Access.
+
+STEP-BY-STEP RESOLUTION:
+1. Sign onto Canvas and go to the course using IA.
+2. Click the → Immediate Access link
+3. Your IA materials should appear on the same page. Click → Read Now.
+
+EXPECTED RESULT:
+Student successfully accesses Immediate Access eTextbooks content through Canvas.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+
+
+

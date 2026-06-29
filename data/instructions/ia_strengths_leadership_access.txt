@@ -1,0 +1,30 @@
+﻿[META:{"source_id":"ia_strengths_leadership_access","platform":"CLIFTON","issue_type":"access","subtype":"canvas_access"}]
+
+PROBLEM:
+Student cannot access Strengths Based Leadership through Canvas Immediate Access.
+
+APPLIES TO:
+Platform: Strengths Based Leadership
+LMS: Canvas
+
+CANVAS LOCATION:
+Course Navigation > Immediate Access, then use the textbook tile to reveal the access code and open the Strengths Based Leadership material.
+
+STEP-BY-STEP RESOLUTION:
+1. Log onto Canvas and click into the course using Strengths Based Leadership through IA.
+2. On the left-hand side menu, click → Immediate Access
+3. Copy your Strengths Based Leadership access code by clicking → Reveal Access Code.
+4. Once you’ve copied your unique access code, click → Read Now on the textbook tile.
+5. Click the tab titled IMPORTANT Information About Taking the Clifton StrengthsFinder.
+   a. Locate the appropriate link to input your Access code (i.e. strengths.gallup.com)
+6. Under the For Students option, click → Redeem Code.
+7. Paste your access code into the given field, then click → Continue
+
+EXPECTED RESULT:
+Student successfully accesses Strengths Based Leadership content through Canvas.
+
+IF ISSUE PERSISTS:
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+
+
+

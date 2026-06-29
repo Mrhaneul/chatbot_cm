@@ -1,10 +1,10 @@
-PROBLEM:
+﻿PROBLEM:
 Student is opted into Immediate Access but cannot access their eTextbook through the Immediate Access tab in Canvas.
 
 APPLIES TO:
 General Immediate Access eTextbooks delivered through VitalSource or similar platforms (commonly used in English courses such as ENG 113 Composition with Bedford Bookshelf).
 
-BLACKBOARD LOCATION:
+CANVAS LOCATION:
 Immediate Access tab (left side pane)
 
 STEP-BY-STEP RESOLUTION:
@@ -19,4 +19,7 @@ EXPECTED RESULT:
 After clicking "Read Now," you should be taken directly to your eTextbook content in VitalSource Bookshelf or the publisher's reading platform.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+
+
+

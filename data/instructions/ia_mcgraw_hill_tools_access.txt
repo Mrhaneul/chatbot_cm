@@ -1,4 +1,4 @@
----
+﻿---
 source_id: ia_mcgraw_hill_tools_access
 source_type: instruction
 category: platform_access
@@ -13,25 +13,22 @@ Student is opted into Immediate Access but cannot access their McGraw Hill textb
 APPLIES TO:
 Courses using McGraw Hill Connect digital content (commonly used in Business courses such as BUS 212).
 
-BLACKBOARD LOCATION:
-Tools tab (left side pane)
+CANVAS LOCATION:
+Course Navigation > McGraw Hill
 
 STEP-BY-STEP RESOLUTION:
-1. Log onto Canvas.
-2. Select your course that uses McGraw Hill from your list of courses.
-3. Click "Tools" from the left-hand side menu.
-4. Select "McGraw Hill Connect LTIA Basic Link" from the Tools menu.
-5. Once in McGraw Hill Connect, click the image of the book under "Course materials" in the Read section.
-6. The e-book should deploy in the center of the page.
-
-NAVIGATION INSIDE MCGRAW HILL:
-- Course materials section: Access loose leaf options and your course text.
-- Read section: Click on your textbook to open it.
-- Assignments section: View weekly assignments organized by Week folders (Week 1, Week 2, etc.).
-- You can also download the mobile app to read offline.
+1. Sign onto Canvas and go to the course using McGraw Hill Connect courseware.
+2. On the left-hand course menu, click → McGraw Hill to be pathed to your McGraw Hill Connect course.
+3. On the right-hand side, you will be pathed to the McGraw Hill site, where you will be prompted to log into a McGraw Hill Connect account.
+   a. If you do not have an existing account, create one with your Name@calbaptist.edu email address. DO NOT USE YOUR ID#@calbaptist.edu EMAIL.
+   b. If you have an existing account, log in with those credentials.
+4. Once logged in, you should be pathed to the McGraw Hill Connect course, where you can access both the eTextbook and the assignments below.
 
 EXPECTED RESULT:
-After following these steps, you should have access to your McGraw Hill e-book and can view your weekly assignments.
+After following these steps, you should have access to your McGraw Hill e-book and can view your assignments.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+
+
+

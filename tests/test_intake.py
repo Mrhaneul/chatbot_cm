@@ -29,6 +29,7 @@ from app.intake.flow import (
     intake_fallback_message,
     is_unknown_answer,
     is_personal_info_reply,
+    is_generic_course_material_issue,
     INTAKE_ESCALATION_MESSAGE,
     INTAKE_PERSONAL_INFO_ESCALATION_MESSAGE,
     MAX_UNKNOWN_ATTEMPTS,
@@ -232,6 +233,19 @@ class TestExtractIssueType:
     def test_no_signal_returns_none(self):
         assert extract_issue_type("general question") is None
 
+    def test_material_type_answer_is_not_issue_type(self):
+        assert extract_issue_type("Digital textbook") is None
+
+    # Bug 1: "how do I access/open/get into <platform>" must resolve to access.
+    @pytest.mark.parametrize("message", [
+        "How do I access to Cengage?",
+        "How do I access Cengage MindTap?",
+        "How can I open Pearson MyLab?",
+        "How do I get into my McGraw Hill Connect course?",
+    ])
+    def test_how_do_i_access_is_access(self, message):
+        assert extract_issue_type(message) == "access"
+
     def test_account_priority_over_access(self):
         assert extract_issue_type("I can't login to my account") == "account"
 
@@ -256,6 +270,18 @@ class TestExtractIssueType:
 
     def test_no_courses_is_missing(self):
         assert extract_issue_type("no courses, no materials on VitalSource") == "missing"
+
+    @pytest.mark.parametrize("message", [
+        "I don't know where to find it",
+        "I can't find it",
+        "don't know where it is",
+        "don't know where to look",
+        "where do I find it",
+        "I don't know where to access it",
+        "not sure where to find it",
+    ])
+    def test_navigation_location_replies_are_access(self, message):
+        assert extract_issue_type(message) == "access"
 
 
 class TestExtractCourseCode:
@@ -284,6 +310,9 @@ class TestExtractMaterialType:
 
     def test_ebook(self):
         assert extract_material_type("the ebook won't open") == "textbook"
+
+    def test_digital_textbook(self):
+        assert extract_material_type("Digital textbook") == "textbook"
 
     def test_workbook(self):
         assert extract_material_type("the workbook is not there") == "workbook"
@@ -745,43 +774,105 @@ class TestIsUnknownAnswer:
     def test_idk_with_punctuation_is_unknown(self):
         assert is_unknown_answer("idk.")
 
+    @pytest.mark.parametrize("message", [
+        "I don't know where to find it",
+        "I can't find it",
+        "don't know where it is",
+        "don't know where to look",
+        "where do I find it",
+        "I don't know where to access it",
+        "not sure where to find it",
+    ])
+    def test_navigation_location_replies_are_not_unknown(self, message):
+        assert not is_unknown_answer(message)
+
 
 # ── is_personal_info_reply ────────────────────────────────────────────────────
 
 class TestIsPersonalInfoReply:
     """Student ID numbers and email addresses must be detected for escalation."""
 
-    def test_seven_digit_id(self):
-        assert is_personal_info_reply("1234567")
+    # -- Labeled student IDs (always detected, any mode) --
+    def test_labeled_id_colon(self):
+        assert is_personal_info_reply("Cengage, here's my ID: 774117")
 
-    def test_id_in_sentence(self):
+    def test_labeled_id_is(self):
         assert is_personal_info_reply("My ID is 8123456")
 
+    def test_labeled_id_hash(self):
+        assert is_personal_info_reply("ID# 774117")
+
+    def test_labeled_student_id(self):
+        assert is_personal_info_reply("student ID 774117")
+
+    def test_six_digit_labeled_id_detected(self):
+        # The failing manual case: a 6-digit labeled ID must escalate.
+        assert is_personal_info_reply("here's my ID: 774117")
+
+    # -- Emails (always detected) --
     def test_email_address(self):
         assert is_personal_info_reply("student@calbaptist.edu")
 
     def test_email_in_sentence(self):
-        assert is_personal_info_reply("you can reach me at jane.doe@students.calbaptist.edu")
+        assert is_personal_info_reply("Cengage, here's my email: haneul.kim@calbaptist.edu")
 
     def test_generic_email(self):
         assert is_personal_info_reply("john@gmail.com")
 
+    def test_official_support_email_not_flagged(self):
+        # Referencing the official support address must NOT escalate.
+        assert not is_personal_info_reply("I already emailed ImmediateAccess@calbaptist.edu")
+        assert not is_personal_info_reply("should I use optout@calbaptist.edu?")
+
+    # -- Bare numbers: only during active intake --
+    def test_bare_six_digit_during_intake(self):
+        assert is_personal_info_reply("774117", active_intake=True)
+
+    def test_bare_seven_digit_during_intake(self):
+        assert is_personal_info_reply("1234567", active_intake=True)
+
+    def test_bare_number_not_flagged_outside_intake(self):
+        # Outside active intake, a bare number is not treated as an ID.
+        assert not is_personal_info_reply("774117", active_intake=False)
+        assert not is_personal_info_reply("1234567")  # default active_intake=False
+
+    # -- Negatives --
     def test_platform_name_is_not_personal_info(self):
-        assert not is_personal_info_reply("Cengage MindTap")
+        assert not is_personal_info_reply("Cengage MindTap", active_intake=True)
 
     def test_issue_description_is_not_personal_info(self):
-        assert not is_personal_info_reply("I can't access my textbook")
+        assert not is_personal_info_reply("I can't access my textbook", active_intake=True)
 
     def test_course_code_is_not_personal_info(self):
-        # Course codes (CS101) are not 7-digit IDs and have no email
-        assert not is_personal_info_reply("CS101")
+        assert not is_personal_info_reply("CS101", active_intake=True)
+
+    def test_course_code_engl_not_personal_info(self):
+        assert not is_personal_info_reply("ENGL1301", active_intake=True)
+
+    def test_course_code_biol_not_personal_info(self):
+        assert not is_personal_info_reply("BIOL2401", active_intake=True)
+
+    def test_course_code_psy_not_personal_info(self):
+        assert not is_personal_info_reply("PSY540", active_intake=True)
+
+    def test_professor_name_not_personal_info(self):
+        assert not is_personal_info_reply(
+            "This is for Dr. Narviar Barker Browne's class.",
+            active_intake=True,
+        )
+
+    def test_course_and_professor_context_not_personal_info(self):
+        assert not is_personal_info_reply(
+            "I'm trying to access my Immediate Access books for PSY540 for Dr. Narviar Barker Browne's class.",
+            active_intake=True,
+        )
 
     def test_short_number_is_not_personal_info(self):
-        # A 4-digit number is not a 7-digit student ID
-        assert not is_personal_info_reply("week 5 has 1200 pages")
+        # A 4-digit number is not a 6-8 digit student ID
+        assert not is_personal_info_reply("week 5 has 1200 pages", active_intake=True)
 
     def test_dont_know_is_not_personal_info(self):
-        assert not is_personal_info_reply("I don't know")
+        assert not is_personal_info_reply("I don't know", active_intake=True)
 
 
 # ── IntakeProfile new fields ──────────────────────────────────────────────────
@@ -1144,6 +1235,10 @@ class TestNoCourseCodeCollection:
             f"Expected {message!r} to match VAGUE_PATTERN_RE so deterministic "
             "intake runs (platform -> issue) instead of the planner."
         )
+
+    def test_generic_course_material_issue_asks_issue_type_first(self) -> None:
+        assert is_generic_course_material_issue("I have a course material issue")
+        assert not is_generic_course_material_issue("I can't access Cengage")
 
     # ---- question_templates.py escalation test (imported from test_chat_lifecycle) ----
 

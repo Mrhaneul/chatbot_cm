@@ -1,20 +1,35 @@
-PROBLEM:
-Immediate Access content does not load due to blocked pop-ups in Safari on macOS.
+﻿PROBLEM:
+Immediate Access content does not load correctly due to stale browser cookies, cache, or history in Safari on macOS.
 
 APPLIES TO:
 Students using Safari on macOS.
 
 STEP-BY-STEP RESOLUTION:
-1. Open Safari.
-2. Click "Safari" in the top-left menu.
-3. Click "Settings".
-4. Click "Websites".
-5. Select "Pop-Up Windows" from the left panel.
-6. Set all listed websites to Allow.
-7. At the bottom, set "When visiting other websites" to Allow.
+Clearing Cookies
+1. In the Safari app, click → Safari on the top left-hand corner.
+2. Then click → Settings from the menu.
+3. Click → Privacy from the menu bar.
+4. Click → Manage Website Data.
+5. Click → Remove All from the bottom left-hand corner.
+
+Clearing Cache
+1. In the Safari app, click → Safari on the top left-hand corner.
+2. Click → Settings from the menu.
+3. Click → Advanced from the menu bar.
+4. At the bottom of the page, click → Show Features for Web Developers.
+5. At the top of the screen, click → Develop, followed by → Empty Caches from the menu.
+
+Clearing History
+1. In the Safari app, click → Safari on the top left-hand corner.
+2. Click → Clear History from the menu.
+3. Select → All History from the dropdown menu.
+4. At the bottom right-hand corner, click → Clear History.
 
 EXPECTED RESULT:
-Pop-ups required for Immediate Access platforms will function correctly.
+Immediate Access content should reload with cleared Safari cookies, cache, and history.
 
 IF ISSUE PERSISTS:
-Contact ImmediateAccess@calbaptist.edu for assistance. Please send your email from your LancerMail address and include your name, ID#, and course info.
+Contact ImmediateAccess@calbaptist.edu for assistance. If possible, include a screenshot of what you are seeing.
+
+
+
