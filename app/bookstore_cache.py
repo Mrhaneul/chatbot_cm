@@ -175,7 +175,7 @@ def upsert_courses(records: list[dict]) -> None:
                 )
 
 
-def lookup_course(dept, course_number, section, term=None, max_age_hours=24) -> Optional[dict]:
+def lookup_course(dept, course_number, section=None, term=None, max_age_hours=24) -> Optional[dict]:
     dept = _norm(dept)
     course_number = _norm(course_number)
     section = _norm(section)
@@ -186,9 +186,11 @@ def lookup_course(dept, course_number, section, term=None, max_age_hours=24) -> 
         FROM courses
         WHERE lower(trim(department)) = lower(trim(?))
           AND lower(trim(course_number)) = lower(trim(?))
-          AND lower(trim(section)) = lower(trim(?))
     """
-    params: list[str] = [dept, course_number, section]
+    params: list[str] = [dept, course_number]
+    if section:
+        query += " AND lower(trim(section)) = lower(trim(?))"
+        params.append(section)
     if term:
         query += " AND lower(trim(term)) = lower(trim(?))"
         params.append(term)

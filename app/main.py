@@ -751,6 +751,8 @@ BOOK_LOOKUP_SIGNALS = (
     "required book", "required books",
     "what do i need for", "reading for", "book for my class",
     "materials for", "books for", "required materials",
+    "textbook is required", "textbooks are required",
+    "textbook required", "required textbook",
 )
 
 DEPARTMENT_NAME_TO_CODE = {
@@ -866,9 +868,9 @@ def lookup_textbook_tool(dept, course_number, section=None, instructor=None, ter
         return {"found": False, "reason": "not_in_cache"}
 
     result = None
-    if section:
+    if dept and course_number:
         result = cache_lookup_course(dept, course_number, section, term)
-    elif instructor:
+    if result is None and instructor:
         matches = cache_lookup_by_instructor(instructor, term) or []
         for course in matches:
             if (
@@ -2710,6 +2712,63 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 image_context = {}
 
         is_cache_issue = is_browser_cache_issue(message) or is_browser_cache_issue(retrieval_query)
+
+        # Bookstore textbook lookup is a Campus Store request, but the safety
+        # classifier may ask a generic textbook clarification before the cached
+        # lookup tool can run. Route clear bookstore lookup requests here while
+        # still letting student ID/email messages fall through to the existing
+        # personal-info guard below.
+        book_lookup_slots = extract_book_lookup_slots(message) if detect_book_lookup_intent(message) else None
+        if book_lookup_slots and not is_personal_info_reply(message, active_intake=False):
+            if book_lookup_slots.get("needs_clarification"):
+                question = book_lookup_slots["question"]
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": question})
+                session["last_activity"] = datetime.now()
+                total_time_ms = (time.time() - request_start) * 1000
+                return ChatResponse(
+                    reply=question,
+                    source="BOOK_LOOKUP:CLARIFICATION",
+                    article_link=None,
+                    confidence=1.0,
+                    retrieval_time_ms=0,
+                    llm_time_ms=0,
+                    total_time_ms=round(total_time_ms, 2),
+                    recommended_pdfs=[],
+                    debug_mode=debug_mode,
+                )
+
+            lookup_result = lookup_textbook_tool(
+                book_lookup_slots["dept"],
+                book_lookup_slots["course_number"],
+                section=book_lookup_slots.get("section"),
+                instructor=book_lookup_slots.get("instructor"),
+                term=book_lookup_slots.get("term"),
+            )
+            system_prompt = build_book_lookup_prompt(lookup_result, message)
+            llm_start = time.time()
+            reply, llm_queue_wait_ms = await call_llm_with_semaphore(
+                message,
+                system_prompt,
+                timeout=120,
+            )
+            llm_time_ms = (time.time() - llm_start) * 1000
+            session["history"].append({"role": "user", "content": message})
+            session["history"].append({"role": "assistant", "content": reply})
+            session["last_activity"] = datetime.now()
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=reply,
+                source="BOOK_LOOKUP",
+                article_link=None,
+                confidence=1.0 if lookup_result.get("found") else 0.0,
+                retrieval_time_ms=0,
+                llm_time_ms=round(llm_time_ms, 2),
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[],
+                debug_mode=debug_mode,
+                route_type="BOOK_LOOKUP",
+            )
 
         # -- Safety gate -------------------------------------------------------
         # Runs before Quick Help, retrieval, and LLM generation.
@@ -5151,6 +5210,51 @@ async def chat_stream(payload: ChatRequest):
                 except Exception as _img_exc:
                     print(f"[VISION WARN] pre-safety image analysis failed: {_img_exc}")
                     image_context = {}
+
+            # Bookstore textbook lookup is in Campus Store scope, but the
+            # safety classifier can otherwise turn it into a generic textbook
+            # clarification. Handle clear lookup requests before IA intake/RAG,
+            # while preserving the personal-info escalation path.
+            book_lookup_slots = extract_book_lookup_slots(message) if detect_book_lookup_intent(message) else None
+            if book_lookup_slots and not is_personal_info_reply(message, active_intake=False):
+                if book_lookup_slots.get("needs_clarification"):
+                    question = book_lookup_slots["question"]
+                    session["history"].append({"role": "user", "content": message})
+                    session["history"].append({"role": "assistant", "content": question})
+                    session["last_activity"] = datetime.now()
+                    async for token in _stream_words(question):
+                        yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'BOOK_LOOKUP:CLARIFICATION', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
+                    return
+
+                lookup_result = lookup_textbook_tool(
+                    book_lookup_slots["dept"],
+                    book_lookup_slots["course_number"],
+                    section=book_lookup_slots.get("section"),
+                    instructor=book_lookup_slots.get("instructor"),
+                    term=book_lookup_slots.get("term"),
+                )
+                system = build_book_lookup_prompt(lookup_result, message)
+                full_response = ""
+                full_thought = ""
+                async with llm_semaphore:
+                    async for chunk in stream_llm_response(message, system):
+                        chunk_type = chunk.get("type", "response")
+                        token = chunk.get("token", "")
+                        if not token:
+                            continue
+                        if chunk_type == "thought":
+                            full_thought += token
+                            yield f"data: {json.dumps({'type': 'thought', 'token': token, 'done': False})}\n\n"
+                        else:
+                            full_response += token
+                            yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
+                full_response = strip_article_link_lines(full_response).strip()
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": full_response})
+                session["last_activity"] = datetime.now()
+                yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'BOOK_LOOKUP', 'confidence': 1.0 if lookup_result.get('found') else 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': full_thought, 'route_type': 'BOOK_LOOKUP', 'selected_source_file': None})}\n\n"
+                return
 
             # -- Safety gate (same order as /chat: runs before everything) --------
             _safety_eval_message = retrieval_query if (image_context and retrieval_query != message) else message
