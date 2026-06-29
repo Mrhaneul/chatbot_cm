@@ -753,6 +753,7 @@ BOOK_LOOKUP_SIGNALS = (
     "materials for", "books for", "required materials",
     "textbook is required", "textbooks are required",
     "textbook required", "required textbook",
+    "what textbook do i need", "what textbooks do i need",
 )
 
 DEPARTMENT_NAME_TO_CODE = {
@@ -2748,9 +2749,11 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
             system_prompt = build_book_lookup_prompt(lookup_result, message)
             llm_start = time.time()
             reply, llm_queue_wait_ms = await call_llm_with_semaphore(
-                message,
-                system_prompt,
-                timeout=120,
+                message=message,
+                context="",
+                history=session["history"][-MAX_HISTORY_TURNS:],
+                system_hint=system_prompt,
+                image_base64=None,
             )
             llm_time_ms = (time.time() - llm_start) * 1000
             session["history"].append({"role": "user", "content": message})
@@ -3195,6 +3198,12 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                     _next_key = "ask_issue_for_platform" if _planner_profile.platform else "ask_platform_for_book_access"
                     print(f"[PLANNER] ask_course_code suppressed -> {_next_key}")
                 _requested_slot = QUESTION_KEY_TO_SLOT.get(_next_key, "platform")
+                if (
+                    _requested_slot == "issue_type"
+                    and _planner_profile.platform is None
+                    and _message_has_access_intent(message)
+                ):
+                    _next_key, _requested_slot = "ask_platform_for_book_access", "platform"
 
                 # Bug 1: the planner wants to ask for platform, but platform is
                 # already known (from the message or session). Don't re-ask. Resolve
@@ -5623,6 +5632,12 @@ async def chat_stream(payload: ChatRequest):
                             _next_key = "ask_issue_for_platform" if _planner_profile.platform else "ask_platform_for_book_access"
                             print(f"[STREAM PLANNER] ask_course_code suppressed -> {_next_key}")
                         _requested_slot = QUESTION_KEY_TO_SLOT.get(_next_key, "platform")
+                        if (
+                            _requested_slot == "issue_type"
+                            and _planner_profile.platform is None
+                            and _message_has_access_intent(message)
+                        ):
+                            _next_key, _requested_slot = "ask_platform_for_book_access", "platform"
 
                         # Bug 1: planner wants platform but platform is already known
                         # -> complete intake (resolve issue) or ask the ISSUE instead.
