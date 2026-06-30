@@ -911,7 +911,7 @@ def filter_deadline_rows_for_term(rows: list[dict], message: str) -> list[dict]:
         )
         if all(term in haystack for term in filters):
             filtered.append(row)
-    return filtered or rows
+    return filtered
 
 
 def select_relevant_deadline(rows: list[dict], today: date | None = None) -> tuple[dict | None, list[dict], bool]:
@@ -947,6 +947,123 @@ def select_relevant_deadline(rows: list[dict], today: date | None = None) -> tup
     return past[0][1], [], True
 
 
+def _expanded_policy_year(year_value: str | int | None) -> str:
+    year = str(year_value or "").strip()
+    if len(year) == 2 and year.isdigit():
+        return f"20{year}"
+    return year
+
+
+def get_current_semester() -> dict[str, str] | None:
+    path = Path("config") / "bookstore_config.yaml"
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
+    except Exception as exc:
+        print(f"[POLICY] Could not load current semester config: {exc}")
+        return None
+
+    semester = str(config.get("active_semester") or "").strip()
+    year = str(config.get("active_year") or "").strip()
+    if not semester or not year:
+        print("[POLICY] active_semester or active_year missing from bookstore config")
+        return None
+
+    expanded_year = _expanded_policy_year(year)
+    return {
+        "semester": semester.upper(),
+        "semester_title": semester.title(),
+        "year": year,
+        "expanded_year": expanded_year,
+        "label": f"{semester.title()} {expanded_year}".strip(),
+    }
+
+
+def _row_deadline_date(row: dict) -> date | None:
+    try:
+        return datetime.strptime(str(row.get("date_iso") or ""), "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _row_haystack(row: dict) -> str:
+    return " ".join(
+        str(row.get(key) or "").lower()
+        for key in ("term_label", "scope", "term_or_scope")
+    )
+
+
+def _row_matches_current_semester(row: dict, current: dict[str, str], kind: str) -> bool:
+    haystack = _row_haystack(row)
+    semester = current["semester"].lower()
+    year_short = current["year"].lower()
+    year_full = current["expanded_year"].lower()
+
+    if semester in haystack and (year_full in haystack or year_short in haystack):
+        return True
+
+    if kind == "return":
+        has_semester_word = any(term in haystack for term in ("summer", "fall", "spring"))
+        has_year = bool(re.search(r"\b20\d{2}\b|\b\d{2}\b", haystack))
+        return not has_semester_word and not has_year
+
+    return False
+
+
+def _filter_current_semester_deadlines(
+    rows: list[dict],
+    current: dict[str, str] | None,
+    kind: str,
+) -> list[dict]:
+    if not current:
+        return rows
+    return [row for row in rows if _row_matches_current_semester(row, current, kind)]
+
+
+def _sort_deadline_rows(rows: list[dict]) -> list[dict]:
+    subtype_rank = {
+        "rental_return": 0,
+        "no_penalty_until": 1,
+        "restocking_start": 2,
+        "restocking_end": 3,
+        "final_after": 4,
+    }
+    return sorted(
+        rows,
+        key=lambda row: (
+            _row_deadline_date(row) or date.max,
+            subtype_rank.get(str(row.get("subtype") or ""), 99),
+            str(row.get("term_label") or row.get("scope") or ""),
+        ),
+    )
+
+
+def _short_opt_out_label(row: dict, current: dict[str, str] | None) -> str:
+    label = str(row.get("term_label") or "Selected term").strip()
+    if not current:
+        return label
+    prefix = f"{current['semester_title']} {current['expanded_year']}"
+    if label.lower().startswith(prefix.lower()):
+        label = label[len(prefix):].strip(" -:")
+    return label or "Selected term"
+
+
+def _date_passed_marker(row: dict, today: date | None = None) -> str:
+    row_date = _row_deadline_date(row)
+    if row_date and row_date < (today or date.today()):
+        return " (passed)"
+    return ""
+
+
+def _latest_deadline_refresh(rows: list[dict]) -> str:
+    refreshed = [
+        str(row.get("last_refreshed") or "").strip()
+        for row in rows
+        if str(row.get("last_refreshed") or "").strip()
+    ]
+    return max(refreshed) if refreshed else "not available"
+
+
 def _format_policy_date(row: dict) -> str:
     date_text = str(row.get("date_text") or "").strip()
     try:
@@ -978,44 +1095,38 @@ def build_deadline_reply(kind: str, rows: list[dict], user_message: str) -> str:
         if kind == "opt_out"
         else "https://bookstore.calbaptist.edu/customerservice#returns"
     )
-    filtered_rows = filter_deadline_rows_for_term(rows, user_message)
-    chosen, other_future, passed = select_relevant_deadline(filtered_rows)
-    if not chosen:
+    current = get_current_semester()
+    current_rows = _filter_current_semester_deadlines(rows or [], current, kind)
+    filtered_rows = filter_deadline_rows_for_term(current_rows, user_message)
+    sorted_rows = _sort_deadline_rows(filtered_rows)
+    if not sorted_rows:
         return (
             "I don't have current deadline dates loaded yet. Please confirm current dates at "
             f"{live_url}, or email ImmediateAccess@calbaptist.edu for help."
         )
 
-    date_label = _format_policy_date(chosen)
+    semester_label = current["label"] if current else "the current semester"
     if kind == "opt_out":
-        term_label = str(chosen.get("term_label") or "the selected term").strip()
-        first_line = f"The Immediate Access opt-out deadline for {term_label} is {date_label}."
+        lines = [f"Here are the Immediate Access opt-out deadlines for {semester_label}:"]
+        for row in sorted_rows:
+            lines.append(
+                f"- {_short_opt_out_label(row, current)}: "
+                f"{_format_policy_date(row)}{_date_passed_marker(row)}"
+            )
     else:
-        label = _policy_deadline_label(chosen, kind)
-        if chosen.get("subtype") in {"final_after", "restocking_start", "restocking_end"}:
-            first_line = f"{label} {date_label}."
-        else:
-            first_line = f"The {label.lower()} is {date_label}."
-
-    lines = [first_line]
-    if passed:
-        lines.append("That date has passed.")
-    elif other_future:
-        lines.append("")
-        lines.append("Other upcoming deadlines:")
-        for row in other_future[:4]:
-            if kind == "opt_out":
-                label = str(row.get("term_label") or "Other term").strip()
-                lines.append(f"- {label}: {_format_policy_date(row)}")
-            else:
-                lines.append(f"- {_policy_deadline_label(row, kind)}: {_format_policy_date(row)}")
+        lines = [f"Here are the textbook return deadlines for {semester_label}:"]
+        for row in sorted_rows:
+            lines.append(
+                f"- {_policy_deadline_label(row, kind)}: "
+                f"{_format_policy_date(row)}{_date_passed_marker(row)}"
+            )
 
     lines.append("")
     lines.append(
         f"Please confirm current dates at {live_url}, or email "
         "ImmediateAccess@calbaptist.edu for help."
     )
-    lines.append(f"Last updated: {chosen.get('last_refreshed') or 'not available'}")
+    lines.append(f"Last updated: {_latest_deadline_refresh(sorted_rows)}")
     return "\n".join(lines)
 
 
