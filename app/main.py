@@ -22,7 +22,7 @@ import asyncio
 import os
 import re
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Dict, Any, Optional
 import uuid
 import time
@@ -88,6 +88,7 @@ except Exception:
     cache_lookup_course = None
     cache_lookup_course_by_term = None
     cache_lookup_by_instructor = None
+from app.policy_cache import get_opt_out_deadline, get_return_deadline
 
 from app.admin import admin_router
 from app.feedback import feedback_router
@@ -828,6 +829,181 @@ def is_book_lookup_query(message: str) -> bool:
 
 def detect_book_lookup_intent(message: str) -> bool:
     return is_book_lookup_query(message)
+
+
+OPT_OUT_DEADLINE_SIGNALS = (
+    "opt out deadline",
+    "opt-out deadline",
+    "last day to opt out",
+    "when can i opt out",
+    "deadline to opt out",
+    "opt out by",
+    "when do i have to opt out",
+)
+
+RETURN_DEADLINE_SIGNALS = (
+    "return deadline",
+    "last day to return",
+    "when can i return",
+    "deadline to return",
+    "return my book by",
+    "return window",
+    "last day for returns",
+)
+
+
+def is_deadline_query(message: str) -> str | None:
+    text = (message or "").lower()
+    if any(signal in text for signal in OPT_OUT_DEADLINE_SIGNALS):
+        return "opt_out"
+    if any(signal in text for signal in RETURN_DEADLINE_SIGNALS):
+        return "return"
+    return None
+
+
+def filter_deadline_rows_for_term(rows: list[dict], message: str) -> list[dict]:
+    text = (message or "").lower()
+    filters: list[str] = []
+    if "session 2" in text or "second session" in text or "last 8" in text:
+        filters.append("session 2")
+    elif "session 1" in text or "first session" in text or "first 8" in text:
+        filters.append("session 1")
+    if "full term" in text or "full-term" in text:
+        filters.append("full term")
+    for semester in ("fall", "spring", "summer"):
+        if semester in text:
+            filters.append(semester)
+
+    if not filters:
+        return rows
+
+    filtered = []
+    for row in rows:
+        haystack = " ".join(
+            str(row.get(key) or "").lower()
+            for key in ("term_label", "scope", "term_or_scope")
+        )
+        if all(term in haystack for term in filters):
+            filtered.append(row)
+    return filtered or rows
+
+
+def select_relevant_deadline(rows: list[dict], today: date | None = None) -> tuple[dict | None, list[dict], bool]:
+    today = today or date.today()
+    parsed_rows = []
+    for row in rows or []:
+        try:
+            row_date = datetime.strptime(str(row.get("date_iso") or ""), "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        parsed_rows.append((row_date, row))
+
+    if not parsed_rows:
+        return None, [], False
+
+    future = sorted(
+        ((row_date, row) for row_date, row in parsed_rows if row_date >= today),
+        key=lambda item: (item[0], str(item[1].get("term_label") or item[1].get("scope") or "")),
+    )
+    if future:
+        chosen_date, chosen = future[0]
+        others = [row for row_date, row in future[1:]]
+        return chosen, others, False
+
+    past = sorted(
+        parsed_rows,
+        key=lambda item: (
+            item[0],
+            1 if item[1].get("subtype") == "final_after" else 0,
+        ),
+        reverse=True,
+    )
+    return past[0][1], [], True
+
+
+def _format_policy_date(row: dict) -> str:
+    date_text = str(row.get("date_text") or "").strip()
+    try:
+        return datetime.strptime(str(row.get("date_iso") or ""), "%Y-%m-%d").strftime("%B %-d, %Y")
+    except Exception:
+        try:
+            return datetime.strptime(str(row.get("date_iso") or ""), "%Y-%m-%d").strftime("%B %#d, %Y")
+        except Exception:
+            return date_text or str(row.get("date_iso") or "").strip()
+
+
+def _policy_deadline_label(row: dict, kind: str) -> str:
+    if kind == "opt_out":
+        return str(row.get("term_label") or "the selected term").strip()
+    subtype = str(row.get("subtype") or "").strip()
+    labels = {
+        "no_penalty_until": "Textbook returns without penalty",
+        "restocking_start": "The 25% restocking-fee window starts",
+        "restocking_end": "The 25% restocking-fee window ends",
+        "final_after": "All textbook sales are final after",
+        "rental_return": "Rental textbook return deadline",
+    }
+    return labels.get(subtype, str(row.get("scope") or "Campus Store return policy").strip())
+
+
+def build_deadline_reply(kind: str, rows: list[dict], user_message: str) -> str:
+    live_url = (
+        "https://bookstore.calbaptist.edu/ia"
+        if kind == "opt_out"
+        else "https://bookstore.calbaptist.edu/customerservice#returns"
+    )
+    filtered_rows = filter_deadline_rows_for_term(rows, user_message)
+    chosen, other_future, passed = select_relevant_deadline(filtered_rows)
+    if not chosen:
+        return (
+            "I don't have current deadline dates loaded yet. Please confirm current dates at "
+            f"{live_url}, or email ImmediateAccess@calbaptist.edu for help."
+        )
+
+    date_label = _format_policy_date(chosen)
+    if kind == "opt_out":
+        term_label = str(chosen.get("term_label") or "the selected term").strip()
+        first_line = f"The Immediate Access opt-out deadline for {term_label} is {date_label}."
+    else:
+        label = _policy_deadline_label(chosen, kind)
+        if chosen.get("subtype") in {"final_after", "restocking_start", "restocking_end"}:
+            first_line = f"{label} {date_label}."
+        else:
+            first_line = f"The {label.lower()} is {date_label}."
+
+    lines = [first_line]
+    if passed:
+        lines.append("That date has passed.")
+    elif other_future:
+        lines.append("")
+        lines.append("Other upcoming deadlines:")
+        for row in other_future[:4]:
+            if kind == "opt_out":
+                label = str(row.get("term_label") or "Other term").strip()
+                lines.append(f"- {label}: {_format_policy_date(row)}")
+            else:
+                lines.append(f"- {_policy_deadline_label(row, kind)}: {_format_policy_date(row)}")
+
+    lines.append("")
+    lines.append(
+        f"Please confirm current dates at {live_url}, or email "
+        "ImmediateAccess@calbaptist.edu for help."
+    )
+    lines.append(f"Last updated: {chosen.get('last_refreshed') or 'not available'}")
+    return "\n".join(lines)
+
+
+def handle_deadline_query(message: str) -> dict | None:
+    kind = is_deadline_query(message)
+    if not kind:
+        return None
+    rows = get_opt_out_deadline() if kind == "opt_out" else get_return_deadline()
+    reply = build_deadline_reply(kind, rows or [], message)
+    return {
+        "reply": reply,
+        "source": "POLICY:DEADLINE",
+        "kind": kind,
+    }
 
 
 def _bookstore_config() -> dict:
@@ -3003,6 +3179,28 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 image_context = {}
 
         is_cache_issue = is_browser_cache_issue(message) or is_browser_cache_issue(retrieval_query)
+
+        deadline_turn = None
+        if not is_personal_info_reply(message, active_intake=False):
+            deadline_turn = handle_deadline_query(message)
+        if deadline_turn:
+            reply = deadline_turn["reply"]
+            session["history"].append({"role": "user", "content": message})
+            session["history"].append({"role": "assistant", "content": reply})
+            session["last_activity"] = datetime.now()
+            total_time_ms = (time.time() - request_start) * 1000
+            return ChatResponse(
+                reply=reply,
+                source=deadline_turn["source"],
+                article_link=None,
+                confidence=1.0,
+                retrieval_time_ms=0,
+                llm_time_ms=0,
+                total_time_ms=round(total_time_ms, 2),
+                recommended_pdfs=[],
+                debug_mode=debug_mode,
+                route_type="POLICY_DEADLINE",
+            )
 
         book_lookup_turn = None
         if not is_personal_info_reply(message, active_intake=False):
@@ -5419,6 +5617,19 @@ async def chat_stream(payload: ChatRequest):
                 except Exception as _img_exc:
                     print(f"[VISION WARN] pre-safety image analysis failed: {_img_exc}")
                     image_context = {}
+
+            deadline_turn = None
+            if not is_personal_info_reply(message, active_intake=False):
+                deadline_turn = handle_deadline_query(message)
+            if deadline_turn:
+                reply = deadline_turn["reply"]
+                session["history"].append({"role": "user", "content": message})
+                session["history"].append({"role": "assistant", "content": reply})
+                session["last_activity"] = datetime.now()
+                async for token in _stream_words(reply):
+                    yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': deadline_turn['source'], 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': '', 'route_type': 'POLICY_DEADLINE', 'selected_source_file': None})}\n\n"
+                return
 
             book_lookup_turn = None
             if not is_personal_info_reply(message, active_intake=False):
