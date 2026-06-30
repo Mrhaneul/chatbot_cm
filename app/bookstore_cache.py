@@ -50,6 +50,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             requirement TEXT,
             immediate_access INTEGER,
             format TEXT,
+            formats TEXT,
             price TEXT,
             hide_pricing INTEGER,
             publisher_direct_link TEXT,
@@ -66,6 +67,9 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             ON books(course_id);
         """
     )
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(books)").fetchall()}
+    if "formats" not in columns:
+        conn.execute("ALTER TABLE books ADD COLUMN formats TEXT")
 
 
 def _norm(value: Optional[str]) -> str:
@@ -77,7 +81,7 @@ def _row_to_course(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
     books = conn.execute(
         """
         SELECT isbn, title, author, edition, publisher, requirement,
-               immediate_access, format, price, hide_pricing,
+               immediate_access, format, formats, price, hide_pricing,
                publisher_direct_link, notes, image_url
         FROM books
         WHERE course_id = ?
@@ -90,6 +94,10 @@ def _row_to_course(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
         book = dict(book_row)
         book["immediate_access"] = bool(book["immediate_access"])
         book["hide_pricing"] = bool(book["hide_pricing"])
+        try:
+            book["formats"] = json.loads(book["formats"]) if book.get("formats") else []
+        except json.JSONDecodeError:
+            book["formats"] = []
         course["books"].append(book)
     return course
 
@@ -99,6 +107,13 @@ def _book_price(book: dict) -> str:
     if isinstance(prices, list):
         return json.dumps(prices, ensure_ascii=False)
     return _norm(book.get("price"))
+
+
+def _book_formats(book: dict) -> str:
+    formats = book.get("formats")
+    if isinstance(formats, list):
+        return json.dumps(formats, ensure_ascii=False)
+    return ""
 
 
 def _fresh_cutoff(max_age_hours: Optional[float]) -> str:
@@ -151,10 +166,10 @@ def upsert_courses(records: list[dict]) -> None:
                     """
                     INSERT INTO books (
                         course_id, isbn, title, author, edition, publisher,
-                        requirement, immediate_access, format, price,
+                        requirement, immediate_access, format, formats, price,
                         hide_pricing, publisher_direct_link, notes, image_url
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         course_id,
@@ -166,6 +181,7 @@ def upsert_courses(records: list[dict]) -> None:
                         _norm(book.get("requirement")),
                         1 if book.get("immediate_access") else 0,
                         _norm(book.get("format")),
+                        _book_formats(book),
                         _book_price(book),
                         1 if book.get("hide_pricing") else 0,
                         _norm(book.get("publisher_direct_link")),
@@ -194,6 +210,32 @@ def lookup_course(dept, course_number, section=None, term=None, max_age_hours=24
     if term:
         query += " AND lower(trim(term)) = lower(trim(?))"
         params.append(term)
+    cutoff = _fresh_cutoff(max_age_hours)
+    if cutoff:
+        query += " AND last_refreshed >= ?"
+        params.append(cutoff)
+    query += " ORDER BY last_refreshed DESC LIMIT 1"
+
+    with _connect() as conn:
+        row = conn.execute(query, params).fetchone()
+        return _row_to_course(conn, row) if row else None
+
+
+def lookup_course_by_term(dept, course_number, section, term_label, max_age_hours=24) -> Optional[dict]:
+    dept = _norm(dept)
+    course_number = _norm(course_number)
+    section = _norm(section)
+    term_label = _norm(term_label)
+
+    query = """
+        SELECT *
+        FROM courses
+        WHERE lower(trim(department)) = lower(trim(?))
+          AND lower(trim(course_number)) = lower(trim(?))
+          AND lower(trim(section)) = lower(trim(?))
+          AND lower(trim(term)) = lower(trim(?))
+    """
+    params: list[str] = [dept, course_number, section, term_label]
     cutoff = _fresh_cutoff(max_age_hours)
     if cutoff:
         query += " AND last_refreshed >= ?"

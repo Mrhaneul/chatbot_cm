@@ -25,15 +25,19 @@ import argparse
 import re
 import json
 import time
+from pathlib import Path
 from urllib.parse import urlencode
 from bs4 import BeautifulSoup
 from curl_cffi import requests as cffi
 from curl_cffi.requests import exceptions as cffi_exceptions
+import yaml
 
 BASE = "https://bookstore.calbaptist.edu"
 WARMUP_URL = f"{BASE}/textbooks"
 MATERIALS_URL = f"{BASE}/CourseMaterials"
 SELECT_URL = f"{BASE}/SelectTermDept"
+ROOT = Path(__file__).resolve().parent
+BOOKSTORE_CONFIG_PATH = ROOT / "config" / "bookstore_config.yaml"
 
 NAV_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -395,21 +399,27 @@ def enumerate_term(client, token, term_id, *, dry_run=False, on_records=None, ve
     return records
 
 
-def cache_term(term_label, *, dry_run=False):
+def cache_term(term_label, *, dry_run=False, term_id=None):
     from app.bookstore_cache import upsert_courses
 
     client, token = make_session()
     terms = _parse_dropdown_items(get_terms(client, token), "ter")
     selected = None
     wanted = (term_label or "").strip().lower()
-    for term in terms:
-        label = _clean_term_label(term["label"])
-        if label.lower() == wanted or term["label"].strip().lower() == wanted:
-            selected = term
-            break
+    if term_id:
+        for term in terms:
+            if str(term["id"]) == str(term_id):
+                selected = term
+                break
+    else:
+        for term in terms:
+            label = _clean_term_label(term["label"])
+            if label.lower() == wanted or term["label"].strip().lower() == wanted:
+                selected = term
+                break
     if selected is None:
         available = ", ".join(_clean_term_label(term["label"]) for term in terms)
-        raise ValueError(f"Term not found: {term_label}. Available terms: {available}")
+        raise ValueError(f"Term not found: {term_label or term_id}. Available terms: {available}")
 
     flushed_ids = set()
 
@@ -432,12 +442,48 @@ def cache_term(term_label, *, dry_run=False):
         if remaining:
             upsert_courses(remaining)
     book_count = sum(len(record.get("books", [])) for record in records)
-    print(f"Cached {len(records)} courses, {book_count} books for term {_clean_term_label(selected['label'])}")
+    print(f"Cached {_clean_term_label(selected['label'])}: {len(records)} courses, {book_count} materials")
     errors = getattr(enumerate_term, "last_errors", [])
     if errors:
         print("Errors:")
         print(json.dumps(errors, indent=2))
     return records
+
+
+def load_bookstore_config(path=BOOKSTORE_CONFIG_PATH):
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+def cache_configured_terms(*, dry_run=False):
+    config = load_bookstore_config()
+    active_terms = config.get("active_terms") or []
+    if not active_terms:
+        raise ValueError(f"No active_terms configured in {BOOKSTORE_CONFIG_PATH}")
+
+    all_records = []
+    all_errors = []
+    for configured in active_terms:
+        label = configured.get("label", "")
+        term_id = configured.get("term_id")
+        print(f"\n=== Caching configured term: {label} ({term_id}) ===")
+        try:
+            records = cache_term(label, dry_run=dry_run, term_id=term_id)
+        except ValueError as exc:
+            error = {"term": label, "term_id": term_id, "error": str(exc)}
+            all_errors.append(error)
+            print(f"[TERM ERROR] {json.dumps(error)}")
+            continue
+        all_records.extend(records)
+        all_errors.extend(getattr(enumerate_term, "last_errors", []))
+
+    course_count = len(all_records)
+    material_count = sum(len(record.get("books", [])) for record in all_records)
+    print(f"\nCached configured terms total: {course_count} courses, {material_count} materials")
+    if all_errors:
+        print("Combined errors:")
+        print(json.dumps(all_errors, indent=2))
+    return all_records
 
 
 def run_playwright_validation(cs_id="5021563"):
@@ -542,6 +588,29 @@ def parse_materials(html):
                 pub_link = "h" + href[2:] if href.startswith("hhttp") else href  # site's 'hhttps' typo
             req_el = bk.select_one(".Course_With_Material_Required")
             title = bk.select_one(".Book_Title")
+            isbn = _hidden(bk, "ga4-book-isbn") or _label_value(bk, "Book_ISBN")
+            isbn_digits = re.sub(r"\D", "", isbn or "")
+            is_zero_isbn = not isbn_digits or set(isbn_digits) == {"0"}
+            isbn_source = "label"
+            if is_zero_isbn:
+                isbn_source = "unresolved"
+                note_text_for_isbn = notes_raw or ""
+                isbn_match = re.search(r"ISBN[:\s#]*([0-9][0-9\-]{8,16}[0-9])", note_text_for_isbn, re.I)
+                if isbn_match:
+                    candidate = re.sub(r"[\s-]", "", isbn_match.group(1)).upper()
+                    if len(candidate) not in {10, 13} or not candidate[:-1].isdigit() or not re.match(r"^[0-9]{9}[0-9X]$|^[0-9]{13}$", candidate):
+                        candidate = None
+                else:
+                    candidate = None
+                if not candidate:
+                    bare_13 = re.search(r"\b(97[89]\d{10})\b", note_text_for_isbn)
+                    candidate = bare_13.group(1) if bare_13 else None
+                if not candidate:
+                    bare_10 = re.search(r"\b(\d{9}[\dXx])\b", note_text_for_isbn)
+                    candidate = bare_10.group(1).upper() if bare_10 else None
+                if candidate:
+                    isbn = candidate
+                    isbn_source = "note"
 
             prices, fmt, formats = [], None, []
             price_div = bk.select_one(".price-div")
@@ -592,7 +661,8 @@ def parse_materials(html):
                                        "condition": _clean(m.group(2)) if m.group(2) else None})
 
             course["books"].append({
-                "isbn": _hidden(bk, "ga4-book-isbn"),
+                "isbn": isbn,
+                "isbn_source": isbn_source,
                 "title": _clean(title.get_text()) if title else _hidden(bk, "ga4-book-name"),
                 "author": _label_value(bk, "Book_Author") or _hidden(bk, "ga4-book-author"),
                 "edition": _label_value(bk, "Book_Edition"),
@@ -621,6 +691,7 @@ if __name__ == "__main__":
     parser.add_argument("--n-ba", default="false")
     parser.add_argument("--map-dropdowns", action="store_true")
     parser.add_argument("--cache-term")
+    parser.add_argument("--cache-configured", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
         "--playwright",
@@ -631,6 +702,8 @@ if __name__ == "__main__":
 
     if args.map_dropdowns:
         map_dropdown_shapes()
+    elif args.cache_configured:
+        cache_configured_terms(dry_run=args.dry_run)
     elif args.cache_term:
         cache_term(args.cache_term, dry_run=args.dry_run)
     elif args.playwright:

@@ -1,0 +1,12 @@
+active_semester: "SUMMER"
+active_year: "26"
+
+active_terms:
+  - label: "SUMMER FULL TERM 26"
+    term_id: "93740"
+  - label: "SESSION 1 SUMMER 26"
+    term_id: "93741"
+  - label: "SESSION 2 SUMMER 26"
+    term_id: "93742"
+  - label: "FALL FULL TERM 26 (Closed to Orders)"
+    term_id: "94419"

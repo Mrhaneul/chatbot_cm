@@ -597,41 +597,17 @@ QUESTION:
 What is Immediate Access?
 
 ANSWER:
-Immediate Access is California Baptist University's program that provides day-one access to digital course materials through your student account.
+Immediate Access is California Baptist University's program for providing eligible digital course materials through Canvas and billing them through the student account.
 
-**How It Works:**
-- Get instant access to digital textbooks and courseware on the first day of class
-- Materials are automatically available through Canvas
-- Charges are billed directly to your student account
-- You have 14 days to opt out if you prefer to purchase materials separately
+Current program notes from the Campus Store:
+- California Baptist University recognizes the valuable contribution course materials provide in assisting students to reach their educational goals. With this in mind, CBU understands that course materials costs can often be a deterrence to students purchasing the materials that will benefit their academic success. At California Baptist University, we are committed to finding new and innovative ways to provide more affordable options to our students. We are excited to announce the implementation of our newest textbook program, Immediate Access.
+- Immediate Access is a partnership with California Baptist University’s Campus Store and textbook publishers to deliver a new alternative option to the traditional methods to purchase course materials. This program is designed to provide students day-one access to their course materials while lowering the cost to students. We look forward to providing the students of CBU a more convenient and affordable option with both online and offline access.
+- Reduce Cost of Course Materials
+- Provide Immediate Access to Select Course Materials
 
-**Key Benefits:**
-- No waiting for materials to arrive
-- No upfront payment needed
-- Convenient access through Canvas
-- Often more affordable than traditional textbooks
+Opt-out and welcome-email dates are refreshed into the structured policy cache and should be checked there for semester-specific answers.
 
-**Supported Platforms:**
-Immediate Access works with major publishers including:
-- Cengage (MindTap, Cengage Unlimited)
-- McGraw Hill (Connect, ALEKS)
-- Pearson (MyLab, Mastering)
-- Bedford, Sage, VitalSource, and more
-
-**Billing & Payment:**
-- Charges appear on your student account statement
-- Can be paid alongside tuition and fees
-- Payment plans available through student accounts
-
-**Opting Out:**
-- 14-day opt-out period from the start of the semester
-- Opt out through the Immediate Access page in Canvas
-- After opting out, you must purchase materials separately
-
-**Getting Help:**
-If you're having trouble accessing your materials, please specify which platform you need help with (e.g., "I can't access Cengage MindTap" or "Help with McGraw Hill Connect").
-
-Article link: "https://bookstore.calbaptist.edu/immediate-access"
+Article link: "https://bookstore.calbaptist.edu/ia"
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "immediate_access/ia_opt_out_canvas.txt", "source_id": "ia_opt_out_canvas", "source_type": "faq", "category": "immediate_access", "platform": "canvas", "issue_type": "opt_out", "priority": "canonical", "faq_id": ""}]
 QUESTION:
@@ -723,70 +699,34 @@ After clearing cache and cookies for your browser, close and reopen your browser
 If the issue continues, contact Immediate Access support at ImmediateAccess@calbaptist.edu. Include a screenshot of what you are seeing.
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "textbook_refund_policy.txt", "source_id": "textbook_refund_policy", "source_type": "faq", "category": "textbook_return", "platform": null, "issue_type": "return_refund", "priority": "canonical", "faq_id": "FAQ_1"}]
-1. Can I return my textbooks by shipping them back?
-Yes. You may return textbook purchases using a shipping method of your choice at your own expense. It is strongly recommended that you insure your package when returning items by mail.
-Article link: "https://example.com/textbook-returns"
+1. What is the Campus Store textbook return policy?
+Textbook returns and exchanges are governed by the Campus Store Refund Policy. Semester-specific return-window dates are refreshed into the structured policy cache and should be checked there for current deadlines.
+Article link: "https://bookstore.calbaptist.edu/customerservice"
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "textbook_refund_policy.txt", "source_id": "textbook_refund_policy", "source_type": "faq", "category": "textbook_return", "platform": null, "issue_type": "return_refund", "priority": "canonical", "faq_id": "FAQ_2"}]
-2. Can I return textbooks in person at the CBU Campus Store?
-Yes. Textbook purchases may be returned in person at the CBU Campus Store, subject to the return conditions and deadlines outlined below.
-Article link: "https://example.com/textbook-returns"
-<<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "textbook_refund_policy.txt", "source_id": "textbook_refund_policy", "source_type": "faq", "category": "textbook_return", "platform": null, "issue_type": "return_refund", "priority": "canonical", "faq_id": "FAQ_3"}]
-3. What is the return policy for Fall 2025 semester textbooks?
-For textbooks purchased for Fall 2025 semester courses:
-- Returns and exchanges are accepted without penalty until September 12, 2025.
-- Returns are accepted with a 25% restocking fee from September 13, 2025 through September 19, 2025.
-- All textbook sales are final after September 19, 2025.
-Article link: "https://example.com/textbook-returns"
-<<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "textbook_refund_policy.txt", "source_id": "textbook_refund_policy", "source_type": "faq", "category": "textbook_return", "platform": null, "issue_type": "return_refund", "priority": "canonical", "faq_id": "FAQ_4"}]
-4. What is the return policy for Spring 2026 semester textbooks?
-For textbooks purchased for Spring 2026 semester courses:
-- Returns and exchanges are accepted without penalty until January 23, 2026.
-- Returns are accepted with a 25% restocking fee from January 24, 2026 through January 30, 2026.
-- All textbook sales are final after January 30, 2026.
-Article link: "https://example.com/textbook-returns"
-<<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "textbook_refund_policy.txt", "source_id": "textbook_refund_policy", "source_type": "faq", "category": "textbook_return", "platform": null, "issue_type": "return_refund", "priority": "canonical", "faq_id": "FAQ_5"}]
-5. Which items are considered final sale and cannot be returned?
-The following items are final sale and are not eligible for return or refund:
+2. What return conditions apply to textbooks and course materials?
+- You can return purchases via your choice of shipping method at your expense. We highly recommend that you insure your package!
+- You are also able to return your textbook purchase on campus at the CBU Campus Store under the following conditions:
 - ARC / ART / DES / ILL Kits
 - Opened shrink-wrapped textbooks
-- Access codes and digital content
-- Lab coats
+- Access codes / digital content
+- Lab Coats
 - Pre-paid items
-- Items marked “Final Sale”
-Article link: "https://example.com/textbook-returns"
+- Items marked "Final Sale"
+- Please take note of the following conditions under which a student may return their purchases:
+- New Books: must be in original condition as when it was purchased and MUST be accompanied by any other material that was part of the book (i.e. CD, DVD, Access Code, etc)
+- Used Books: must be in original condition as purchased and MUST be accompanied by any other material that was a part of the book (i.e. CD, DVD, Access Code, etc)
+- Shrink-Wrapped Books: will NOT be accepted for refund if the shrink-wrapping has been opened or taken off
+- Access Codes & Digital Content: FINAL SALE
+Article link: "https://bookstore.calbaptist.edu/customerservice"
 <<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "textbook_refund_policy.txt", "source_id": "textbook_refund_policy", "source_type": "faq", "category": "textbook_return", "platform": null, "issue_type": "return_refund", "priority": "canonical", "faq_id": "FAQ_6"}]
-6. What condition must new textbooks be in to be eligible for return?
-New textbooks must be in original condition, exactly as purchased, and must include all accompanying materials such as CDs, DVDs, or access codes.
-Article link: "https://example.com/textbook-returns"
-<<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "textbook_refund_policy.txt", "source_id": "textbook_refund_policy", "source_type": "faq", "category": "textbook_return", "platform": null, "issue_type": "return_refund", "priority": "canonical", "faq_id": "FAQ_7"}]
-7. What condition must used textbooks be in to be eligible for return?
-Used textbooks must be in the same condition as when purchased and must include all accompanying materials such as CDs, DVDs, or access codes.
-Article link: "https://example.com/textbook-returns"
-<<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "textbook_refund_policy.txt", "source_id": "textbook_refund_policy", "source_type": "faq", "category": "textbook_return", "platform": null, "issue_type": "return_refund", "priority": "canonical", "faq_id": "FAQ_8"}]
-8. Are shrink-wrapped textbooks eligible for return if opened?
-No. Shrink-wrapped textbooks cannot be returned if the shrink-wrapping has been opened or removed.
-Article link: "https://example.com/textbook-returns"
-<<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "textbook_refund_policy.txt", "source_id": "textbook_refund_policy", "source_type": "faq", "category": "textbook_return", "platform": null, "issue_type": "return_refund", "priority": "canonical", "faq_id": "FAQ_9"}]
-9. Are access codes or digital content refundable?
+[META:{"source_file": "textbook_refund_policy.txt", "source_id": "textbook_refund_policy", "source_type": "faq", "category": "textbook_return", "platform": null, "issue_type": "return_refund", "priority": "canonical", "faq_id": "FAQ_3"}]
+3. Are access codes or digital content refundable?
 No. Access codes and digital content are final sale items and are not eligible for return or refund.
-Article link: "https://example.com/textbook-returns"
-<<<CHUNK_SEPARATOR>>>
-[META:{"source_file": "textbook_refund_policy.txt", "source_id": "textbook_refund_policy", "source_type": "faq", "category": "textbook_return", "platform": null, "issue_type": "return_refund", "priority": "canonical", "faq_id": "FAQ_10"}]
-10. Where can I find more information about textbook returns?
-For additional details, please refer to the Textbook FAQ page or contact the CBU Campus Store directly.
-Article link: "https://example.com/textbook-returns"
+Article link: "https://bookstore.calbaptist.edu/customerservice"
 <<<CHUNK_SEPARATOR>>>
 [META:{"source_file": "textbook_refund_policy.txt", "source_id": "textbook_refund_policy", "source_type": "faq", "category": "textbook_return", "platform": null, "issue_type": "return_refund", "priority": "canonical", "faq_id": "FAQ_11"}]
-11. If I opt out of immediate access, are the physical textbooks for my courses available in the University’s student store?
-No, the Campus Store does not have print alternatives to the textbooks delivered through Immediate Access. This prevents students who are looking for textbooks in-person from purchasing the same material they've already been charged for through Immediate Access.
-If you'd like to procure print copies of your IA textbooks on your own, from your preferred textbook retailer, we've provided the Print ISBN of each title on our website.
-Article link: "https://example.com/textbook-returns"
+11. If I opt out of Immediate Access, are the physical textbooks for my courses available in the Campus Store?
+No. The Campus Store does not carry print alternatives for textbooks delivered through Immediate Access. This prevents students from purchasing the same material in-store after it has already been charged through Immediate Access. Students who want print copies may purchase them independently from their preferred textbook retailer.
+Article link: "https://bookstore.calbaptist.edu/customerservice"
 <<<CHUNK_SEPARATOR>>>

@@ -82,9 +82,11 @@ from app.intake.question_templates import QUESTION_KEY_TO_SLOT, QUESTION_TEMPLAT
 from app.intake.llm_planner import run_intake_planner, should_run_planner, get_question_for_decision
 try:
     from app.bookstore_cache import lookup_course as cache_lookup_course
+    from app.bookstore_cache import lookup_course_by_term as cache_lookup_course_by_term
     from app.bookstore_cache import lookup_by_instructor as cache_lookup_by_instructor
 except Exception:
     cache_lookup_course = None
+    cache_lookup_course_by_term = None
     cache_lookup_by_instructor = None
 
 from app.admin import admin_router
@@ -182,6 +184,9 @@ import os as _os
 _pdfs_dir = _os.path.join(_os.path.dirname(__file__), "static", "pdfs")
 _os.makedirs(_pdfs_dir, exist_ok=True)
 app.mount("/static/pdfs", StaticFiles(directory=_pdfs_dir), name="pdfs")
+_repo_pdfs_dir = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "pdfs")
+_os.makedirs(_repo_pdfs_dir, exist_ok=True)
+app.mount("/pdfs", StaticFiles(directory=_repo_pdfs_dir), name="repo_pdfs")
 app.include_router(feedback_router)
 
 @app.get("/admin")
@@ -746,16 +751,6 @@ def detect_intent(message: str) -> str:
     return "GENERAL_FAQ"
 
 
-BOOK_LOOKUP_SIGNALS = (
-    "what book", "which book", "textbook for", "textbooks for",
-    "required book", "required books",
-    "what do i need for", "reading for", "book for my class",
-    "materials for", "books for", "required materials",
-    "textbook is required", "textbooks are required",
-    "textbook required", "required textbook",
-    "what textbook do i need", "what textbooks do i need",
-)
-
 DEPARTMENT_NAME_TO_CODE = {
     "accounting": "ACC",
     "athletic training": "ATR",
@@ -782,17 +777,290 @@ DEPARTMENT_NAME_TO_CODE = {
 }
 
 
-def detect_book_lookup_intent(message: str) -> bool:
+BOOK_LOOKUP_TROUBLESHOOTING_SIGNALS = (
+    "won't load", "wont load", "can't access", "cannot access", "not working",
+    "error", "broken", "won't open", "wont open", "locked out",
+    "can't log in", "cant log in", "isn't working", "isnt working",
+    "stopped working", "issue", "problem", "trouble",
+)
+
+
+def has_course_code(message: str) -> bool:
+    return re.search(r"\b[A-Za-z]{2,4}\s*\d{3,4}\b", message or "") is not None
+
+
+def extract_book_lookup_course_code(message: str) -> tuple[str | None, str | None]:
+    match = re.search(r"\b([A-Za-z]{2,4})\s*(\d{3,4})\b", message or "")
+    if not match:
+        return None, None
+    return match.group(1).upper(), match.group(2)
+
+
+def has_book_lookup_troubleshooting_signal(message: str) -> bool:
     text = (message or "").lower()
-    if any(term in text for term in ("can't access", "cannot access", "unable to access", "trouble", "issue", "problem", "not working")):
-        return any(term in text for term in ("what book", "which book", "required book", "what do i need", "required materials"))
-    has_signal = any(signal in text for signal in BOOK_LOOKUP_SIGNALS)
-    has_course_code = re.search(r"\b[A-Z]{2,4}\s*[- ]?\s*\d{3}[A-Z]?\b", message or "") is not None
-    if has_signal:
-        return True
-    if "course material" in text or "course materials" in text:
-        return has_course_code or "materials for" in text or "material for" in text
-    return False
+    return any(signal in text for signal in BOOK_LOOKUP_TROUBLESHOOTING_SIGNALS)
+
+
+def is_book_lookup_query(message: str) -> bool:
+    if has_book_lookup_troubleshooting_signal(message):
+        return False
+
+    text = (message or "").lower()
+    lookup_signals = [
+        "what book", "what books", "what textbook", "what textbooks",
+        "what material", "what materials", "course material",
+        "course materials", "what do i need", "what do i need for",
+        "what supplies", "what software", "what is required",
+        "what's required", "whats required", "required material",
+        "required book", "required textbook", "textbook for",
+        "materials for", "supplies for", "book for my", "reading for",
+        "access code for", "lab material", "do i need a book",
+        "do i need anything", "what is my textbook", "what are my materials",
+    ]
+    has_signal = any(signal in text for signal in lookup_signals)
+    strong = any(signal in text for signal in [
+        "what book", "what books", "what material", "what materials",
+        "course material", "course materials", "what textbook",
+        "what do i need", "what are my materials",
+    ])
+    return (has_signal and has_course_code(message)) or strong
+
+
+def detect_book_lookup_intent(message: str) -> bool:
+    return is_book_lookup_query(message)
+
+
+def _bookstore_config() -> dict:
+    path = Path("config") / "bookstore_config.yaml"
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except Exception as exc:
+        print(f"[BOOK_LOOKUP] config load failed: {exc}")
+        return {}
+
+
+def _active_bookstore_term_labels() -> dict[str, str]:
+    cfg = _bookstore_config()
+    semester = str(cfg.get("active_semester") or "SUMMER").strip().upper()
+    year = str(cfg.get("active_year") or "26").strip()
+    return {
+        "full": f"{semester} FULL TERM {year}",
+        "session1": f"SESSION 1 {semester} {year}",
+        "session2": f"SESSION 2 {semester} {year}",
+    }
+
+
+def extract_book_lookup_section(message: str) -> str | None:
+    text = message or ""
+    match = re.search(r"\b(?:section|sec\.?)\s+([A-Za-z0-9]{1,3})\b", text, re.IGNORECASE)
+    if match:
+        return match.group(1).upper()
+    stripped = text.strip()
+    bare = re.fullmatch(r"[A-Za-z0-9]{1,3}", stripped)
+    if bare:
+        return bare.group(0).upper()
+    return None
+
+
+def is_online_section(section: str | None) -> bool:
+    letters = "".join(ch for ch in (section or "") if ch.isalpha())
+    return len(letters) == 2 and letters[-1] in "Ee"
+
+
+def _book_lookup_modality(section: str | None) -> str:
+    return "Online" if is_online_section(section) else "Traditional"
+
+
+def extract_book_lookup_term_label(message: str) -> str | None:
+    text = (message or "").lower()
+    labels = _active_bookstore_term_labels()
+    if re.search(r"\b(session\s*1|first\s*8|1st\s*8)\b", text):
+        return labels["session1"]
+    if re.search(r"\b(session\s*2|last\s*8|second\s*8|2nd\s*8)\b", text):
+        return labels["session2"]
+    if re.search(r"\b(full|full\s*term|14\s*weeks?|16\s*weeks?)\b", text):
+        return labels["full"]
+    return None
+
+
+def _book_lookup_course_label(slots: dict) -> str:
+    return f"{slots.get('dept', '')} {slots.get('course_number', '')}".strip()
+
+
+def _book_lookup_section_question(slots: dict) -> str:
+    return f"Which section are you in for {_book_lookup_course_label(slots)}? (for example: A, B, DS, or AE)"
+
+
+BOOK_LOOKUP_TERM_QUESTION = (
+    "Which session is your course in?\n"
+    "- Full term (14-16 weeks)\n"
+    "- Session 1 (first 8 weeks)\n"
+    "- Session 2 (last 8 weeks)"
+)
+
+
+BOOK_LOOKUP_VERIFY_LINE = (
+    "Please check the bookstore site at https://bookstore.calbaptist.edu/textbooks "
+    "to make sure, or email ImmediateAccess@calbaptist.edu for help."
+)
+
+
+def get_book_lookup_pdf_recommendations() -> list[dict]:
+    base_url = os.getenv("LANCE_BASE_URL", "http://localhost:8000").rstrip("/")
+    return [
+        {
+            "doc_id": "textbook_search",
+            "title": "Textbook Search Guide",
+            "description": "Instructions for searching required course materials through the CBU bookstore.",
+            "filename": "textbook_search.pdf",
+            "url": f"{base_url}/pdfs/textbook/textbook_search.pdf",
+            "pages": 0,
+            "relevance": "Best Match",
+            "platform": "General",
+            "file_size_kb": 0,
+            "tags": ["textbook", "course materials", "bookstore"],
+            "created_at": None,
+            "updated_at": None,
+        }
+    ]
+
+
+def _format_book_price(book: dict) -> str:
+    raw = book.get("price") or ""
+    try:
+        prices = json.loads(raw) if isinstance(raw, str) and raw.strip().startswith("[") else []
+    except json.JSONDecodeError:
+        prices = []
+    if prices:
+        parts = []
+        for price in prices:
+            label_bits = [str(price.get("condition") or "").strip(), str(price.get("variant") or "").strip()]
+            label = " ".join(bit for bit in label_bits if bit).strip()
+            amount = str(price.get("amount") or "").strip()
+            parts.append(f"{label}: ${amount}" if label else f"${amount}")
+        return "; ".join(parts)
+    return raw or "Not listed"
+
+
+def _is_zero_or_unresolved_isbn(book: dict) -> bool:
+    isbn = str(book.get("isbn") or "").strip()
+    digits = re.sub(r"\D", "", isbn)
+    return book.get("isbn_source") == "unresolved" or not digits or set(digits) == {"0"}
+
+
+def _display_book_isbn(book: dict) -> str | None:
+    if _is_zero_or_unresolved_isbn(book):
+        return None
+    return str(book.get("isbn") or "").strip() or None
+
+
+def _display_book_note(book: dict) -> str | None:
+    note = str(book.get("notes") or "").strip()
+    if not note:
+        return None
+    note = re.sub(r"^Book Notes:\s*", "", note, flags=re.I).strip()
+    return note or None
+
+
+def build_book_lookup_reply(result: dict, slots: dict) -> str:
+    course_label = _book_lookup_course_label(slots)
+    section = slots.get("section") or ""
+    term = slots.get("term") or ""
+    modality = _book_lookup_modality(section)
+
+    if not result.get("found"):
+        return (
+            f"I wasn't able to find the course materials for {course_label} section {section} "
+            f"in {term}. Please check the bookstore site at "
+            "https://bookstore.calbaptist.edu/textbooks or email "
+            "ImmediateAccess@calbaptist.edu for help."
+        )
+
+    course = result.get("course") or {}
+    books = result.get("books") or []
+    lines = [
+        BOOK_LOOKUP_COURSE_MATERIALS_INTRO,
+        "",
+        f"Course: {course_label}",
+        f"Section: {section}",
+        f"Modality: {modality}",
+        f"Term: {term}",
+        "",
+    ]
+    if not books:
+        lines.append("No materials have been listed yet for this course section and session.")
+    else:
+        for index, book in enumerate(books, 1):
+            formats = book.get("formats") or []
+            format_text = ", ".join(formats) if formats else (book.get("format") or "Not listed")
+            display_isbn = _display_book_isbn(book)
+            display_note = _display_book_note(book)
+            lines.extend([
+                f"{index}. {book.get('title') or 'Untitled material'}",
+                f"   Author: {book.get('author') or 'Not listed'}",
+                f"   Edition: {book.get('edition') or 'Not listed'}",
+                f"   Requirement: {book.get('requirement') or 'Not listed'}",
+                f"   Format/formats: {format_text}",
+                f"   Price: {_format_book_price(book)}",
+                f"   Immediate Access: {'Yes' if book.get('immediate_access') else 'No'}",
+            ])
+            if display_isbn:
+                lines.append(f"   ISBN: {display_isbn}")
+            elif display_note:
+                lines.append(f"   Note: {display_note}")
+            if book.get("publisher_direct_link"):
+                lines.append(f"   Publisher direct link: {book['publisher_direct_link']}")
+            lines.append("")
+        lines.append(BOOK_LOOKUP_VERIFY_LINE)
+    lines.append(f"Last updated: {course.get('last_refreshed') or 'not available'}")
+    return "\n".join(lines).strip()
+
+
+def handle_book_lookup_turn(session: dict, message: str) -> dict | None:
+    pending = dict(session.get("pending_book_lookup") or {})
+    starts_lookup = detect_book_lookup_intent(message)
+    if not pending and not starts_lookup:
+        return None
+
+    current = extract_book_lookup_slots(message)
+    slots = pending
+    for key in ("dept", "course_number", "section", "term", "instructor"):
+        if current.get(key):
+            slots[key] = current[key]
+
+    if not slots.get("dept") or not slots.get("course_number"):
+        question = (
+            "Which course should I look up? Please send the department code and course number, "
+            "for example: ATR 511."
+        )
+        session["pending_book_lookup"] = slots
+        return {"reply": question, "source": "BOOK_LOOKUP:CLARIFICATION", "slots": slots}
+
+    if not slots.get("section"):
+        question = _book_lookup_section_question(slots)
+        session["pending_book_lookup"] = slots
+        return {"reply": question, "source": "BOOK_LOOKUP:CLARIFY_SECTION", "slots": slots}
+
+    if not slots.get("term"):
+        session["pending_book_lookup"] = slots
+        return {"reply": BOOK_LOOKUP_TERM_QUESTION, "source": "BOOK_LOOKUP:CLARIFY_TERM", "slots": slots}
+
+    session["pending_book_lookup"] = None
+    lookup_result = lookup_textbook_tool(
+        slots["dept"],
+        slots["course_number"],
+        section=slots.get("section"),
+        instructor=slots.get("instructor"),
+        term=slots.get("term"),
+    )
+    reply = build_book_lookup_reply(lookup_result, slots)
+    return {
+        "reply": reply,
+        "source": "BOOK_LOOKUP" if lookup_result.get("found") else "BOOK_LOOKUP:NOT_FOUND",
+        "slots": slots,
+        "lookup_result": lookup_result,
+    }
 
 
 def extract_book_lookup_slots(message: str) -> dict:
@@ -808,16 +1076,10 @@ def extract_book_lookup_slots(message: str) -> dict:
         "question": None,
     }
 
-    course_match = re.search(
-        r"\b(?P<dept>[A-Z]{2,4})\s*[- ]?\s*(?P<num>\d{3}[A-Z]?)(?:\s*[- ]?\s*(?:section|sec\.?)?\s*(?P<section>[A-Z]{1,3}))?\b",
-        text,
-    )
-    if course_match:
-        slots["dept"] = course_match.group("dept").upper()
-        slots["course_number"] = course_match.group("num").upper()
-        section = course_match.group("section")
-        if section and section.upper() not in {"FOR", "AND", "THE"}:
-            slots["section"] = section.upper()
+    dept, course_number = extract_book_lookup_course_code(text)
+    if dept and course_number:
+        slots["dept"] = dept
+        slots["course_number"] = course_number
     else:
         for name, code in DEPARTMENT_NAME_TO_CODE.items():
             if name in text.lower():
@@ -827,9 +1089,9 @@ def extract_book_lookup_slots(message: str) -> dict:
         if number_match:
             slots["course_number"] = number_match.group(1).upper()
 
-    section_match = re.search(r"\b(?:section|sec\.?)\s*([A-Z]{1,3})\b", text, re.IGNORECASE)
-    if section_match:
-        slots["section"] = section_match.group(1).upper()
+    section = extract_book_lookup_section(text)
+    if section:
+        slots["section"] = section
 
     instructor_patterns = (
         r"\b(?:professor|prof\.?|dr\.?|instructor)\s+([A-Z][A-Za-z'’-]+)",
@@ -849,6 +1111,9 @@ def extract_book_lookup_slots(message: str) -> dict:
     )
     if term_match:
         slots["term"] = term_match.group(1).strip().upper()
+    configured_term = extract_book_lookup_term_label(text)
+    if configured_term:
+        slots["term"] = configured_term
 
     missing = []
     if not slots["dept"]:
@@ -869,7 +1134,9 @@ def lookup_textbook_tool(dept, course_number, section=None, instructor=None, ter
         return {"found": False, "reason": "not_in_cache"}
 
     result = None
-    if dept and course_number:
+    if dept and course_number and section and term and cache_lookup_course_by_term is not None:
+        result = cache_lookup_course_by_term(dept, course_number, section, term)
+    elif dept and course_number and not term:
         result = cache_lookup_course(dept, course_number, section, term)
     if result is None and instructor:
         matches = cache_lookup_by_instructor(instructor, term) or []
@@ -890,6 +1157,24 @@ def lookup_textbook_tool(dept, course_number, section=None, instructor=None, ter
     }
 
 
+BOOK_LOOKUP_COURSE_MATERIALS_INTRO = (
+    "Please note that the course material required for the class you've inquired about "
+    "will be provided to you via Immediate Access, and there is no need to purchase them.\n\n"
+    "See the required course materials below:"
+)
+
+
+def _book_lookup_needs_course_materials_intro(slots: dict | None) -> bool:
+    return bool(slots and slots.get("dept") and slots.get("course_number"))
+
+
+def _prepend_book_lookup_course_materials_intro(reply: str) -> str:
+    reply = (reply or "").lstrip()
+    if reply.startswith(BOOK_LOOKUP_COURSE_MATERIALS_INTRO):
+        return reply
+    return f"{BOOK_LOOKUP_COURSE_MATERIALS_INTRO}\n\n{reply}"
+
+
 def build_book_lookup_prompt(result: dict, user_query: str) -> str:
     last_updated = (result.get("course") or {}).get("last_refreshed") or "not available"
     payload = json.dumps(result, ensure_ascii=False, indent=2)
@@ -903,8 +1188,11 @@ def build_book_lookup_prompt(result: dict, user_query: str) -> str:
         "direct them to https://bookstore.calbaptist.edu/textbooks, and offer ImmediateAccess@calbaptist.edu as a fallback.\n"
         "- If found=true with no books: tell the student no materials have been listed yet for that course and direct them to the store_url.\n"
         "- If found=true with books: list each book with title, author, edition, requirement, format, and price. "
+        "Display ISBN only when isbn is real; if isbn_source is unresolved or the ISBN is all zeros, omit the ISBN line and show notes when present. "
         "If immediate_access=true, note it is an Immediate Access title covered by their student account. "
-        "If publisher_direct_link is set, include it. End with the store_url for confirmation.\n"
+        "If publisher_direct_link is set, include it. For found=true with books, include this exact verification line before the Last updated line: "
+        f"{BOOK_LOOKUP_VERIFY_LINE}\n"
+        "- Do not include the standard Immediate Access opening note yourself; the application adds it before your response.\n"
         f"- Always end with exactly: Last updated: {last_updated}"
     )
 
@@ -1009,9 +1297,11 @@ def enhance_query_with_conversation_context(message: str, history: list) -> str:
 
 
 def extract_course_code(message: str):
-    """Extract course code like BIO101, PSY200A, etc."""
-    match = re.search(r"[A-Z]{2,4}\d{3}[A-Z\-]*", message)
-    return match.group(0) if match else None
+    """Extract course code like EGR 310 or ENGR3100."""
+    match = re.search(r"\b([A-Za-z]{2,4})\s*(\d{3,4})\b", message or "")
+    if not match:
+        return None
+    return match.group(1).upper(), match.group(2)
 
 
 def is_store_hours_query(message: str) -> bool:
@@ -2714,61 +3004,25 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
 
         is_cache_issue = is_browser_cache_issue(message) or is_browser_cache_issue(retrieval_query)
 
-        # Bookstore textbook lookup is a Campus Store request, but the safety
-        # classifier may ask a generic textbook clarification before the cached
-        # lookup tool can run. Route clear bookstore lookup requests here while
-        # still letting student ID/email messages fall through to the existing
-        # personal-info guard below.
-        book_lookup_slots = extract_book_lookup_slots(message) if detect_book_lookup_intent(message) else None
-        if book_lookup_slots and not is_personal_info_reply(message, active_intake=False):
-            if book_lookup_slots.get("needs_clarification"):
-                question = book_lookup_slots["question"]
-                session["history"].append({"role": "user", "content": message})
-                session["history"].append({"role": "assistant", "content": question})
-                session["last_activity"] = datetime.now()
-                total_time_ms = (time.time() - request_start) * 1000
-                return ChatResponse(
-                    reply=question,
-                    source="BOOK_LOOKUP:CLARIFICATION",
-                    article_link=None,
-                    confidence=1.0,
-                    retrieval_time_ms=0,
-                    llm_time_ms=0,
-                    total_time_ms=round(total_time_ms, 2),
-                    recommended_pdfs=[],
-                    debug_mode=debug_mode,
-                )
-
-            lookup_result = lookup_textbook_tool(
-                book_lookup_slots["dept"],
-                book_lookup_slots["course_number"],
-                section=book_lookup_slots.get("section"),
-                instructor=book_lookup_slots.get("instructor"),
-                term=book_lookup_slots.get("term"),
-            )
-            system_prompt = build_book_lookup_prompt(lookup_result, message)
-            llm_start = time.time()
-            reply, llm_queue_wait_ms = await call_llm_with_semaphore(
-                message=message,
-                context="",
-                history=session["history"][-MAX_HISTORY_TURNS:],
-                system_hint=system_prompt,
-                image_base64=None,
-            )
-            llm_time_ms = (time.time() - llm_start) * 1000
+        book_lookup_turn = None
+        if not is_personal_info_reply(message, active_intake=False):
+            book_lookup_turn = handle_book_lookup_turn(session, message)
+        if book_lookup_turn:
+            reply = book_lookup_turn["reply"]
+            recommended_pdfs = get_book_lookup_pdf_recommendations()
             session["history"].append({"role": "user", "content": message})
             session["history"].append({"role": "assistant", "content": reply})
             session["last_activity"] = datetime.now()
             total_time_ms = (time.time() - request_start) * 1000
             return ChatResponse(
                 reply=reply,
-                source="BOOK_LOOKUP",
+                source=book_lookup_turn["source"],
                 article_link=None,
-                confidence=1.0 if lookup_result.get("found") else 0.0,
+                confidence=1.0,
                 retrieval_time_ms=0,
-                llm_time_ms=round(llm_time_ms, 2),
+                llm_time_ms=0,
                 total_time_ms=round(total_time_ms, 2),
-                recommended_pdfs=[],
+                recommended_pdfs=recommended_pdfs,
                 debug_mode=debug_mode,
                 route_type="BOOK_LOOKUP",
             )
@@ -2889,60 +3143,6 @@ async def process_chat_request(payload: ChatRequest) -> ChatResponse:
                 debug_mode=debug_mode,
             )
         # ---------------------------------------------------------------------
-
-        book_lookup_slots = extract_book_lookup_slots(message) if detect_book_lookup_intent(message) else None
-        if book_lookup_slots:
-            if book_lookup_slots.get("needs_clarification"):
-                question = book_lookup_slots["question"]
-                session["history"].append({"role": "user", "content": message})
-                session["history"].append({"role": "assistant", "content": question})
-                session["last_activity"] = datetime.now()
-                total_time_ms = (time.time() - request_start) * 1000
-                return ChatResponse(
-                    reply=question,
-                    source="BOOK_LOOKUP:CLARIFICATION",
-                    article_link=None,
-                    confidence=1.0,
-                    retrieval_time_ms=0,
-                    llm_time_ms=0,
-                    total_time_ms=round(total_time_ms, 2),
-                    recommended_pdfs=[],
-                    debug_mode=debug_mode,
-                )
-
-            lookup_result = lookup_textbook_tool(
-                book_lookup_slots["dept"],
-                book_lookup_slots["course_number"],
-                section=book_lookup_slots.get("section"),
-                instructor=book_lookup_slots.get("instructor"),
-                term=book_lookup_slots.get("term"),
-            )
-            system_prompt = build_book_lookup_prompt(lookup_result, message)
-            llm_start = time.time()
-            reply, llm_queue_wait_ms = await call_llm_with_semaphore(
-                message=message,
-                context="",
-                history=session["history"][-MAX_HISTORY_TURNS:],
-                system_hint=system_prompt,
-                image_base64=None,
-            )
-            llm_time_ms = (time.time() - llm_start) * 1000
-            reply = strip_article_link_lines(reply)
-            session["history"].append({"role": "user", "content": message})
-            session["history"].append({"role": "assistant", "content": reply})
-            session["last_activity"] = datetime.now()
-            total_time_ms = (time.time() - request_start) * 1000
-            return ChatResponse(
-                reply=reply,
-                source="BOOK_LOOKUP",
-                article_link=None,
-                confidence=1.0 if lookup_result.get("found") else 0.0,
-                retrieval_time_ms=0,
-                llm_time_ms=round(llm_time_ms, 2),
-                total_time_ms=round(total_time_ms, 2),
-                recommended_pdfs=[],
-                debug_mode=debug_mode,
-            )
 
         quick_help_match = build_quick_help_match(message)
         if quick_help_match:
@@ -5220,49 +5420,18 @@ async def chat_stream(payload: ChatRequest):
                     print(f"[VISION WARN] pre-safety image analysis failed: {_img_exc}")
                     image_context = {}
 
-            # Bookstore textbook lookup is in Campus Store scope, but the
-            # safety classifier can otherwise turn it into a generic textbook
-            # clarification. Handle clear lookup requests before IA intake/RAG,
-            # while preserving the personal-info escalation path.
-            book_lookup_slots = extract_book_lookup_slots(message) if detect_book_lookup_intent(message) else None
-            if book_lookup_slots and not is_personal_info_reply(message, active_intake=False):
-                if book_lookup_slots.get("needs_clarification"):
-                    question = book_lookup_slots["question"]
-                    session["history"].append({"role": "user", "content": message})
-                    session["history"].append({"role": "assistant", "content": question})
-                    session["last_activity"] = datetime.now()
-                    async for token in _stream_words(question):
-                        yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
-                    yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'BOOK_LOOKUP:CLARIFICATION', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
-                    return
-
-                lookup_result = lookup_textbook_tool(
-                    book_lookup_slots["dept"],
-                    book_lookup_slots["course_number"],
-                    section=book_lookup_slots.get("section"),
-                    instructor=book_lookup_slots.get("instructor"),
-                    term=book_lookup_slots.get("term"),
-                )
-                system = build_book_lookup_prompt(lookup_result, message)
-                full_response = ""
-                full_thought = ""
-                async with llm_semaphore:
-                    async for chunk in stream_llm_response(message, system):
-                        chunk_type = chunk.get("type", "response")
-                        token = chunk.get("token", "")
-                        if not token:
-                            continue
-                        if chunk_type == "thought":
-                            full_thought += token
-                            yield f"data: {json.dumps({'type': 'thought', 'token': token, 'done': False})}\n\n"
-                        else:
-                            full_response += token
-                            yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
-                full_response = strip_article_link_lines(full_response).strip()
+            book_lookup_turn = None
+            if not is_personal_info_reply(message, active_intake=False):
+                book_lookup_turn = handle_book_lookup_turn(session, message)
+            if book_lookup_turn:
+                reply = book_lookup_turn["reply"]
+                recommended_pdfs = get_book_lookup_pdf_recommendations()
                 session["history"].append({"role": "user", "content": message})
-                session["history"].append({"role": "assistant", "content": full_response})
+                session["history"].append({"role": "assistant", "content": reply})
                 session["last_activity"] = datetime.now()
-                yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'BOOK_LOOKUP', 'confidence': 1.0 if lookup_result.get('found') else 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': full_thought, 'route_type': 'BOOK_LOOKUP', 'selected_source_file': None})}\n\n"
+                async for token in _stream_words(reply):
+                    yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': book_lookup_turn['source'], 'confidence': 1.0, 'recommended_pdfs': recommended_pdfs, 'debug_mode': debug_mode, 'thought': '', 'route_type': 'BOOK_LOOKUP', 'selected_source_file': None})}\n\n"
                 return
 
             # -- Safety gate (same order as /chat: runs before everything) --------
@@ -5356,47 +5525,6 @@ async def chat_stream(payload: ChatRequest):
             stream_forced_retrieval = None
             stream_forced_route_type = None
             stream_forced_selected_source_file = None
-
-            if intent == "book_lookup":
-                book_lookup_slots = extract_book_lookup_slots(message)
-                if book_lookup_slots.get("needs_clarification"):
-                    question = book_lookup_slots["question"]
-                    session["history"].append({"role": "user", "content": message})
-                    session["history"].append({"role": "assistant", "content": question})
-                    session["last_activity"] = datetime.now()
-                    async for token in _stream_words(question):
-                        yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
-                    yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'BOOK_LOOKUP:CLARIFICATION', 'confidence': 1.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': ''})}\n\n"
-                    return
-
-                lookup_result = lookup_textbook_tool(
-                    book_lookup_slots["dept"],
-                    book_lookup_slots["course_number"],
-                    section=book_lookup_slots.get("section"),
-                    instructor=book_lookup_slots.get("instructor"),
-                    term=book_lookup_slots.get("term"),
-                )
-                system = build_book_lookup_prompt(lookup_result, message)
-                full_response = ""
-                full_thought = ""
-                async with llm_semaphore:
-                    async for chunk in stream_llm_response(message, system):
-                        chunk_type = chunk.get("type", "response")
-                        token = chunk.get("token", "")
-                        if not token:
-                            continue
-                        if chunk_type == "thought":
-                            full_thought += token
-                            yield f"data: {json.dumps({'type': 'thought', 'token': token, 'done': False})}\n\n"
-                        else:
-                            full_response += token
-                            yield f"data: {json.dumps({'type': 'response', 'token': token, 'done': False})}\n\n"
-                full_response = strip_article_link_lines(full_response).strip()
-                session["history"].append({"role": "user", "content": message})
-                session["history"].append({"role": "assistant", "content": full_response})
-                session["last_activity"] = datetime.now()
-                yield f"data: {json.dumps({'type': 'done', 'token': '', 'done': True, 'response_id': response_id, 'session_id': session_id, 'source': 'BOOK_LOOKUP', 'confidence': 1.0 if lookup_result.get('found') else 0.0, 'recommended_pdfs': [], 'debug_mode': debug_mode, 'thought': full_thought, 'route_type': 'BOOK_LOOKUP', 'selected_source_file': None})}\n\n"
-                return
 
             # Deterministic greeting: skip retrieval and LLM entirely.
             if (
