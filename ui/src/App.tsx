@@ -5,7 +5,7 @@ import { ChatMessage } from './components/ChatMessage';
 import { ChatInput } from './components/ChatInput';
 import { FAQSidebar } from './components/FAQSidebar';
 import { PDFSidebar } from './components/PDFSidebar';
-import { STREAM_ENDPOINT, checkApiHealth, getHeaders } from './services/api';
+import { API_BASE_URL, STREAM_ENDPOINT, checkApiHealth, getHeaders } from './services/api';
 import { PDFRecommendation, Message } from './types';
 
 export default function App() {
@@ -39,17 +39,27 @@ export default function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const resolvePdfUrl = (url: string | undefined): string => {
+    if (!url) {
+      return '';
+    }
+    if (/^https?:\/\//i.test(url)) {
+      return url;
+    }
+    return `${API_BASE_URL.replace(/\/$/, '')}/${url.replace(/^\//, '')}`;
+  };
+
   const formatPdfRecommendations = (pdfs: PDFRecommendation[] | any[]): PDFRecommendation[] =>
     pdfs.map(pdf => ({
-      doc_id: pdf.doc_id,
-      title: pdf.title,
-      description: pdf.description,
-      filename: pdf.filename,
-      url: pdf.url,
-      pages: pdf.pages,
+      doc_id: pdf.doc_id || pdf.filename || pdf.url,
+      title: pdf.title || 'Recommended Instructions',
+      description: pdf.description || '',
+      filename: pdf.filename || '',
+      url: resolvePdfUrl(pdf.url || pdf.public_url),
+      pages: pdf.pages || 0,
       relevance: pdf.relevance || 'Relevant',
       platform: pdf.platform ? pdf.platform.charAt(0).toUpperCase() + pdf.platform.slice(1) : 'General',
-      file_size_kb: pdf.file_size_kb,
+      file_size_kb: pdf.file_size_kb || 0,
       tags: pdf.tags || [],
       created_at: pdf.created_at ?? null,
       updated_at: pdf.updated_at ?? null,
