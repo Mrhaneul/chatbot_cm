@@ -834,29 +834,55 @@ def detect_book_lookup_intent(message: str) -> bool:
 OPT_OUT_DEADLINE_SIGNALS = (
     "opt out deadline",
     "opt-out deadline",
+    "optout deadline",
     "last day to opt out",
-    "when can i opt out",
-    "deadline to opt out",
-    "opt out by",
-    "when do i have to opt out",
 )
 
 RETURN_DEADLINE_SIGNALS = (
     "return deadline",
     "last day to return",
-    "when can i return",
-    "deadline to return",
-    "return my book by",
-    "return window",
-    "last day for returns",
 )
 
 
 def is_deadline_query(message: str) -> str | None:
     text = (message or "").lower()
-    if any(signal in text for signal in OPT_OUT_DEADLINE_SIGNALS):
+
+    topic_optout = any(
+        signal in text
+        for signal in ("opt out", "opt-out", "optout", "opting out")
+    )
+    topic_return = any(
+        signal in text
+        for signal in ("return", "returns", "send back", "bring back")
+    )
+    time_signal = any(
+        signal in text
+        for signal in (
+            "date",
+            "deadline",
+            "last day",
+            "cutoff",
+            "when",
+            "how long",
+            "by when",
+            "due",
+            "expire",
+            "until when",
+            "what day",
+            "final day",
+        )
+    )
+
+    if "how" in text and not time_signal:
+        return None
+
+    if any(signal in text for signal in OPT_OUT_DEADLINE_SIGNALS) or (
+        topic_optout and time_signal
+    ):
         return "opt_out"
-    if any(signal in text for signal in RETURN_DEADLINE_SIGNALS):
+    if any(signal in text for signal in RETURN_DEADLINE_SIGNALS) or (
+        topic_return and time_signal
+    ):
         return "return"
     return None
 
