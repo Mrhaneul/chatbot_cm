@@ -19,7 +19,7 @@ There are two refresh jobs. Both run on the machine that runs Lancer, call the b
 | Job | What it refreshes | Normal timing | Command |
 | --- | --- | --- | --- |
 | Bookstore cache | Course materials for configured terms | Weekly, and at semester rollover | `python mbs_insite_probe.py --cache-configured` |
-| Policy refresh | Opt-out dates, return dates, policy prose | At semester rollover, and whenever policy dates change | `python scripts/scrape_policy_info.py` |
+| Policy refresh | Opt-out dates, return dates, policy prose | Weekly (automatic) - picks up new semester dates when the bookstore posts them | `python scripts/scrape_policy_info.py` |
 
 The bookstore job stores data in `data/bookstore_cache.db`.
 
@@ -30,6 +30,8 @@ The policy job stores dates in `data/policy_cache.db`, rewrites policy text file
 Only one refresh job should run at a time.
 
 Both jobs write local data and both talk to the bookstore website. Running two refreshes at once can produce inconsistent local data or trip the bookstore site's bot protection. Before starting a manual run, make sure a scheduled refresh is not currently running.
+
+The scheduled jobs are intentionally timed one hour apart: the bookstore refresh runs at 2:00 AM and the policy refresh runs at 3:00 AM, so the two writers do not overlap.
 
 Students chatting with the bot or a maintainer running lookup checks is safe. The rule is only about refresh jobs.
 
@@ -43,6 +45,8 @@ Reference behavior:
 - Runs `python mbs_insite_probe.py --cache-configured`.
 - Reads which terms to cache from `config/bookstore_config.yaml`.
 - Can take roughly 45 to 60 minutes depending on the number of configured terms and bookstore response time.
+
+There is also a second scheduled job, `CBU Policy Refresh`, running weekly Sunday at 3:00 AM. It runs `python scripts/scrape_policy_info.py` one hour after the bookstore cache job, which respects the one-writer rule and lets the policy cache pick up new semester dates once the bookstore posts them.
 
 Manual run, when no scheduled refresh is already in progress:
 
@@ -84,13 +88,11 @@ python mbs_insite_probe.py --cache-configured
 
 Wait for it to finish. It prints totals per term at the end.
 
-### Step 4: Refresh Policy Dates And Prose
+### Step 4: Verify Policy Dates Updated
 
-```powershell
-python scripts/scrape_policy_info.py
-```
+The weekly `CBU Policy Refresh` job handles the policy fetch automatically. The validation gate means it auto-adopts new dates once the bookstore posts them, and refuses to overwrite good local data if the page is stale or malformed.
 
-This updates opt-out and return deadlines and rebuilds the policy search text. It refuses to update if the scraped data fails validation. If validation fails, the previous data stays in place.
+Ask the bot: "when is the opt-out deadline?" Confirm it returns the new semester's date. This step is now a verification, not a manual refresh action.
 
 ## 6. Quick Checks After A Refresh
 
