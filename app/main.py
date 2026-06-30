@@ -813,18 +813,23 @@ def is_book_lookup_query(message: str) -> bool:
         "course materials", "what do i need", "what do i need for",
         "what supplies", "what software", "what is required",
         "what's required", "whats required", "required material",
-        "required book", "required textbook", "textbook for",
-        "materials for", "supplies for", "book for my", "reading for",
+        "required book", "required textbook", "books for", "book for",
+        "textbook for", "textbooks for", "materials for", "material for",
+        "supplies for", "book for my", "reading for",
         "access code for", "lab material", "do i need a book",
         "do i need anything", "what is my textbook", "what are my materials",
     ]
     has_signal = any(signal in text for signal in lookup_signals)
+    material_word_with_course = has_course_code(message) and re.search(
+        r"\b(books?|textbooks?|materials?)\b",
+        text,
+    ) is not None
     strong = any(signal in text for signal in [
         "what book", "what books", "what material", "what materials",
         "course material", "course materials", "what textbook",
         "what do i need", "what are my materials",
     ])
-    return (has_signal and has_course_code(message)) or strong
+    return (has_signal and has_course_code(message)) or material_word_with_course or strong
 
 
 def detect_book_lookup_intent(message: str) -> bool:
@@ -1055,6 +1060,13 @@ def _date_passed_marker(row: dict, today: date | None = None) -> str:
     return ""
 
 
+def _all_deadline_dates_passed(rows: list[dict], today: date | None = None) -> bool:
+    today = today or date.today()
+    dates = [_row_deadline_date(row) for row in rows]
+    parsed_dates = [row_date for row_date in dates if row_date is not None]
+    return bool(parsed_dates) and all(row_date < today for row_date in parsed_dates)
+
+
 def _latest_deadline_refresh(rows: list[dict]) -> str:
     refreshed = [
         str(row.get("last_refreshed") or "").strip()
@@ -1106,8 +1118,15 @@ def build_deadline_reply(kind: str, rows: list[dict], user_message: str) -> str:
         )
 
     semester_label = current["label"] if current else "the current semester"
+    all_passed = _all_deadline_dates_passed(sorted_rows)
     if kind == "opt_out":
         lines = [f"Here are the Immediate Access opt-out deadlines for {semester_label}:"]
+        if all_passed:
+            lines.insert(
+                0,
+                f"All Immediate Access opt-out deadlines for {semester_label} have already passed. "
+                "If you need help, contact the Campus Store.",
+            )
         for row in sorted_rows:
             lines.append(
                 f"- {_short_opt_out_label(row, current)}: "
@@ -1115,6 +1134,12 @@ def build_deadline_reply(kind: str, rows: list[dict], user_message: str) -> str:
             )
     else:
         lines = [f"Here are the textbook return deadlines for {semester_label}:"]
+        if all_passed:
+            lines.insert(
+                0,
+                f"All textbook return windows for {semester_label} have already closed. "
+                "For help with a specific situation, contact the Campus Store.",
+            )
         for row in sorted_rows:
             lines.append(
                 f"- {_policy_deadline_label(row, kind)}: "
